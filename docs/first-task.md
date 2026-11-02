@@ -128,6 +128,9 @@ cd "$project" && python3 _system/scripts/sdlc.py step "$run" build prepare \
 python3 _system/scripts/sdlc.py step "$run" build launch
 ```
 
+Run `launch` from a shell that stays open. A remote runner that ends everything a command
+started when the command returns, such as `hc exec` or `hc run --no-parent`, stops the worker
+within a second ([#650](https://github.com/jon-devlapaz/tinkery/issues/650)).
 Saved: the step contract. Allowed: this one worker on this pin. Running: Pi, building.
 
 ## 9. Watch it, then finish
@@ -137,7 +140,8 @@ cd "$project" && python3 _system/scripts/sdlc.py step "$run" build show
 ```
 
 `observed_turn` says whether the worker's turn ended (`ended: read the report, then
-complete the step`) or not. Watch (menu place 5) shows the run. When it ended, read the
+complete the step`) or not. `not ended` with no Pi process left means the worker was stopped,
+not that it is still building. Watch (menu place 5) shows the run. When it ended, read the
 report, then:
 
 ```sh
