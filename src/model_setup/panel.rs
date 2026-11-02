@@ -295,7 +295,7 @@ impl Controls {
                 palette.ink,
             ),
             Line::styled(
-                "Tools or retries may make several provider requests. No spending cap.",
+                "One run may make several model responses; nothing caps responses or spending.",
                 palette.ink,
             ),
             Line::styled(self.note(panel), palette.muted),

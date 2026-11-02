@@ -70,7 +70,8 @@ Pi, a model, a thinking level and the calls each launch may spend, then `s`. Rer
 check: `ready: Drafting is set up` means Pi has that model and a login on disk, not that
 it answered. A model can be listed and still refuse your account, so the first real send in
 step 4 is the proof. If it fails, choose another model with `m`.
-Saved: the model setup. Allowed: that many drafting calls each launch. Running: nothing.
+One run can make several model responses; nothing caps responses or spending.
+Saved: the model setup. Allowed: that many drafting runs each launch. Running: nothing.
 
 ## 4. Think: say what you want
 
@@ -115,7 +116,8 @@ Saved: the stage. Allowed: a build on this run. Running: nothing.
 
 ## 8. Start the worker
 
-This is the step that spends model calls on building. Set `worker_model` to a model that
+This is the step that spends model calls on building. Tinkery doesn't count or cap the
+worker's model responses. Set `worker_model` to a model that
 `pi --list-models --offline` shows, with a thinking level (`worker_model=provider/model-id:low`).
 Check the pin first, then prepare and launch one pinned build step:
 

@@ -66,7 +66,9 @@ one. Drafting runs need a model. The panel names this launch's actual harness an
 flag overrides, or says it is practice with no model requests. Editable settings are marked
 for later launches; editing or saving them does not change the displayed recipient.
 A run counts a drafting attempt, including failures and cancellations. Tools or retries
-may make several provider requests within one run; this allowance is not a spending cap.
+may make several model responses within one run; this allowance caps runs, not responses or
+spending, and no Tinkery setting caps a build worker's responses
+([#651](https://github.com/jon-devlapaz/tinkery/issues/651)).
 Input too large to send, or cancellation before Tinkery accepts the run, uses none. Tinkery does not automatically
 retry a failed run. Stored `calls` and CLI names remain unchanged. Nothing in the panel starts a request.
 

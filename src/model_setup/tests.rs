@@ -331,8 +331,8 @@ fn active_recipient_survives_editing_and_saving_later_settings() {
                     .join(" ");
                 for definition in [
                     "Runs count drafting attempts, including failures and cancellations.",
-                    "Tools or retries may make several provider requests.",
-                    "No spending cap.",
+                    "One run may make several model responses;",
+                    "nothing caps responses or spending.",
                 ] {
                     assert!(words.contains(definition), "Missing {definition}:\n{shown}");
                 }
