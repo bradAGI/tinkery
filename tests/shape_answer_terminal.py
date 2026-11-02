@@ -717,10 +717,10 @@ def case(name, width=100, height=30):
                 expected = {
                     'zero budget': "No drafting runs are left: this launch's allowance is 0.",
                     'model failure': 'Your answer is saved. Looking into the next question failed: Pi exited',
-                    'helper refusal': 'Your answer is saved. Tinkery refused: receipt appears to contain a secret',
+                    'helper refusal': "Your answer is saved. The model's reply was refused, so nothing from it was saved: receipt appears to contain a secret",
                     'model tries to confirm': "Looking into the next question failed: Reply field next must be question or seed; a model reply cannot confirm a seed.",
                     'model writes decisions': "field confirming / Problem statement, line 2: ## Decisions (from the ledger)",
-                    'seed secret': 'Tinkery refused: receipt appears to contain a secret',
+                    'seed secret': "The model's reply was refused, so nothing from it was saved: receipt appears to contain a secret",
                 }[name]
                 run.send(F2, expected)
                 assert run.flat().count('Next:') == 1, run.screen.text()

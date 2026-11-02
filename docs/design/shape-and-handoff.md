@@ -397,7 +397,8 @@ call allowance (default zero), restart, then reopen the same goal through Tend,
 retaining any explicit session root.
 Unverifiable or unknown seeds point to inspecting the session files at the path in F1.
 With a model, the key bar names the available action.
-Ledger refusals say `Tinkery refused` with the first reason line; other failures
+Ledger refusals say `Tinkery refused` with the first reason line; a rule the model's reply
+broke says the model's reply was refused and names the rule without ledger node ids. Other failures
 are explicit, with reasons and paths in F1. Reads stay off paint paths.
 Opening, reading and scrolling write or copy nothing, call no model and leave prompts
 unchanged.

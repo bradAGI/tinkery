@@ -191,7 +191,39 @@ def retry_journey(width, height, case):
             run.close()
 
 
+def inference_journey(width, height):
+    """#649: the screen names the broken rule plainly; only the retry hears the node id."""
+    with tempfile.TemporaryDirectory(prefix='tinkery-TEST-649-') as directory:
+        root = Path(directory).resolve()
+        bad = copy.deepcopy(SEED)
+        bad['found'] = SEED['found'] + [{
+            'id': 'inference-counter-1', 'claim': {'type': 'inference', 'scope': 'the refusal path'},
+            'checked': 'the cited investigation', 'observed': 'refusals pass through main',
+            'supported_by': [SEED['found'][0]['id']]}]
+        session = make(root / 'TEST-sessions', operator='agent')
+        run = Run(root, width, height, budget=2, replies=[bad, SEED], agent=True)
+        try:
+            run.open_shape()
+            run.wait('Keep records local or synced?')
+            os.write(run.master, b'\x1b[200~TEST local only\x1b[201~')
+            run.wait('TEST local only')
+            run.send(F2, 'Next: F2 looks into the next question.')
+            run.wait("The model's reply was refused, so nothing from it was saved: an inference must "
+                     'state its limits: what it does not establish.')
+            assert 'inference-counter-1' not in run.flat(), run.screen.text()
+            assert next(n for n in helper.load(session)['nodes'] if n['id'] == 'storage')['answer'] == 'TEST local only'
+            assert len(run.calls()) == 1, 'Rejection automatically retried'
+            run.send(F2, 'Seed draft r1')
+            reason = run.calls()[1]['input']['previous_refusal']['reason']
+            assert reason.startswith('Tinkery refused: node inference-counter-1: an inference must state its limits'), reason
+            print(json.dumps(dict(size=[width, height], case='inference', stub_calls=2, live_calls=0)))
+        finally:
+            run.close()
+
+
 if __name__ == '__main__':
+    for size in [(100, 30), (160, 40)]:
+        inference_journey(*size)
     for size in [(100, 30), (160, 40)]:
         for case in ['retry', 'success', 'stale', 'session', 'visit', 'folder', 'provider failure', 'storage failure', 'cancel', 'budget', 'bounded']:
             retry_journey(*size, case)

@@ -2126,7 +2126,9 @@ fn said(
         ));
     }
     let Failure {
-        answer_saved, why, ..
+        answer_saved,
+        why,
+        feedback,
     } = result.err()?;
     let saved = if answer_saved { doing.saved() } else { "" };
     let left = left.map_or_else(String::new, |left| format!(" {left}"));
@@ -2162,6 +2164,15 @@ fn said(
             ),
             None,
         ),
+        // A rule the model's reply broke: the retry hears the full reason; the screen says
+        // whose reply it was and the rule, without the ledger's node names (#649).
+        Why::Refused(reason) if feedback.is_some() => (
+            format!(
+                "{saved}The model's reply was refused, so nothing from it was saved: {}.{left}",
+                broken_rule(&reason)
+            ),
+            None,
+        ),
         Why::Refused(reason) => (format!("{saved}{reason}{left}"), None),
         Why::Stopped => (
             format!(
@@ -2170,6 +2181,16 @@ fn said(
             None,
         ),
     })
+}
+
+/// The rule in a refused reply's reason, without Tinkery's prefix or the node it names.
+fn broken_rule(reason: &str) -> &str {
+    let rule = reason.strip_prefix("Tinkery refused: ").unwrap_or(reason);
+    let rule = rule
+        .strip_prefix("node ")
+        .and_then(|named| named.split_once(": "))
+        .map_or(rule, |(_, rule)| rule);
+    rule.trim_end_matches('.')
 }
 
 fn plain(said: &str, next: &str, palette: Palette) -> Text<'static> {
