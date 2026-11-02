@@ -8,7 +8,7 @@ Not part of the zero-call suite (it needs a release build and takes minutes):
     python3 scripts/bench-menu.py --binary target/release/tinkery --samples 30 --sizes 0,5000
 
 The monotonic clock starts immediately before the process is spawned. "First frame" ends when
-the PTY output has delivered a finished synchronized update that shows all six places.
+the PTY output has delivered a finished synchronized update that shows all seven places.
 "Input" is the time from writing one Down arrow, right after that frame, until a finished frame
 shows the selection moved (tend's description appears). Page cache is warm: fixtures are written
 just before sampling and every sample reuses them; nothing here drops caches or claims a cold disk.
@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
 from vt_screen import Screen  # noqa: E402
 
 PLACES = ['think', 'tend', 'shape', 'approve', 'watch', 'taste', 'measure']
-TEND_LINE = 'Choose a saved goal and copy a prompt to continue.'
+TEND_LINE = 'Open saved goals'
 WIDTH, HEIGHT = 100, 30
 
 
