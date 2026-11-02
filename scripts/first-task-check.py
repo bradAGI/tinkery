@@ -87,7 +87,9 @@ def drafting(root):
             return False, f'Install Pi and log in, so `pi` is on PATH ({GUIDE}, step 3).'
         if root is not None and not pi_logged_in(root):
             return False, f'Log in to Pi: run `pi`, then /login ({GUIDE}, step 3).'
-        return False, f'Press m on the menu, choose a model and calls, then s to save ({GUIDE}, step 3).'
+        return False, (f'Press m on the menu, choose a model and calls, then s to save ({GUIDE}, step 3). '
+                       'An agent never uses a saved setup: the operator launches it with '
+                       '--shape-pi --model MODEL --shape-budget CALLS.')
     except (OSError, ValueError) as error:
         return False, f'{path} is unreadable: {error}'
     if not setup.get('model') or not setup.get('calls'):

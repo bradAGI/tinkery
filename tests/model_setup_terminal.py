@@ -247,6 +247,7 @@ def journey(no_color):
             terminal.wait(lambda _: '0 runs left' in header(terminal))
             terminal.send(b'TEST agent words', 'TEST agent words')
             pick(terminal, 'Model and runs')
+            terminal.wait(lambda screen: '--shape-budget CALLS' in ' '.join(screen.replace('│', ' ').split()))
             terminal.send(b's', "can't save a setup or add runs")
             terminal.send(DOWN * 4 + b'\r', '0 left · enter adds 5')
             assert '0 runs left' in header(terminal)

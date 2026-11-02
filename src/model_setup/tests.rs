@@ -239,6 +239,10 @@ fn only_s_writes_the_file_and_esc_leaves_it_alone() {
     controls.open();
     assert!(screen(&controls).contains("Harness   Pi"));
     assert!(screen(&controls).contains("Model     none"));
+    assert!(
+        !screen(&controls).contains("--shape-budget"),
+        "only an agent sees the grant"
+    );
     press(&mut controls, KeyCode::Down);
     press(&mut controls, KeyCode::Enter);
     typed(&mut controls, "anthropic/claude-test");
@@ -456,6 +460,10 @@ fn an_agent_sees_the_setup_but_cannot_save_it_or_add_calls() {
     )
     .for_agent();
     controls.open();
+    assert!(
+        screen(&controls).contains("--shape-budget"),
+        "agent panel names the grant"
+    );
     press(&mut controls, KeyCode::Char('s'));
     assert!(screen(&controls).contains("An agent can't save a setup or add runs"));
     for _ in 0..4 {

@@ -80,7 +80,7 @@ An unreadable or invalid file is refused with its path in the panel; explicit la
 still apply. The panel describes this launch separately from saved-file errors.
 An `--operator agent` launch never inherits saved runs,
 and its panel refuses to save or add runs: an agent's allowance is `--shape-budget` alone,
-given by the operator. No credentials and no Pi config are read; Claude Code uses its own
+given by the operator, and the agent's panel says so. No credentials and no Pi config are read; Claude Code uses its own
 login. [pi.rs](../../src/pi.rs) starts either harness with the same isolation, caps and budget
 ([#449](https://github.com/jon-devlapaz/tinkery/issues/449)). There is no build harness row:
 nothing in Tinkery starts a build

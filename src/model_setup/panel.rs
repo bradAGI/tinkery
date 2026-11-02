@@ -23,8 +23,9 @@ use crate::{Palette, pi::CallBudget};
 
 /// Drafting runs one `enter` on the Now row adds.
 const TOP_UP: usize = 5;
-/// Why an agent's panel only shows: its allowance is the operator's to give.
-const AGENT: &str = "An agent can't save a setup or add runs; the operator does.";
+/// Why an agent's panel only shows, and where its runs come from instead.
+const AGENT: &str =
+    "An agent can't save a setup or add runs; the operator grants them with --shape-budget CALLS.";
 /// The note while Pi lists its models.
 const LISTING: &str = "Listing Pi's models…";
 
@@ -101,6 +102,7 @@ impl Controls {
     pub fn open(&mut self) {
         let note = match &self.saved {
             Err(why) => why.clone(),
+            Ok(_) if self.agent => AGENT.into(),
             Ok(_) => "Saved changes start with the next launch.".into(),
         };
         self.panel = Some(Panel {

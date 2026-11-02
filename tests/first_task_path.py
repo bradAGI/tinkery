@@ -158,6 +158,7 @@ def main():
         (agent / 'auth.json').write_text(json.dumps({'test-provider': {'type': 'oauth', 'refresh': 'TEST'}}))
         out = shell(readiness, env, root, waiting=True)
         assert out.splitlines()[-1].startswith('Next: Press m on the menu'), out
+        assert '--shape-budget CALLS' in out.splitlines()[-1], out
         (home / '.config/tinkery').mkdir(parents=True)
         (home / '.config/tinkery/model.json').write_text(json.dumps(
             {'harness': 'pi', 'model': PIN.rsplit(':', 1)[0], 'thinking': 'low', 'calls': 4}))
