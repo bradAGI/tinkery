@@ -89,6 +89,7 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `taste.rs`, `taste/read.rs` | One result's unchanged goal, revision-bound observations and external copy handoff; explicitly mapped PRs, read-only status/GitHub reads and deliberate browser navigation, never a verdict or agent launch. |
 | `taste/preview.rs` | Exact-head repo preview declarations, local HTTP readiness and explicitly launched temporary checkout/process ownership; no inferred commands, public URLs, agent or verdict. |
 | `taste/next.rs` | Deterministic post-acceptance pause and next-dump proposal from snapshot evidence; no model, verdict, structural diagnosis or permission. The menu alone passes its unsent draft to Think. |
+| `taste/label.rs` | The operator's label form and its one write through the checkout's `sdlc.py label`, only on F2, words unchanged; never a verdict, approval or agent. |
 | `taste/view.rs` | Count-only result blocks, palette-bound headings and statuses, verbatim hanging check wraps and separately requested evidence; no source reads, gate derivation or copy formatting. |
 | `taste/links.rs`, `taste/evidence.rs` | The run's own recorded PR (API 1 `pr`), unknown when absent or malformed; source-owned log pointers and check methods as evidence references, never prose parsing, a mapping store, log reads or check execution. |
 

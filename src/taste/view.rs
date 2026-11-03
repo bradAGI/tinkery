@@ -379,6 +379,69 @@ pub(super) fn detail(
     lines
 }
 
+/// The unsent label: the run, the four kinds with the chosen one marked, and the words as typed.
+pub(super) fn label_form(
+    row: &ResultRow,
+    form: &super::label::Form,
+    note: &str,
+    width: u16,
+    p: Palette,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    heading(&mut lines, "Label this run", p.ink);
+    block(
+        &mut lines,
+        Span::raw("  "),
+        &format!("Run: {}", safe(&row.slug)),
+        width,
+        p.muted,
+    );
+    heading(&mut lines, "Kind", p.ink);
+    for (number, kind) in super::label::Kind::ALL.iter().enumerate() {
+        let chosen = form.kind == Some(*kind);
+        lines.push(Line::styled(
+            format!(
+                "{} {} {}",
+                if chosen { "  ›" } else { "   " },
+                number + 1,
+                kind.word()
+            ),
+            if chosen { p.jade } else { p.ink },
+        ));
+    }
+    heading(&mut lines, "Your words", p.ink);
+    if form.kind.is_none() {
+        block(
+            &mut lines,
+            Span::raw("  "),
+            "Choose a kind first.",
+            width,
+            p.muted,
+        );
+    } else {
+        block(
+            &mut lines,
+            Span::raw("  "),
+            &format!("{}▏", safe(&form.words)),
+            width,
+            p.ink,
+        );
+    }
+    if !note.is_empty() {
+        lines.push(Line::default());
+        block(&mut lines, Span::raw("  "), &safe(note), width, p.ink);
+    }
+    lines.push(Line::default());
+    block(
+        &mut lines,
+        Span::raw("  "),
+        "F2 saves it with tink-sdlc, signed with this checkout's git user.name. A label records what you said; it approves and merges nothing.",
+        width,
+        p.muted,
+    );
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

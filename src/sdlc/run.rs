@@ -109,7 +109,16 @@ pub(crate) fn execute(
 ) -> Result<String, String> {
     let program = command.get_program().to_string_lossy().into_owned();
     let status_read = program == "python3";
-    let name = if status_read { "status" } else { &program };
+    // An sdlc.py failure names its subcommand (status, label), never Python.
+    let subcommand = command
+        .get_args()
+        .nth(1)
+        .map(|arg| arg.to_string_lossy().into_owned());
+    let name = match (status_read, &subcommand) {
+        (true, Some(sub)) => sub.as_str(),
+        (true, None) => "status",
+        (false, _) => &program,
+    };
     let mut child = command
         .current_dir(root)
         .stdin(Stdio::null())
