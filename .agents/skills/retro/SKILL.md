@@ -34,7 +34,8 @@ unrequested changes. Tinkery's rules live in [AGENTS.md](../../../AGENTS.md) and
   and propose the leftmost one, per Yohaku's [move each correction left](../../../docs/yohaku.md#for-anyone-changing-tinkery-human-or-agent).
   Count corrections apart from required decisions (confirm, approve, merge): a fix may
   remove a correction, never a decision. As a label command:
-  `python3 _system/scripts/sdlc.py label <run> --kind correction --words '<their words, verbatim>' --reviewer <operator> --source 'retro <date>: fix in <layer>' [--about <run file>|outside]`.
+  `python3 _system/scripts/sdlc.py label <run> --kind correction --words <their words> --reviewer <operator> --source <'retro DATE: fix in LAYER'> [--about <checkout-relative file>|outside]`.
+  Shell-quote each value (as Python's `shlex.quote` does) so the words stay verbatim.
   With no corrections, propose `--kind none --words 'No corrections'`; a run closes only
   once labelled.
 - **Tool economy:** identify expensive, repetitive or token-heavy calls, CLIs and MCP tools.

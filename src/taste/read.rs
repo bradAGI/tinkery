@@ -282,14 +282,19 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
     Ok(())
 }
 
+/// GitHub owner and repo names are case-insensitive; anything else must match the record exactly.
+fn same_pr(pr: &Value, row: &ResultRow) -> bool {
+    matches!((pr["url"].as_str(), row.url.as_deref()), (Some(a), Some(b)) if a.eq_ignore_ascii_case(b))
+}
+
 fn remote(pr: &Value, row: &mut ResultRow) -> Result<(), String> {
     row.head = Some(
         commit(&pr["headRefOid"])
             .ok_or("PR revision unavailable.")?
             .to_owned(),
     );
-    if pr["url"].as_str() != row.url.as_deref() {
-        return Err("PR identity disagrees with the explicit input.".into());
+    if !same_pr(pr, row) {
+        return Err("PR identity disagrees with the run's record.".into());
     }
     for check in pr["statusCheckRollup"]
         .as_array()
@@ -446,9 +451,12 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
                 row.url = Some(url.clone());
                 match gh(&root, &url, stop) {
                     Ok(pr) => {
-                        if pr["url"].as_str() != row.url.as_deref() { return Err("GitHub's PR identity disagrees with the run's record; check it and press r.".into()); }
-                        if !listed(&pr, &mut row)? { continue; }
-                        if let Err(why) = remote(&pr, &mut row) { row.head = None; row.items.clear(); row.gaps.push(why); }
+                        if !same_pr(&pr, &row) {
+                            row.gaps.push("GitHub names a different PR than the run recorded (renamed or moved?); result revision unknown.".into());
+                        } else {
+                            if !listed(&pr, &mut row)? { continue; }
+                            if let Err(why) = remote(&pr, &mut row) { row.head = None; row.items.clear(); row.gaps.push(why); }
+                        }
                     }
                     Err(_) => row.gaps.push("Couldn't read GitHub. Check gh authentication/access, then press r; result revision unknown.".into()),
                 }

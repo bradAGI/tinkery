@@ -107,6 +107,10 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             state['detail']['run']['pr'] = None
         elif mapping_case == 'malformed':
             state['detail']['run']['pr']['url'] = 'TEST/clinic-tycoon#1'
+        elif mapping_case == 'moved':  # GitHub answers for a different PR than the record
+            state['pr']['url'] = 'https://github.com/TEST/other-repo/pull/1'
+        elif mapping_case == 'case':  # owner/repo case differs only; the record still holds
+            state['pr']['url'] = URL.replace('TEST/clinic-tycoon', 'test/Clinic-Tycoon')
         statefile, log, pid = base / 'state.json', base / 'calls', base / 'pid'
         statefile.write_text(json.dumps(state))
         binary = base / 'bin'
@@ -191,8 +195,10 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             send(b'\x1b', 'Press r to read results')
             send(b'r', '›  TEST café')
             assert 'enter/v open result' in screen.text() and 'a/c copy' in screen.text()
-            if mapping_case != 'valid':
-                assert len(calls()) == 2 and not any('pr' in call for call in calls()), calls()
+            if mapping_case not in ('valid', 'case'):
+                github = 1 if mapping_case == 'moved' else 0
+                assert len(calls()) == 2 + github, calls()
+                assert sum('pr' in call for call in calls()) == github, calls()
                 send(b'\r', 'Checks')
                 assert 'waiting: revision unknown  Allocation works' in screen.text(), screen.text()
                 send(b'\x1b[F', 'Commit: unknown')
@@ -204,7 +210,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 process.wait(timeout=5)
                 assert process.returncode == 0 and tree(checkout) == original
                 print(json.dumps(dict(journey='Taste mapping refusal', mapping=mapping_case,
-                                      width=width, height=height, no_color=no_color, gh_calls=0)))
+                                      width=width, height=height, no_color=no_color, gh_calls=github)))
                 return
             assert len(calls()) == 3, calls()
             assert all('--web' not in c for c in calls())
@@ -484,5 +490,5 @@ if __name__ == '__main__':
         for no_color in (False,):
             for next_case in ['accept', 'correct', 'nothing unmet', 'merged', 'absent ci', 'failed', 'receipts elsewhere']:
                 journey(*dimensions, no_color, next_case=next_case)
-    for case in ['missing', 'malformed']:
+    for case in ['missing', 'malformed', 'moved', 'case']:
         journey(80, 24, True, case)

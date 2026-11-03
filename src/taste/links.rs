@@ -6,26 +6,29 @@ use serde_json::Value;
 
 /// The PR the run recorded for itself, or why it is unknown. Never reads files or contacts GitHub.
 pub(super) fn recorded(run: &Value) -> Result<String, String> {
-    let slug = run["slug"].as_str().unwrap_or("RUN");
     let url = match &run["pr"] {
         Value::Null => {
-            return Err(format!(
-                "Result unknown: no PR recorded for this run. Once it is open: \
-                 python3 _system/scripts/sdlc.py pr {slug} PR_URL"
-            ));
+            return Err(
+                "Result unknown: no PR recorded for this run; its status says how to record one."
+                    .into(),
+            );
         }
         pr => pr["url"].as_str().unwrap_or(""),
     };
     if !canonical_pr_url(url) {
-        return Err("The run's recorded PR is not a full GitHub PR URL; repair it externally, then press r.".into());
+        return Err(
+            "The run's recorded PR is not a full GitHub PR URL; Taste won't read it.".into(),
+        );
     }
     Ok(url.into())
 }
 
 fn canonical_pr_url(url: &str) -> bool {
-    regex::Regex::new(r"^https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
-        .unwrap()
-        .is_match(url)
+    static PR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$")
+            .unwrap()
+    });
+    PR.is_match(url)
         && !url
             .split('/')
             .nth(4)
@@ -34,9 +37,11 @@ fn canonical_pr_url(url: &str) -> bool {
 
 /// Source run IDs must use the canonical lowercase UUIDv4 spelling.
 pub(super) fn canonical_run_id(id: &str) -> bool {
-    regex::Regex::new(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-        .unwrap()
-        .is_match(id)
+    static ID: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+            .unwrap()
+    });
+    ID.is_match(id)
 }
 
 #[cfg(test)]
@@ -52,10 +57,7 @@ mod tests {
             URL
         );
         let missing = recorded(&json!({"slug": "TEST-result", "pr": null})).unwrap_err();
-        assert!(
-            missing.contains("sdlc.py pr TEST-result PR_URL"),
-            "{missing}"
-        );
+        assert!(missing.contains("no PR recorded"), "{missing}");
         assert!(
             recorded(&json!({"slug": "TEST-result"})).is_err(),
             "older tink-sdlc has no pr field"

@@ -18,11 +18,13 @@ actions return when a result is selected; this changes guidance, not key behavio
 
 Each run records its own PR with tink-sdlc's `sdlc.py pr` (1.50.0 and later), and
 API 1 per-run `status --json` reports it as `pr.url`. That record is the only link:
-handoff prose is not a machine interface, and neither a slug, branch, title, handoff
-file nor another run's record can supply it, so recreating a slug with a new run ID
-cannot inherit the old PR. A run without a recorded PR, or with a URL that is not a
-full `https://github.com/OWNER/REPO/pull/NUMBER`, keeps an unknown-result row that
-names the `sdlc.py pr` command. Tinkery stores no mapping and launches take no PR input.
+handoff prose is not a machine interface, and neither a slug, branch, title nor handoff
+file can supply it. Taste reads `pr` only from the per-run status whose run ID matches
+the list. A run without a recorded PR keeps an unknown-result row; the run's own status
+says how to record one. tink-sdlc reports a malformed record as an invalid run, and
+Taste also refuses any URL that is not a full `https://github.com/OWNER/REPO/pull/NUMBER`.
+If GitHub names a different PR (owner and repo compare case-insensitively), the row
+stays unknown. Tinkery stores no mapping and launches take no PR input.
 
 Only `r` reads result metadata from GitHub, via `gh pr view <recorded URL> --json` using the operator's
 login. Read the current head, state and PR-head checks. Recorded open and

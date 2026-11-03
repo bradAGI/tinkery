@@ -243,7 +243,7 @@ impl Taste {
                     }));
                 } else {
                     self.notice =
-                        "PR link unknown; record it with sdlc.py pr, then press r.".into();
+                        "No usable recorded PR for this result; its run status says what to record.".into();
                 }
             }
             KeyCode::Char('l') if self.reading.is_none() && self.opening.is_none() => {
