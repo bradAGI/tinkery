@@ -627,7 +627,9 @@ Shape uses Think's
   verbatim before Affected users and systems, then displays that saved card.
   No check executes during the interview.
   Copy settled commands exactly. Repository-grounded proposals name source paths
-  and lines in `source`; behavior-specific regressions name the assertion expected
+  and lines in `source`. A proposed command must run in the checkout as cloned: setup
+  that CI, tox, a Makefile or package scripts do before the runner goes into `cmd`,
+  preferring forms that change nothing outside the checkout (#657). Behavior-specific regressions name the assertion expected
   to fail before the change or under targeted reversion. Inspection is not observed
   red or green. Routine setup or an unperformed reversion probe does not make an
   existing check provisional; missing assertions, tests or invocations do, with

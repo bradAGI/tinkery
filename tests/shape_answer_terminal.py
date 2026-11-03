@@ -1338,6 +1338,44 @@ def sdlc_root_read_folder(width, height):
             run.close()
 
 
+def runnable_as_cloned(width, height):
+    """A tox-only src-layout checkout: the prompt asks for commands that run as cloned (#657).
+
+    Stubs prove the rule reaches the model and the proposed command is stored verbatim,
+    not that a live model follows it; the live check is reported on #657.
+    """
+    with tempfile.TemporaryDirectory(prefix='tinkery-TEST-as-cloned-') as directory:
+        cwd = Path(directory).resolve()
+        session = make(cwd / 'TEST-sessions', question=False)
+        checkout = cwd / 'TEST-checkout'
+        for path, text in {'.git/HEAD': 'ref: refs/heads/main\n',
+                           'tox.ini': '[testenv]\ncommands = python -m unittest {posargs}\n',
+                           'src/minitoml/__init__.py': 'def loads(text):\n    return {}\n',
+                           'tests/test_parse.py': 'import minitoml\n'}.items():
+            (checkout / path).parent.mkdir(parents=True, exist_ok=True)
+            (checkout / path).write_text(text)
+        command = 'PYTHONPATH=src python -m unittest tests.test_parse'
+        checks = SEED['checks'] + [{'statement': 'TEST empty inline tables parse', 'kind': 'cmd',
+                                    'source': 'tox.ini:2', 'cmd': command, 'expect': 'OK', 'cwd': '.'}]
+        reply = {**SEED, 'found': [], 'checks': checks, 'review': completion_review(checks)}
+        run = Run(cwd, width, height, budget=1, replies=[reply], sdlc_root=checkout)
+        try:
+            run.open_shape()
+            run.wait('The step reads files in TEST-checkout. F1 picks another folder.')
+            run.send(F2, 'Seed draft r1')
+            [call] = run.calls()
+            assert call['cwd'] == str(checkout), call['cwd']
+            prompt = call['argv'][call['argv'].index('--system-prompt') + 1]
+            for rule in ['A proposed command must run in the checkout as cloned',
+                         'never copy a runner without the setup it relies on']:
+                assert rule in prompt, f'Missing #657 prompt rule: {rule}'
+            saved = helper.read_checks(session)
+            assert [c.get('cmd') for c in saved] == [None, command], saved
+            print(f'Shape #657 as-cloned rule passed at {width}x{height}: tox-only checkout, 1 stub call')
+        finally:
+            run.close()
+
+
 def teach_back(width, height, exhausted=False):
     """Capture is explicit and budget-gated; even reported mismatches leave confirming available."""
     with tempfile.TemporaryDirectory(prefix='tinkery-TEST-teach-back-') as directory:
@@ -1654,6 +1692,8 @@ if __name__ == '__main__':
         prerequisite_questions(*size)
     for name in ['settled prerequisites', 'unknown prerequisite', 'cyclic prerequisite']:
         case(name)
+    for size in small:
+        runnable_as_cloned(*size)
     for size in both:
         sdlc_root_read_folder(*size)
         answer_actions(*size)
