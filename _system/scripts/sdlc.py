@@ -6,10 +6,12 @@ import errno
 import fnmatch
 import fcntl
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import signal
 import stat
@@ -854,8 +856,7 @@ def verify(args):
                 missing = [i for i in attested if marked.get(i, {}).get('result') != 'passed'
                            or (i in seed_results and seed_results[i] != 'attested')]
                 if missing:
-                    raise ValueError(f"Checklist incomplete: {', '.join(missing)} "
-                                     f'(mark them with: sdlc.py mark {args.run} <id> passed --evidence "...")')
+                    raise ValueError(f"Checklist incomplete: {', '.join(missing)} ({mark_hint(args.run, items, missing)})")
                 proof = {'checklist_items': {item['id']: 'proven' if 'check' in item else 'attested'
                                              for item in items if not is_seed_check(item)}}
                 if seed_results:
@@ -997,6 +998,16 @@ def checklist_view(path, verified=False):
                        'needs_recheck': bool(not automatic and record and state == 'passed'
                                              and tree is not None and record.get('candidate') != tree)})
     return {'state': 'defined' if items else 'empty', 'items': result}
+
+
+def mark_hint(run, items, missing):
+    """The mark command each missing item accepts: seed checks also name the operator's attestation."""
+    attested = {item['id'] for item in items if item.get('operator_attestation')}
+    groups = [(ids, flags) for ids, flags in (([i for i in missing if i not in attested], ''),
+                                              ([i for i in missing if i in attested], " --reviewer 'REVIEWER' --source 'SOURCE'"))
+              if ids]
+    return '; '.join(f"mark {'them' if len(groups) == 1 else ', '.join(ids)} with: "
+                     f'sdlc.py mark {run} <id> passed --evidence "..."{flags}' for ids, flags in groups)
 
 
 def checklist_text(view):
@@ -1176,21 +1187,23 @@ def status_state(path):
                           'question': 'Accept these departures from the confirmed seed?' if needs_review else None}
             if first_gate and first_gate['stage'] == 3 and departures:
                 gate_reason = definition['question'] + ' Record only the actual human decision.'
+    steps = step_facts(path)
     unavailable = 'A writer already owns this run.' if active else gate_reason
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
     checks = (config['checks'] if config else []) + [i['check'] for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
-    next_action = unavailable or (errors[0] if errors else '') or {
+    next_action = unavailable or worker_action(path.name, steps, newest_step(path)) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
         'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',
     }.get(state, (f'Building in {building}; read status there.' if (building := build_checkout(path.name)) else
-                  f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
-                  if meta.get('seed_contract') else 'implement the approved brief, then run verification.'))
+                  fix_step_action(path, steps, newest_step(path)) or
+                  (f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
+                   if meta.get('seed_contract') else 'implement the approved brief, then run verification.')))
     if ROOT != HOME:
         next_action = f'In {ROOT}: {next_action}'
     bound = meta.get('seed_contract')
@@ -1200,7 +1213,7 @@ def status_state(path):
     return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract,
             **({'checkout': str(ROOT)} if ROOT != HOME else {}),
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
-            'gates': gates, 'verification_status': state, 'has_lock': active,
+            'gates': gates, 'verification_status': state, 'has_lock': active, 'steps': steps,
             **({'definition': definition} if definition is not None else {}),
             'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
             'checklist': checklist['items'], 'checklist_state': checklist['state'],
@@ -2196,15 +2209,96 @@ def step_adapter(record, operation, contract, resolve=False):
 NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, stopped, failed or still running)'
 
 
-def observed_turn(record, contract):
-    """What the adapter's offline finished probe sees now; shown beside the record, never stored.
+def probe_turn(record, contract):
+    """What the adapter's offline finished probe sees now, as (turn, words); never stored.
     `active` alone cannot tell a running agent from an ended turn (tinkery#615)."""
     try:
         step_paths(record)
         ended = step_adapter(record, 'finished', contract)['finished']
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
-        return f'unknown: {error}'
-    return 'ended: read the report, then complete the step' if ended else f'not ended: {NOT_FINISHED}'
+        return 'unknown', f'unknown: {error}'
+    if ended:
+        return 'ended', 'ended: read the report, then complete the step'
+    return 'not-ended', f'not ended: {NOT_FINISHED}'
+
+
+def observed_turn(record, contract):
+    return probe_turn(record, contract)[1]
+
+
+def step_facts(path):
+    """Each pinned step's recorded state, by name; an active one adds what its adapter sees now."""
+    facts = []
+    for contract in sorted((path / 'steps').glob('*.json')):
+        record = None
+        with contextlib.suppress(ValueError, OSError):
+            record = read_json(contract)
+        state = record.get('state') if isinstance(record, dict) else None
+        if state not in ('prepared', 'active', 'uncertain', 'completed'):
+            facts.append({'name': contract.stem, 'state': 'unreadable'})
+            continue
+        fact = {'name': contract.stem, 'state': state}
+        if state == 'active':
+            fact['turn'], fact['observed_turn'] = probe_turn(record, contract)
+        facts.append(fact)
+    return facts
+
+
+def newest_step(path):
+    """The most recently prepared step's name. Contracts without a prepare time (older runtimes)
+    count as oldest and order among themselves by name; unreadable ones count too."""
+    newest = None
+    for contract in (path / 'steps').glob('*.json'):
+        record = None
+        with contextlib.suppress(ValueError, OSError):
+            record = read_json(contract)
+        prepared = record.get('prepared_ns') if isinstance(record, dict) else None
+        key = (prepared if type(prepared) is int else 0, contract.stem)
+        newest = max(newest, key) if newest else key
+    return newest[1] if newest else None
+
+
+def worker_action(slug, steps, newest=None):
+    """The next action an active step owes, so a run never reads as being worked on by nobody.
+    An uncertain step owes reconciliation while it is the newest step; preparing another ends that."""
+    step = next((s for s in steps if s['state'] == 'active'), None)
+    if step is None:
+        step = next((s for s in steps if s['state'] == 'uncertain' and s['name'] == newest), None)
+    if step is None:
+        return ''
+    command = f"python3 _system/scripts/sdlc.py step {slug} {step['name']}"
+    if step['state'] == 'uncertain':
+        return (f"The {step['name']} step's launch or resume did not confirm; a worker may still be running. "
+                f'Inspect it with {command} show and the actual harness or session, then reconcile that session '
+                'before explicitly preparing another uniquely named step.')
+    if step['turn'] == 'ended':
+        return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
+    if step['turn'] == 'not-ended':
+        return f"The {step['name']} worker has not ended its turn. Check it with {command} show."
+    return f"Whether the {step['name']} worker is running is {step['observed_turn']}"
+
+
+def fix_step_action(path, steps, newest):
+    """After lock-tests, the command that prepares the fix's step: a completed build step cannot be prepared again.
+    Says nothing once a step has been prepared since the lock, or while any step is unfinished or unreadable."""
+    lock = path / 'test-lock.json'
+    if not lock.is_file() or not steps or any(s['state'] != 'completed' for s in steps):
+        return ''
+    try:
+        record = read_json(path / 'steps' / f'{newest}.json')
+        prepared, report = record['prepared_ns'], Path(record['report'])
+        pins = f"--model {shlex.quote(record['model'])} --launcher {shlex.quote(record['launcher'])}"
+        locked_ns = lock.stat().st_mtime_ns
+    except (ValueError, OSError, KeyError, TypeError):
+        return ''
+    if type(prepared) is not int or prepared > locked_ns:
+        return ''
+    names = {s['name'] for s in steps}
+    name = next(n for n in (f'fix-{i}' if i else 'fix' for i in itertools.count())
+                if n not in names and not (report.parent / f'{n}-report.md').exists())
+    return (f'The failing test is locked; prepare a new step for the fix (a completed step cannot be prepared again): '
+            f'python3 _system/scripts/sdlc.py step {path.name} {name} prepare '
+            f"--report {shlex.quote(str(report.parent / f'{name}-report.md'))} {pins}, then launch it.")
 
 
 def step(args):
@@ -2228,6 +2322,9 @@ def step(args):
         return
     with locked(path / '.writer-lock'):
         if args.action == 'prepare':
+            if building := build_checkout(args.run):
+                raise ValueError(f'Run {args.run} builds in {building}; prepare its steps there '
+                                 f'(cd {shlex.quote(building)} first), so the worker writes where the build lives.')
             if contract.exists():
                 raise ValueError('Step already exists; inspect it instead of replacing its contract.')
             report = step_absolute(args.report, 'Step report')
@@ -2237,7 +2334,8 @@ def step(args):
                 raise ValueError('Step report already exists; choose a fresh destination, never reuse old evidence.')
             record = {'schema': 1, 'run_id': meta['run_id'], 'checkout': str(ROOT),
                       'report': str(report), 'model': model, 'launcher': str(launcher),
-                      'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None}
+                      'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None,
+                      'prepared_ns': time.time_ns()}
             step_paths(record)
             write_json(contract, record)
         else:

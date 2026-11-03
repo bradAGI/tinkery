@@ -207,7 +207,7 @@ python3 _system/scripts/sdlc.py lock-tests fix-example tests/test_regression.py 
   --failure-evidence 'Actual failing CI job or retained reproduction evidence'
 ```
 
-Include relevant fixtures, snapshots, discovery configuration, and runner helpers in the locked paths. Bug runs cannot verify without a lock; changed or missing locked files fail. Add `--reproduce '["python3","-m","unittest","tests.test_regression"]'` (a JSON argv array) to run the reproduction at lock time: the lock is refused if it passes, and the exit code and log digest are recorded and shown by `status` (`reproduction` in `status --json`). Without it the lock records review evidence only, `status` says the failure was not run locally, and CI must confirm it. A mistaken baseline requires an independently reviewed replacement run, linked to the previous one; tests are never unlocked silently.
+Include relevant fixtures, snapshots, discovery configuration, and runner helpers in the locked paths. Bug runs cannot verify without a lock; changed or missing locked files fail. Add `--reproduce '["python3","-m","unittest","tests.test_regression"]'` (a JSON argv array) to run the reproduction at lock time: the lock is refused if it passes, and the exit code and log digest are recorded and shown by `status` (`reproduction` in `status --json`). Without it the lock records review evidence only, `status` says the failure was not run locally, and CI must confirm it. A completed build step cannot be prepared again, so prepare the fix as a new step; once the step before the lock has completed, `status` names that command. A mistaken baseline requires an independently reviewed replacement run, linked to the previous one; tests are never unlocked silently.
 
 This detects local changes, not adversarial tampering. Strict protection requires CI to fetch the accepted test revision independently, protect verification policy, run against the candidate revision, and require the resulting check before merge. Agent-writable lock files and hooks are not an authorization boundary. This scaffold does not configure a forge or deployment environment.
 
@@ -307,11 +307,12 @@ python3 _system/scripts/sdlc.py step <run> build complete
 These are separate deliberate actions, not a script to run without inspection.
 `prepare` writes `runs/<run>/steps/<name>.json` (schema 1): canonical checkout,
 run ID, canonical absolute report path, exact model, canonical launcher path and
-its SHA-256, plus state and session identity. It starts nothing. Names are unique
+its SHA-256, plus state, session identity and when it was prepared (`prepared_ns`; older contracts lack it and order by name). It starts nothing. Names are unique
 within a run; prepare refuses an existing contract or report. Relative report paths,
 model aliases/wildcards, changed launchers, copied contracts in another checkout,
 path substitutions and launch/resume overrides are refused. Prepare a new step
-in a new checkout; contracts are not portable session records.
+in a new checkout; contracts are not portable session records. While the run's
+branch is checked out in another worktree, prepare refuses here and names that checkout.
 
 `launch` and `resume` recheck every definition gate and perform offline exact-model
 resolution before admitting a provider-capable adapter operation. Both receive the
@@ -337,7 +338,7 @@ still-running agent leaves the step `active`: resume it, then complete. For an a
 read now, never stored, and makes no provider request. Missing reports refuse completion: no root
 fallback, copying or invented report. A report is not proof of passing checks,
 authenticated authorship, approval, or release; existing `verify` and forge gates
-remain independent. API 1 status and capabilities are unchanged.
+remain independent. Status reports each step, below; capabilities are unchanged.
 
 ### Trusted launcher adapter contract
 
@@ -496,7 +497,7 @@ Runs are created atomically and have one writer at a time; busy or interrupted o
 
 Use protected branches, current required CI, independent code-owner approval and deployment checks in your forge. Open the PR once the candidate is committed and verification is current (end of stage 4; `stage <slug> 5` enforces it); stages 1-2 need none, and a draft PR during build is not review. Delivery, merge authority and the no-`origin` warning are owned by `stages/05-deploy/CONTEXT.md`; `stage <slug> 3` prints that warning early, without refusing. PR creation and review findings do not prove deployment: keep deployed revision, result and rollback references in the deployment system.
 
-A run ends when its closure record exists: after review and rework, commit `runs/<run>/closure.md` (PR URL, merge revision, outcome), then record it with `python3 -m tink_substrate archive --checkout <path> --project <repo> --run <run> --phase closure` (see tink-substrate's `docs/finish-a-change.md`); strip only after that. `status` describes candidate evidence and never marks a run merged or closed.
+A run ends when its closure record exists: after review and rework, commit `runs/<run>/closure.md` (PR URL, merge revision, outcome). `status` describes candidate evidence and never marks a run merged or closed.
 
 Maintenance is optional intake, not a required completion stage. Enable it only after defining metric-specific thresholds, deduplication, cooldowns, and run limits. Alerts create drafts for service-owner triage, never fabricated approvals.
 
@@ -573,6 +574,10 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   than being coerced into display text. Also included: `verification_config`
   (display-only checks/policy or null), `errors`, `next_action`, and `cli_status`
   (display-only human output). Human and machine status share one calculation.
+- `steps`: each pinned build step by `name`, with its `state` (`prepared`, `active`,
+  `uncertain`, `completed`, or `unreadable`) and, when active, `turn` (`ended`, `not-ended`
+  or `unknown`) with the same `observed_turn` words as `step show`. Read `turn`; the words may change. An active step's turn, or else the newest step when it is uncertain, sets `next_action` (after gates and locks), so a run that nothing is building
+  is never mistaken for running work, and one that may be is never mistaken for idle. Older runtimes omit the field: absence means unknown.
 - `log`: `path` (checkout-relative, regular UTF-8 file), `text` (last 256 KiB,
   decoded with replacement), and `truncated`. The advertised path stays fixed
   for that verification invocation; the runtime may truncate/rewrite it on start.

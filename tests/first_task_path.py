@@ -18,8 +18,8 @@ import test_launch as subprocess
 
 REPO = Path(__file__).resolve().parents[1]
 GUIDE = (REPO / 'docs/first-task.md').read_text()
-# tink-sdlc 1.48.3 (seed attestation mark hints, PR #140).
-SDLC_REF = '9cc66663410183c5b17bae762592608431f04092'
+# tink-sdlc 1.49.0 (fix-step hint, prepare refuses outside the build worktree, PR #145).
+SDLC_REF = 'ecf060b347192de94335a0388ac3382d7f592ce3'
 PIN = 'test-provider/pinned-v1:low'
 # A stand-in for Pi: writes a session the way Pi does and answers once on --model.
 FAKE_PI = '''#!/usr/bin/env python3
