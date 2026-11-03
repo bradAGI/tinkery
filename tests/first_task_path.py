@@ -198,6 +198,7 @@ def main():
         out = shell(run_vars + stage, env, root)
         assert 'Stage 3: approved' in out and 'matches confirmed seed' in out, out
         score.append('7 stage')
+        run_vars += 'build="$project"\n'  # step 7 ran with --here
 
         # 8. The pin checks out offline, then one pinned step launches the stand-in Pi.
         [start] = blocks('8. Start the worker')
