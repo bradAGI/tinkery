@@ -71,9 +71,8 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   `status --json` when opened or on `r`, runs waiting on you first. Matched runs show their
   exact saved goal; changed or missing originals stay unknown. It runs only read-only
   status commands and changes no records.
-- **Taste:** menu place 6 uses `--sdlc-root PATH` and repeatable launch-only
-  `--taste-result RUN_ID=PR_URL` inputs (canonical run UUIDv4, full GitHub PR URL).
-  `r` explicitly reads runs and those PRs; handoff prose supplies no links.
+- **Taste:** menu place 6 uses `--sdlc-root PATH`. `r` explicitly reads runs and the PR
+  each run recorded with `sdlc.py pr`; handoff prose supplies no links.
   Review the unchanged goal, exact commit, matching
   check states and plain owed gates. `o` opens the PR; `a`/`c` copy external review
   handoffs, recording no verdict and merging nothing. After accepting externally,

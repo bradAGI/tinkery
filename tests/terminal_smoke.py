@@ -21,7 +21,7 @@ result = subprocess.run([str(BINARY)], env=ENV, capture_output=True)
 assert result.returncode != 0 and b'needs a terminal' in result.stderr
 result = subprocess.run([str(BINARY), '--unknown'], env=ENV, capture_output=True)
 assert result.returncode != 0 and b'unknown argument' in result.stderr
-for removed in ('--scratchpad', '--workbench', '--seed-me'):
+for removed in ('--scratchpad', '--workbench', '--seed-me', '--taste-result'):
     result = subprocess.run([str(BINARY), removed], env=ENV, capture_output=True)
     assert result.returncode != 0 and f'unknown argument: {removed}'.encode() in result.stderr
 for arguments, error in [
@@ -29,27 +29,15 @@ for arguments, error in [
     (['--model', 'test/model'], b'require --shape-pi'),
     (['--thinking', 'low'], b'require --shape-pi'),
     (['--record-root', ''], b'--record-root needs a folder'),
-    (['--taste-result'], b'--taste-result needs RUN_ID=PR_URL'),
-    (['--taste-result', 'TEST-run=https://github.com/TEST/example/pull/1'], b'canonical lowercase UUIDv4'),
-    (['--taste-result', '00000000-0000-4000-8000-000000000114=TEST/example#1'], b'full canonical'),
     (['--shape-pi', '--model', 'bare'], b'explicit model: provider/model-id'),
-    # Think alone has no Watch, Approve or Taste, so their inputs are refused, not ignored.
-    (['--snapshot', '--sdlc-root', 'TEST-sdlc'], b'require --home'),
-    (['--snapshot', '--taste-result', '00000000-0000-4000-8000-000000000114=https://github.com/TEST/example/pull/1'],
-     b'require --home'),
+    # Think alone has no Watch, Approve or Taste, so their input is refused, not ignored.
+    (['--snapshot', '--sdlc-root', 'TEST-sdlc'], b'requires --home'),
 ]:
     result = subprocess.run([str(BINARY), *arguments], env=ENV, capture_output=True)
     assert result.returncode != 0 and error in result.stderr, (arguments, result.stderr)
     assert b'\x1b' not in result.stdout
 
-mapping = '00000000-0000-4000-8000-000000000114=https://github.com/TEST/example/pull/1'
-for declarations in ([mapping], [mapping, mapping], [mapping, mapping.replace('/pull/1', '/pull/2')]):
-    arguments = [str(BINARY), '--operator', 'agent', '--home', '--snapshot']
-    for declaration in declarations:
-        arguments += ['--taste-result', declaration]
-    result = subprocess.run(arguments, env=ENV, capture_output=True)
-    assert result.returncode == 0, result.stderr  # conflicting launch inputs stay unknown, not last-wins
-assert b'--taste-result RUN_ID=PR_URL' in subprocess.check_output([str(BINARY), '--help'], env=ENV)
+assert b'--taste-result' not in subprocess.check_output([str(BINARY), '--help'], env=ENV)
 
 # Invalid-HOME scenarios now stop at the test boundary, never by executing Tinkery.
 # Rust's pure root tests retain the application-level invalid-HOME contracts.

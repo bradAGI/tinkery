@@ -1,7 +1,10 @@
-//! Result snapshots from deliberate run-ID inputs and API 1 status. No handoff prose, branch or
+//! Result snapshots from API 1 status and each run's recorded PR. No handoff prose, branch or
 //! title supplies a PR; missing identities never borrow a goal or old success. No writes or decisions.
 
-use super::{ResultLinks, evidence, links::canonical_run_id};
+use super::{
+    evidence,
+    links::{self, canonical_run_id},
+};
 use crate::sdlc::{self, DEADLINE, Goal};
 use serde_json::Value;
 use std::{
@@ -279,14 +282,19 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
     Ok(())
 }
 
+/// GitHub owner and repo names are case-insensitive; anything else must match the record exactly.
+fn same_pr(pr: &Value, row: &ResultRow) -> bool {
+    matches!((pr["url"].as_str(), row.url.as_deref()), (Some(a), Some(b)) if a.eq_ignore_ascii_case(b))
+}
+
 fn remote(pr: &Value, row: &mut ResultRow) -> Result<(), String> {
     row.head = Some(
         commit(&pr["headRefOid"])
             .ok_or("PR revision unavailable.")?
             .to_owned(),
     );
-    if pr["url"].as_str() != row.url.as_deref() {
-        return Err("PR identity disagrees with the explicit input.".into());
+    if !same_pr(pr, row) {
+        return Err("PR identity disagrees with the run's record.".into());
     }
     for check in pr["statusCheckRollup"]
         .as_array()
@@ -367,12 +375,8 @@ fn gh(root: &Path, url: &str, stop: &AtomicBool) -> Result<Value, String> {
     serde_json::from_str(&out).map_err(|_| "GitHub report unreadable.".into())
 }
 
-/// Read API 1 plus deliberately mapped PRs, serially; cancellation never publishes a late row.
-pub(super) fn collect(
-    root: &Path,
-    stop: &AtomicBool,
-    links: &ResultLinks,
-) -> Result<Vec<ResultRow>, String> {
+/// Read API 1 plus each run's recorded PR, serially; cancellation never publishes a late row.
+pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, String> {
     if !root.join(sdlc::SCRIPT).is_file() {
         return Err("Named checkout has no tink-sdlc status reader.".into());
     }
@@ -441,16 +445,18 @@ pub(super) fn collect(
             .as_str()
             .unwrap_or("unknown seed")
             .into();
-        let result = links.url(&row.id);
-        match result {
+        match links::recorded(run) {
             Err(why) => row.gaps.push(why),
             Ok(url) => {
                 row.url = Some(url.clone());
                 match gh(&root, &url, stop) {
                     Ok(pr) => {
-                        if pr["url"].as_str() != row.url.as_deref() { return Err("PR identity disagrees with the explicit input; check the mapping and press r.".into()); }
-                        if !listed(&pr, &mut row)? { continue; }
-                        if let Err(why) = remote(&pr, &mut row) { row.head = None; row.items.clear(); row.gaps.push(why); }
+                        if !same_pr(&pr, &row) {
+                            row.gaps.push("GitHub names a different PR than the run recorded (renamed or moved?); result revision unknown.".into());
+                        } else {
+                            if !listed(&pr, &mut row)? { continue; }
+                            if let Err(why) = remote(&pr, &mut row) { row.head = None; row.items.clear(); row.gaps.push(why); }
+                        }
                     }
                     Err(_) => row.gaps.push("Couldn't read GitHub. Check gh authentication/access, then press r; result revision unknown.".into()),
                 }

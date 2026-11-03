@@ -203,8 +203,8 @@ os.execv({git!r}, [{git!r}, *args])
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
         screen = Screen(width, height)
         process = subprocess.Popen([str(REPO / 'target/debug/tinkery'), '--operator', 'agent', '--home',
-                                    '--sdlc-root', str(checkout), '--seed-session-root', str(base / 'TEST-sessions'),
-                                    '--taste-result', f'{RUN_ID}={URL}'], cwd=base, env=env,
+                                    '--sdlc-root', str(checkout), '--seed-session-root', str(base / 'TEST-sessions')],
+                                   cwd=base, env=env,
                                    stdin=slave, stdout=slave, stderr=slave)
         original = tree(checkout)
         repo_original = tree(repo)

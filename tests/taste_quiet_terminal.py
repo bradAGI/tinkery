@@ -75,7 +75,7 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
         env['NO_COLOR'] = '1'
     process = subprocess.Popen(
         [str(binary), '--operator', 'agent', '--home', '--sdlc-root', str(checkout),
-         '--seed-session-root', str(base / 'TEST-sessions'), '--taste-result', f'{RUN_ID}={URL}'],
+         '--seed-session-root', str(base / 'TEST-sessions')],
         cwd=base, env=subprocess.environment(env, home=env['HOME']), stdin=slave, stdout=slave, stderr=slave)
 
     def wait(predicate, seconds=8):

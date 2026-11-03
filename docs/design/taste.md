@@ -16,26 +16,18 @@ Without a current result, the footer keeps help and exit, plus `r read results` 
 when the named checkout is available and no read/open helper is running. Result
 actions return when a result is selected; this changes guidance, not key behavior.
 
-API 1 has no PR reference, and its [SDLC contract](https://github.com/jon-devlapaz/tink-sdlc/blob/main/assets/_system/SDLC.md#L232-L240)
-says handoff prose is not a machine interface. Supply the relationship deliberately
-at launch with repeatable `--taste-result RUN_ID=PR_URL` inputs: a canonical lowercase
-UUIDv4 run ID and a full `https://github.com/OWNER/REPO/pull/NUMBER` URL. For example,
-using synthetic identities:
+Each run records its own PR with tink-sdlc's `sdlc.py pr` (1.50.0 and later), and
+API 1 per-run `status --json` reports it as `pr.url`. That record is the only link:
+handoff prose is not a machine interface, and neither a slug, branch, title nor handoff
+file can supply it. Taste reads `pr` only from the per-run status whose run ID matches
+the list. A run without a recorded PR keeps an unknown-result row; the run's own status
+says how to record one. tink-sdlc reports a malformed record as an invalid run, and
+Taste also refuses any URL that is not a full `https://github.com/OWNER/REPO/pull/NUMBER`.
+If GitHub names a different PR (owner and repo compare case-insensitively), the row
+stays unknown. Tinkery stores no mapping and launches take no PR input.
 
-```text
-tinkery --operator agent --home --sdlc-root /TEST/checkout \
-  --taste-result 00000000-0000-4000-8000-000000000114=https://github.com/TEST/example/pull/1
-```
-
-Inputs live only in this process: no mapping store, config file, editor or upstream
-change. Identical repeated declarations agree; different PRs for one ID leave a
-sticky conflict, never last-wins. Malformed IDs/URLs refuse launch before any read.
-Missing/conflicting inputs retain an unknown-result row and ask for corrected launch
-inputs. Neither a slug, branch, title, handoff file nor another run's mapping can
-supply the link; recreating a slug with a new run ID cannot inherit the old PR.
-
-Only `r` reads result metadata from GitHub, via `gh pr view <explicit URL> --json` using the operator's
-login. Read the current head, state and PR-head checks. Explicitly mapped open and
+Only `r` reads result metadata from GitHub, via `gh pr view <recorded URL> --json` using the operator's
+login. Read the current head, state and PR-head checks. Recorded open and
 merged PRs stay listed, including green PRs with no source gates owed: checks never
 remove the need for human review. Merged results are marked “merged” in the list
 and review; neither merge state nor green checks imply acceptance. Closed-unmerged
@@ -174,7 +166,7 @@ not an acceptance record or implementation permission.
   complete document. `n`/`p` or Right/Left change result, clamped. Esc from detail
   returns to the list and discards the ephemeral report, without rereading.
 - `v` in detail runs the explicitly declared local preview above; Esc stops and reaps it.
-- `o` alone uses `gh pr view <explicit URL> --web` to open the PR. Navigation records
+- `o` alone uses `gh pr view <recorded URL> --web` to open the PR. Navigation records
   nothing and rereads no checks. Browser failure names the retry. Repeated or modified
   action keys never open, reread or copy.
 - `a` / `c` copy acceptance-review / correction requests through the existing clipboard
@@ -196,7 +188,7 @@ From the list or detail, `l` means “I accepted this exact result externally.�
 operator's decision for this snapshot only; it neither verifies acceptance nor
 records a verdict. Copying `a`, browser navigation, green checks and merged/closed
 PR states never imply acceptance. Unknown goal, run or result identity refuses the
-report. An explicitly mapped merged result remains available after refresh, but the
+report. A recorded merged result remains available after refresh, but the
 next-step note still requires `l`; refreshing never restores an acceptance report.
 
 The report reveals one italic **Guess · Next: …** proposal under Next. It appears
@@ -240,7 +232,7 @@ removed, then pass after restoration.
 TEST homes at 100×30 and 80×24, each with and without NO_COLOR. They exercise
 explicit reads/browser navigation, help isolation, both copied payloads, long evidence,
 changed revisions, failed/pending checks, green open PRs, unknown originals,
-missing/conflicting/wrong-run/recreated-run inputs, ignored handoff prose, usable API 1
+missing/malformed recorded PRs, ignored handoff prose, usable API 1
 log pointers/methods in both clipboard requests, remote failure, exit/return and cancellation. The checkout stays byte-identical;
 no providers, verdicts or real browser launches run. The [API-shaped fixture](../../tests/fixtures/taste-api1.json)
 preserves the reviewer's log/method/digest example without a private seed locator.
@@ -252,7 +244,7 @@ They also require a single italic Next proposal, five rationale labels only in h
 unknown/non-stopping absent CI, a stopping failed check and a goal-bound next slice.
 The absent-CI regression must fail when unknown evidence is made to require repair,
 then pass after restoration.
-Merged-result journeys additionally read an explicitly mapped merged PR, verify its
+Merged-result journeys additionally read a recorded merged PR, verify its
 label and absence of a note, then report acceptance with `l` before the note appears.
 The merged-result retention regression must fail when the open-only filter returns,
 then pass after restoration. The report-boundary regression must fail with its
