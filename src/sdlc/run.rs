@@ -108,17 +108,17 @@ pub(crate) fn execute(
     deadline: Duration,
 ) -> Result<String, String> {
     let program = command.get_program().to_string_lossy().into_owned();
-    let status_read = program == "python3";
     // An sdlc.py failure names its subcommand (status, label), never Python.
-    let subcommand = command
-        .get_args()
-        .nth(1)
-        .map(|arg| arg.to_string_lossy().into_owned());
-    let name = match (status_read, &subcommand) {
-        (true, Some(sub)) => sub.as_str(),
-        (true, None) => "status",
-        (false, _) => &program,
-    };
+    let subcommand = (program == "python3").then(|| {
+        command
+            .get_args()
+            .nth(1)
+            .map_or("status".to_owned(), |arg| {
+                arg.to_string_lossy().into_owned()
+            })
+    });
+    let status_read = subcommand.as_deref() == Some("status");
+    let name = subcommand.as_deref().unwrap_or(&program);
     let mut child = command
         .current_dir(root)
         .stdin(Stdio::null())

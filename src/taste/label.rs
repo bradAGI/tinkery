@@ -48,9 +48,11 @@ impl Form {
     /// Digits choose the kind until one is chosen; after that every character is the operator's
     /// words. Backspace on empty words returns to the kind. Only F2 saves; held F2 never repeats.
     pub(super) fn key(&mut self, key: KeyEvent) -> Action {
-        if key.kind == KeyEventKind::Release
-            || !matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
-        {
+        // AltGr arrives as Ctrl+Alt on some terminals; it types, other chords never do.
+        let altgr = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        let typing = matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
+            || matches!(key.code, KeyCode::Char(_)) && key.modifiers - KeyModifiers::SHIFT == altgr;
+        if key.kind == KeyEventKind::Release || !typing {
             return Action::Stay;
         }
         match key.code {
@@ -71,6 +73,13 @@ impl Form {
             _ => {}
         }
         Action::Stay
+    }
+
+    /// Pasted words, unchanged; ignored until a kind is chosen.
+    pub(super) fn paste(&mut self, text: &str) {
+        if self.kind.is_some() {
+            self.words.push_str(text);
+        }
     }
 
     /// The kind and words to record, or why the form isn't ready.
@@ -96,25 +105,23 @@ pub(super) fn write(
 ) -> Result<String, String> {
     let mut name = Command::new("git");
     name.args(["config", "user.name"]);
-    let reviewer = sdlc::execute(root, name, stop, DEADLINE)
-        .ok()
-        .map(|out| out.trim().to_owned())
-        .filter(|name| !name.is_empty())
-        .ok_or(
-            "No reviewer name: set git config user.name in this checkout, then press F2 again.",
-        )?;
+    // git config exits 1 when the name is unset; any other failure is reported as itself.
+    let unset = "No reviewer name: set git config user.name in this checkout, then press F2 again.";
+    let reviewer = match sdlc::execute(root, name, stop, DEADLINE) {
+        Ok(out) if !out.trim().is_empty() => out.trim().to_owned(),
+        Ok(_) => return Err(unset.into()),
+        Err(why) if why.starts_with("git exited with exit status: 1") => return Err(unset.into()),
+        Err(why) => return Err(why),
+    };
+    // `--flag=value` keeps words such as `-v` or `--no-verify` from reading as options.
     let mut label = Command::new("python3");
     label.arg(sdlc::SCRIPT).args([
-        "label",
-        slug,
-        "--kind",
-        kind.word(),
-        "--words",
-        words,
-        "--reviewer",
-        &reviewer,
-        "--source",
-        "taste",
+        "label".to_owned(),
+        slug.to_owned(),
+        format!("--kind={}", kind.word()),
+        format!("--words={words}"),
+        format!("--reviewer={reviewer}"),
+        "--source=taste".to_owned(),
     ]);
     sdlc::execute(root, label, stop, DEADLINE)
         .map(|out| out.trim().to_owned())
@@ -163,9 +170,10 @@ mod tests {
         }
         assert!(form.ready().is_err(), "empty words are never saved");
         form.key(press(KeyCode::Backspace));
-        assert_eq!(form.kind, None);
+        assert!(form.ready().unwrap_err().contains("Choose a kind"));
         form.key(press(KeyCode::Char('4')));
-        assert_eq!(form.kind, Some(Kind::Rejected));
+        form.paste("pasted\n-v");
+        assert_eq!(form.ready().unwrap(), (Kind::Rejected, "pasted\n-v".into()));
     }
 
     #[test]
@@ -177,9 +185,16 @@ mod tests {
         assert_eq!(form.key(held), Action::Stay);
         assert_eq!(form.key(press(KeyCode::F(2))), Action::Save);
         assert_eq!(form.key(press(KeyCode::Esc)), Action::Discard);
-        let ctrl = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
         form.key(press(KeyCode::Char('3')));
-        form.key(ctrl);
-        assert_eq!(form.words, "", "control chords never type");
+        form.key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL));
+        form.key(KeyEvent::new(
+            KeyCode::Char('@'),
+            KeyModifiers::CONTROL | KeyModifiers::ALT,
+        ));
+        assert_eq!(
+            form.ready().unwrap(),
+            (Kind::Accepted, "@".into()),
+            "AltGr types; Ctrl chords don't"
+        );
     }
 }

@@ -329,6 +329,13 @@ impl Taste {
         if self.labelling.is_some() {
             return;
         }
+        match key.code {
+            KeyCode::Up => return self.scroll = self.scroll.saturating_sub(1),
+            KeyCode::Down => return self.scroll = self.scroll.saturating_add(1),
+            KeyCode::PageUp => return self.scroll = self.scroll.saturating_sub(self.page),
+            KeyCode::PageDown => return self.scroll = self.scroll.saturating_add(self.page),
+            _ => {}
+        }
         let Some(form) = self.label.as_mut() else {
             return;
         };
@@ -355,6 +362,20 @@ impl Taste {
     /// Whether the label form is taking words, so `?` and digits type instead of acting.
     pub(crate) fn takes_text(&self) -> bool {
         self.label.is_some()
+    }
+
+    /// A label is being saved; leaving waits for tink-sdlc's answer.
+    pub(crate) fn saving(&self) -> bool {
+        self.labelling.is_some()
+    }
+
+    /// Pasted text joins the label's words unchanged once a kind is chosen.
+    pub(crate) fn paste(&mut self, text: &str) {
+        if self.labelling.is_none()
+            && let Some(form) = self.label.as_mut()
+        {
+            form.paste(text);
+        }
     }
 
     fn select(&mut self, next: bool) {
@@ -434,7 +455,9 @@ impl Taste {
             area.width,
             2,
         );
-        let actions = if self.label.is_some() {
+        let actions = if self.labelling.is_some() {
+            "Saving your label with tink-sdlc…\n? help"
+        } else if self.label.is_some() {
             "1 correction  2 none  3 accepted  4 rejected, then type your words\nF2 save label  Esc discard"
         } else if self.preview.is_some() {
             "Preview · Esc stops and returns · F10 Home\narrows/PgUp/PgDn scroll  ? help"

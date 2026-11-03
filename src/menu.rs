@@ -403,6 +403,7 @@ impl Home {
         match &mut self.view {
             View::Think(dump) => dump.paste(text),
             View::Shape(shape, _) if !self.help => shape.paste(text),
+            View::Taste(taste) if !self.help => taste.paste(text),
             _ => {}
         }
     }
@@ -652,7 +653,9 @@ impl Home {
             return;
         }
         if matches!(self.view, View::Watch(_) | View::Taste(_)) && key.code == KeyCode::F(10) {
-            if key.modifiers == KeyModifiers::NONE && key.kind == KeyEventKind::Press {
+            // A label being saved finishes first, so its outcome is never left unknown.
+            let saving = matches!(&self.view, View::Taste(taste) if taste.saving());
+            if !saving && key.modifiers == KeyModifiers::NONE && key.kind == KeyEventKind::Press {
                 self.help = false;
                 self.view = View::Menu;
             }

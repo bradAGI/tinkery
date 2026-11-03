@@ -194,7 +194,8 @@ naming the first thing that went wrong, so patterns across runs pick the next fi
 seconds, inside the review, or it won't happen.
 
 `w` opens a form for the selected run: 1 correction, 2 none (prefilled "No corrections"),
-3 accepted, 4 rejected, then the words. Esc discards; leaving discards. Only a pressed F2
+3 accepted, 4 rejected, then the words (typed or pasted; AltGr types, other chords don't).
+Esc discards; leaving discards, but F10 waits while a save runs. Only a pressed F2
 saves, by running the checkout's own `sdlc.py label <slug> --kind … --words … --reviewer
 <git config user.name> --source taste`. Words pass through unchanged. tink-sdlc decides:
 its confirmation, or its refusal word for word (closed run, run building elsewhere, agent

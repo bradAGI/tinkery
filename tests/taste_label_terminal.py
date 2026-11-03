@@ -109,20 +109,26 @@ def journey(width, height, no_color, operator):
             assert (record['kind'], record['words'], record['reviewer'], record['source']) == (
                 'correction', WORDS, 'TEST operator', 'taste'), record
             assert 'Label this run' not in screen.text()
+            # Words that look like an option still arrive as words.
+            send(b'w', 'Label this run')
+            send(b'4', 'Your words')
+            send(b'--no-verify', '--no-verify')
+            send(F2, 'Recorded rejected label for test-label.')
+            assert [(r['kind'], r['words']) for r in labels(root)][1] == ('rejected', '--no-verify')
             # tink-sdlc's own refusal comes back word for word once the run is closed.
             sdlc(root, env, 'close', 'test-label', '--outcome', 'abandoned')
             send(b'w', 'Label this run')
             send(b'3', 'Your words')
             send(b'ok', 'ok')
             send(F2, 'This run is closed;')
-            assert 'Not recorded. tink-sdlc said:' in screen.text() and len(labels(root)) == 1
+            assert 'Not recorded. tink-sdlc said:' in screen.text() and len(labels(root)) == 2
             send(ESC, 'Label discarded')
             send(F10, '1  think')
             os.write(master, b'q')
             terminal.process.wait(timeout=5)
             assert terminal.process.returncode == 0
             print(json.dumps(dict(journey='Taste label', width=width, height=height, no_color=no_color,
-                                  labels=1, verbatim=True, provider_calls=0, gh_calls=0)))
+                                  labels=2, verbatim=True, provider_calls=0, gh_calls=0)))
         finally:
             terminal.close()
 

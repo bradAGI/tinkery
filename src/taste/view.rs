@@ -396,6 +396,11 @@ pub(super) fn label_form(
         width,
         p.muted,
     );
+    // tink-sdlc's answer sits above the form so a refusal is never scrolled out of sight.
+    if !note.is_empty() {
+        lines.push(Line::default());
+        block(&mut lines, Span::raw("  "), &safe(note), width, p.ink);
+    }
     heading(&mut lines, "Kind", p.ink);
     for (number, kind) in super::label::Kind::ALL.iter().enumerate() {
         let chosen = form.kind == Some(*kind);
@@ -426,10 +431,6 @@ pub(super) fn label_form(
             width,
             p.ink,
         );
-    }
-    if !note.is_empty() {
-        lines.push(Line::default());
-        block(&mut lines, Span::raw("  "), &safe(note), width, p.ink);
     }
     lines.push(Line::default());
     block(
