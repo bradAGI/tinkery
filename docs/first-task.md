@@ -112,6 +112,8 @@ When the checks still match the confirmed seed, status says `Stage 3: approved` 
 `matches confirmed seed`; no further question is asked. Changed checks wait for your
 decision, as status says. `--here` builds in this checkout; without it, stage 3 makes a
 worktree under `~/dev/worktrees/`. Stage prints a prompt and starts nothing.
+Set `build` to the `Checkout:` path stage printed (with `--here`, `build="$project"`);
+steps 8 and 9 run there, where the worker builds.
 Saved: the stage. Allowed: a build on this run. Running: nothing.
 
 ## 8. Start the worker
@@ -124,9 +126,9 @@ Check the pin first, then prepare and launch one pinned build step:
 ```sh
 python3 "$tinkery_src/scripts/first-task-check.py" --sdlc-root "$project" --worker-model "$worker_model"
 mkdir -p "$notes"
-cd "$project" && python3 _system/scripts/sdlc.py step "$run" build prepare \
+cd "$build" && python3 _system/scripts/sdlc.py step "$run" build prepare \
   --report "$notes/$run-build.md" --model "$worker_model" \
-  --launcher "$project/_system/scripts/pi-launcher"
+  --launcher "$build/_system/scripts/pi-launcher"
 python3 _system/scripts/sdlc.py step "$run" build launch
 ```
 
@@ -138,7 +140,7 @@ Saved: the step contract. Allowed: this one worker on this pin. Running: Pi, bui
 ## 9. Watch it, then finish
 
 ```sh
-cd "$project" && python3 _system/scripts/sdlc.py step "$run" build show
+cd "$build" && python3 _system/scripts/sdlc.py step "$run" build show
 ```
 
 `observed_turn` says whether the worker's turn ended (`ended: read the report, then
@@ -147,7 +149,7 @@ not that it is still building. Watch (menu place 5) shows the run. When it ended
 report, then:
 
 ```sh
-cd "$project" && python3 _system/scripts/sdlc.py step "$run" build complete
+cd "$build" && python3 _system/scripts/sdlc.py step "$run" build complete
 python3 _system/scripts/sdlc.py status "$run"
 ```
 
@@ -158,7 +160,7 @@ says `operator attestation required`).
 Only you record these; an agent's record is never your approval. Then run the checks:
 
 ```sh
-cd "$project" && python3 _system/scripts/sdlc.py verify "$run"
+cd "$build" && python3 _system/scripts/sdlc.py verify "$run"
 ```
 
 A green `verify` ends this guide. Review and merging follow tink-sdlc's stage 5
