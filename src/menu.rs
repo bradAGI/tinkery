@@ -62,7 +62,6 @@ pub struct Home {
     repo: Option<crate::repo::Repo>,
     shape_agent: Option<Arc<crate::shape::Agent>>,
     sdlc_root: Option<PathBuf>,
-    taste_results: crate::taste::ResultLinks,
     /// An agent launch without --shape-pi: Shape only reads.
     shape_held: bool,
     approve_reader: approve::Reader,
@@ -120,7 +119,6 @@ impl Home {
             repo: None,
             shape_agent: None,
             sdlc_root: None,
-            taste_results: crate::taste::ResultLinks::default(),
             shape_held: false,
             approve_reader: approve::Reader::default(),
             approve_origin: None,
@@ -137,13 +135,6 @@ impl Home {
     /// The one tink-sdlc checkout the read-only run views use; absent roots explain configuration.
     pub fn with_sdlc_root(mut self, root: Option<PathBuf>) -> Self {
         self.sdlc_root = root;
-        self
-    }
-
-    /// Deliberately supplied result identities for this launch. Configuration starts no reads
-    /// and persists no mapping or verdict; missing/conflicting entries stay unknown in Taste.
-    pub fn with_taste_results(mut self, links: crate::taste::ResultLinks) -> Self {
-        self.taste_results = links;
         self
     }
 
@@ -482,10 +473,7 @@ impl Home {
                 View::Approve(Box::new(approve::Approve::open(self.sdlc_root.clone())))
             }
             4 => View::Watch(Box::new(Watch::open(self.sdlc_root.clone()))),
-            5 => View::Taste(Box::new(Taste::open(
-                self.sdlc_root.clone(),
-                self.taste_results.clone(),
-            ))),
+            5 => View::Taste(Box::new(Taste::open(self.sdlc_root.clone()))),
             6 => View::Measure(Box::new(measure::Measure::open(self.repo.clone()))),
             other => View::Soon(other),
         };

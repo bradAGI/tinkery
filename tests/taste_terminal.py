@@ -16,7 +16,6 @@ from support.seed_file_fixture import replaced_seed
 
 REPO = Path(__file__).resolve().parents[1]
 RUN_ID = '00000000-0000-4000-8000-000000000114'
-OTHER_ID = '00000000-0000-4000-8000-000000000115'
 HEAD = 'a' * 40
 NEXT = 'b' * 40
 URL = 'https://github.com/TEST/clinic-tycoon/pull/1'
@@ -104,9 +103,10 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             state['detail']['run']['gates'][0]['status'] = 'pending'
             for item in state['detail']['run']['checklist']:
                 item.update(status='pending', mark=None)
-        if mapping_case == 'recreated-run':
-            state['list']['runs'][0]['run_id'] = OTHER_ID
-            state['detail']['run']['run_id'] = OTHER_ID
+        if mapping_case == 'missing':  # not recorded, or a tink-sdlc older than 1.50.0
+            state['detail']['run']['pr'] = None
+        elif mapping_case == 'malformed':
+            state['detail']['run']['pr']['url'] = 'TEST/clinic-tycoon#1'
         statefile, log, pid = base / 'state.json', base / 'calls', base / 'pid'
         statefile.write_text(json.dumps(state))
         binary = base / 'bin'
@@ -124,13 +124,6 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 '--seed-session-root', str(base / 'TEST-sessions')]
         if empty_case != 'missing-root':
             args += ['--sdlc-root', str(checkout)]
-        if mapping_case != 'missing':
-            mapped_id = OTHER_ID if mapping_case == 'other-run' else RUN_ID
-            args += ['--taste-result', f'{mapped_id}={URL}']
-            if mapping_case == 'conflicting':
-                args += ['--taste-result', f'{mapped_id}=https://github.com/TEST/clinic-tycoon/pull/2']
-            else:
-                args += ['--taste-result', f'{mapped_id}={URL}']  # identical declarations agree
         terminal = TerminalProcess(args, cwd=base, env=subprocess.environment(env, home=env['HOME']),
                                    width=width, height=height)
         process, master, screen, raw = terminal.process, terminal.master, terminal.screen, terminal.raw
@@ -204,7 +197,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 assert 'waiting: revision unknown  Allocation works' in screen.text(), screen.text()
                 send(b'\x1b[F', 'Commit: unknown')
                 send(b'a', 'Result identity unknown')
-                assert not copied(), 'unmapped or conflicting result was copied'
+                assert not copied(), 'a result without a recorded PR was copied'
                 send(b'\x1b', 'enter/v open result')
                 send(b'\x1b', '1  think')
                 os.write(master, b'q')
@@ -491,5 +484,5 @@ if __name__ == '__main__':
         for no_color in (False,):
             for next_case in ['accept', 'correct', 'nothing unmet', 'merged', 'absent ci', 'failed', 'receipts elsewhere']:
                 journey(*dimensions, no_color, next_case=next_case)
-    for case in ['missing', 'conflicting', 'other-run', 'recreated-run']:
+    for case in ['missing', 'malformed']:
         journey(80, 24, True, case)

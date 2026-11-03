@@ -77,8 +77,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut home_menu = false;
     let mut operator = None;
     let mut sdlc_root = None;
-    let mut taste_results = tinkery::taste::ResultLinks::default();
-    let mut home_inputs = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -99,10 +97,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     args.next()
                         .ok_or("--sdlc-root needs a tink-sdlc checkout path")?,
                 ))
-            }
-            "--taste-result" => {
-                taste_results.add(&args.next().ok_or("--taste-result needs RUN_ID=PR_URL")?)?;
-                home_inputs = true;
             }
             "--full-redraw" => full_redraw = true,
             "--shape-pi" => shape_pi = true,
@@ -148,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" | "-h" => {
                 println!(
-                    "Tinkery: a calm terminal front door for agentic work.\n\nUsage: tinkery [--home] [--no-color] [--snapshot]\n       tinkery --shape-pi [--harness pi|claude-code] --model MODEL\n       tinkery seed status --json DIR\n       tinkery seed checks DIR\n\nWithout a model, think is practice: replies are simulated and nothing leaves your machine.\nWith one, your words go to the model you chose and may cost money. Choose it with m on the menu\n(saved in ~/.config/tinkery/model.json for later launches) or with --shape-pi for one launch.\nNothing runs on its own. Only typing confirm saves a goal, and saving starts no work.\nInside, F2 runs the action the key bar names, F1 lists the rest by number, and Esc goes back.\n\n--home       Open the home menu (the tinkery launcher passes it)\n--operator human|agent  Who is typing, not verified identity (default: not declared); agent saves are the agent's\n--shape-pi   Draft with a real model for this launch\n--harness    pi|claude-code: who drafts (default: saved, else pi); Claude Code uses its own login\n--model      Pi: provider/model-id; Claude Code: a claude- model id (required with --shape-pi unless one is saved)\n--thinking   Reasoning level: Pi off|minimal|low|medium|high|xhigh|max, Claude Code low..max (default: saved, else low)\n--seed-session-root  Saved goals to list/save (default needs absolute HOME: ~/.local/share/tinkery/sessions)\n--record-root  Where Think history is saved/read (default: ~/.local/share/tinkery/think)\n--link-root PATH  Where tend's links go (default: ~/.local/share/tinkery/tend)\n--pi-command Pi executable (default: pi; Claude Code is always claude on PATH)\n--shape-budget CALLS  Drafting runs shared by Think and Shape this launch (default: saved calls, else 0)\n--sdlc-root PATH  The tink-sdlc checkout watch reads with its own status --json (read-only; nothing is discovered)\n--taste-result RUN_ID=PR_URL  Explicit canonical run UUIDv4 and full GitHub PR URL; repeatable, launch-only\n--full-redraw  Repaint every frame, for terminals that draw badly\n--no-color   Turn off colors (also respects NO_COLOR)\n--snapshot   Print a 100 x 30 view and exit; no terminal mode, no model requests\nTINKERY_NODE Node for local voice (otherwise found on PATH). Voice stays on your machine; installing it asks first."
+                    "Tinkery: a calm terminal front door for agentic work.\n\nUsage: tinkery [--home] [--no-color] [--snapshot]\n       tinkery --shape-pi [--harness pi|claude-code] --model MODEL\n       tinkery seed status --json DIR\n       tinkery seed checks DIR\n\nWithout a model, think is practice: replies are simulated and nothing leaves your machine.\nWith one, your words go to the model you chose and may cost money. Choose it with m on the menu\n(saved in ~/.config/tinkery/model.json for later launches) or with --shape-pi for one launch.\nNothing runs on its own. Only typing confirm saves a goal, and saving starts no work.\nInside, F2 runs the action the key bar names, F1 lists the rest by number, and Esc goes back.\n\n--home       Open the home menu (the tinkery launcher passes it)\n--operator human|agent  Who is typing, not verified identity (default: not declared); agent saves are the agent's\n--shape-pi   Draft with a real model for this launch\n--harness    pi|claude-code: who drafts (default: saved, else pi); Claude Code uses its own login\n--model      Pi: provider/model-id; Claude Code: a claude- model id (required with --shape-pi unless one is saved)\n--thinking   Reasoning level: Pi off|minimal|low|medium|high|xhigh|max, Claude Code low..max (default: saved, else low)\n--seed-session-root  Saved goals to list/save (default needs absolute HOME: ~/.local/share/tinkery/sessions)\n--record-root  Where Think history is saved/read (default: ~/.local/share/tinkery/think)\n--link-root PATH  Where tend's links go (default: ~/.local/share/tinkery/tend)\n--pi-command Pi executable (default: pi; Claude Code is always claude on PATH)\n--shape-budget CALLS  Drafting runs shared by Think and Shape this launch (default: saved calls, else 0)\n--sdlc-root PATH  The tink-sdlc checkout watch reads with its own status --json (read-only; nothing is discovered)\n--full-redraw  Repaint every frame, for terminals that draw badly\n--no-color   Turn off colors (also respects NO_COLOR)\n--snapshot   Print a 100 x 30 view and exit; no terminal mode, no model requests\nTINKERY_NODE Node for local voice (otherwise found on PATH). Voice stays on your machine; installing it asks first."
                 );
                 return Ok(());
             }
@@ -168,8 +162,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     // Watch, Approve and Taste live in the home menu; Think alone would ignore their inputs.
-    if !home_menu && (home_inputs || sdlc_root.is_some()) {
-        return Err("--sdlc-root and --taste-result require --home".into());
+    if !home_menu && sdlc_root.is_some() {
+        return Err("--sdlc-root requires --home".into());
     }
     let sdlc_root = match sdlc_root {
         Some(root) if root.is_relative() => Some(std::env::current_dir()?.join(root)),
@@ -318,8 +312,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_repo(repo)
             .with_shape_agent(shape_agent)
             .with_shape_held(agent && !live)
-            .with_sdlc_root(sdlc_root)
-            .with_taste_results(taste_results);
+            .with_sdlc_root(sdlc_root);
         if let Ok(root) = &record_root {
             menu = menu.with_record_root(root.clone());
         }

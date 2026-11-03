@@ -1,7 +1,10 @@
-//! Result snapshots from deliberate run-ID inputs and API 1 status. No handoff prose, branch or
+//! Result snapshots from API 1 status and each run's recorded PR. No handoff prose, branch or
 //! title supplies a PR; missing identities never borrow a goal or old success. No writes or decisions.
 
-use super::{ResultLinks, evidence, links::canonical_run_id};
+use super::{
+    evidence,
+    links::{self, canonical_run_id},
+};
 use crate::sdlc::{self, DEADLINE, Goal};
 use serde_json::Value;
 use std::{
@@ -367,12 +370,8 @@ fn gh(root: &Path, url: &str, stop: &AtomicBool) -> Result<Value, String> {
     serde_json::from_str(&out).map_err(|_| "GitHub report unreadable.".into())
 }
 
-/// Read API 1 plus deliberately mapped PRs, serially; cancellation never publishes a late row.
-pub(super) fn collect(
-    root: &Path,
-    stop: &AtomicBool,
-    links: &ResultLinks,
-) -> Result<Vec<ResultRow>, String> {
+/// Read API 1 plus each run's recorded PR, serially; cancellation never publishes a late row.
+pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, String> {
     if !root.join(sdlc::SCRIPT).is_file() {
         return Err("Named checkout has no tink-sdlc status reader.".into());
     }
@@ -441,14 +440,13 @@ pub(super) fn collect(
             .as_str()
             .unwrap_or("unknown seed")
             .into();
-        let result = links.url(&row.id);
-        match result {
+        match links::recorded(run) {
             Err(why) => row.gaps.push(why),
             Ok(url) => {
                 row.url = Some(url.clone());
                 match gh(&root, &url, stop) {
                     Ok(pr) => {
-                        if pr["url"].as_str() != row.url.as_deref() { return Err("PR identity disagrees with the explicit input; check the mapping and press r.".into()); }
+                        if pr["url"].as_str() != row.url.as_deref() { return Err("GitHub's PR identity disagrees with the run's record; check it and press r.".into()); }
                         if !listed(&pr, &mut row)? { continue; }
                         if let Err(why) = remote(&pr, &mut row) { row.head = None; row.items.clear(); row.gaps.push(why); }
                     }

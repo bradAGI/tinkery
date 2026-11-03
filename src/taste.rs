@@ -7,11 +7,9 @@ mod links;
 mod next;
 mod preview;
 mod read;
-mod view;
-/// Explicit canonical run-ID to PR inputs for this launch, never persisted or inferred.
-pub use links::ResultLinks;
 #[cfg(test)]
 mod tests;
+mod view;
 
 use crate::{
     Palette,
@@ -30,7 +28,6 @@ use std::{path::PathBuf, process::Command, time::Instant};
 /// One result visit; snapshots, copy requests and any explicit preview die on leaving.
 pub(crate) struct Taste {
     root: Option<PathBuf>,
-    links: ResultLinks,
     reading: Option<Read<Vec<ResultRow>>>,
     opening: Option<Read<()>>,
     preview: Option<preview::Preview>,
@@ -50,10 +47,9 @@ pub(crate) struct Taste {
 
 impl Taste {
     /// Open without executing helpers or contacting GitHub. r discloses and starts the read.
-    pub(crate) fn open(root: Option<PathBuf>, links: ResultLinks) -> Self {
+    pub(crate) fn open(root: Option<PathBuf>) -> Self {
         Self {
             root,
-            links,
             reading: None,
             opening: None,
             preview: None,
@@ -92,8 +88,7 @@ impl Taste {
         self.notice.clear();
         self.at = None;
         self.scroll = 0;
-        let links = self.links.clone();
-        self.reading = Some(Read::task(move |stop| read::collect(&root, stop, &links)));
+        self.reading = Some(Read::task(move |stop| read::collect(&root, stop)));
     }
 
     /// Land only this visit's explicit read or navigation result; no automatic retries.
@@ -248,8 +243,7 @@ impl Taste {
                     }));
                 } else {
                     self.notice =
-                        "PR link unknown; relaunch with one --taste-result RUN_ID=PR_URL input."
-                            .into();
+                        "PR link unknown; record it with sdlc.py pr, then press r.".into();
                 }
             }
             KeyCode::Char('l') if self.reading.is_none() && self.opening.is_none() => {
@@ -343,9 +337,9 @@ impl Taste {
             "Enter reviews · e opens evidence · n/p result\n",
             "o opens PR · v runs declared preview at the exact commit; Esc stops/reaps\n",
             "a/c copy accept/correct requests, never decisions\n\n",
-            "What Taste reads\nOnly r reads the named checkout's API 1 status and explicit\n",
-            "--taste-result PRs with gh, using your login. Missing/conflicting links\n",
-            "stay unknown; prose supplies none. Reading writes nothing and launches no agents.\n",
+            "What Taste reads\nOnly r reads the named checkout's API 1 status and each run's\n",
+            "recorded PR with gh, using your login. A run without a recorded PR\n",
+            "stays unknown; prose supplies none. Reading writes nothing and launches no agents.\n",
             "r also reads tinkery.preview from the result repo at its exact commit.\n",
             "Passes need current, exact-head evidence; review is separate.\n",
             "External handoffs must recheck head, inputs, receipts and owed gates;\n",
@@ -398,9 +392,7 @@ impl Taste {
             vec![
                 Line::raw("Press r to read results from the named checkout and GitHub."),
                 Line::raw("Runs python3 _system/scripts/sdlc.py status --json and per-run status."),
-                Line::raw(
-                    "Reads only --taste-result RUN_ID=PR_URL inputs with gh using your login.",
-                ),
+                Line::raw("Reads each run's recorded PR with gh using your login."),
             ]
         } else if let Some(preview) = &self.preview {
             let row = &self.rows[self.selected];

@@ -68,6 +68,11 @@
         "path": "runs/TEST-result/04-test/output/test-log.md",
         "text": "TEST-checked-allocation-success: python3 TEST-allocation-check.py exited 0\n",
         "truncated": false
+      },
+      "pr": {
+        "url": "https://github.com/TEST/clinic-tycoon/pull/1",
+        "candidate": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "time_ns": 1
       }
     }
   },
