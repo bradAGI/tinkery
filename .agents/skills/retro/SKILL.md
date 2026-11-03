@@ -12,9 +12,13 @@ unrequested changes. Tinkery's rules live in [AGENTS.md](../../../AGENTS.md) and
 
 1. Read [writing-for-agents](../writing-for-agents/SKILL.md).
 2. Read primary sources for the specified session, including local logs when needed;
-   default to this session.
+   default to this session. For a named tink-sdlc run, read its records in that checkout
+   (`python3 _system/scripts/sdlc.py status <run> --json`, then `runs/<run>/`), the Shape
+   session and Think record they bind to, and the worker session named by its build step.
 3. Find improvements using the checks below.
 4. Present candidates in severity order.
+5. For a named run, end with one ready-to-run `sdlc.py label` command per correction, for
+   the operator to run in that checkout. Never run `label` yourself.
 
 ## Checks
 
@@ -29,7 +33,10 @@ unrequested changes. Tinkery's rules live in [AGENTS.md](../../../AGENTS.md) and
 - **Corrections:** for each operator correction, name the layer that holds its fix now
   and propose the leftmost one, per Yohaku's [move each correction left](../../../docs/yohaku.md#for-anyone-changing-tinkery-human-or-agent).
   Count corrections apart from required decisions (confirm, approve, merge): a fix may
-  remove a correction, never a decision.
+  remove a correction, never a decision. As a label command:
+  `python3 _system/scripts/sdlc.py label <run> --kind correction --words '<their words, verbatim>' --reviewer <operator> --source 'retro <date>: fix in <layer>' [--about <run file>|outside]`.
+  With no corrections, propose `--kind none --words 'No corrections'`; a run closes only
+  once labelled.
 - **Tool economy:** identify expensive, repetitive or token-heavy calls, CLIs and MCP tools.
 - **Access:** identify missing evidence sources, such as captured server logs or read-only
   service access; access changes still require permission.
