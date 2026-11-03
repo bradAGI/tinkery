@@ -64,6 +64,8 @@ pub struct Home {
     sdlc_root: Option<PathBuf>,
     /// An agent launch without --shape-pi: Shape only reads.
     shape_held: bool,
+    /// Launched with `--operator agent`; Taste then refuses the operator's labels.
+    agent: bool,
     approve_reader: approve::Reader,
     approve_origin: Option<ApproveOrigin>,
     /// `m` on the menu asked for the Model panel, which the launch owns.
@@ -120,6 +122,7 @@ impl Home {
             shape_agent: None,
             sdlc_root: None,
             shape_held: false,
+            agent: false,
             approve_reader: approve::Reader::default(),
             approve_origin: None,
             model_request: false,
@@ -141,6 +144,12 @@ impl Home {
     /// An agent launch without named context only reads; see [`Shape::held`].
     pub fn with_shape_held(mut self, held: bool) -> Self {
         self.shape_held = held;
+        self
+    }
+
+    /// An `--operator agent` launch: places that record the operator's own words refuse it.
+    pub fn with_agent_operator(mut self, agent: bool) -> Self {
+        self.agent = agent;
         self
     }
 
@@ -394,6 +403,7 @@ impl Home {
         match &mut self.view {
             View::Think(dump) => dump.paste(text),
             View::Shape(shape, _) if !self.help => shape.paste(text),
+            View::Taste(taste) if !self.help => taste.paste(text),
             _ => {}
         }
     }
@@ -473,7 +483,7 @@ impl Home {
                 View::Approve(Box::new(approve::Approve::open(self.sdlc_root.clone())))
             }
             4 => View::Watch(Box::new(Watch::open(self.sdlc_root.clone()))),
-            5 => View::Taste(Box::new(Taste::open(self.sdlc_root.clone()))),
+            5 => View::Taste(Box::new(Taste::open(self.sdlc_root.clone(), self.agent))),
             6 => View::Measure(Box::new(measure::Measure::open(self.repo.clone()))),
             other => View::Soon(other),
         };
@@ -643,7 +653,9 @@ impl Home {
             return;
         }
         if matches!(self.view, View::Watch(_) | View::Taste(_)) && key.code == KeyCode::F(10) {
-            if key.modifiers == KeyModifiers::NONE && key.kind == KeyEventKind::Press {
+            // A label being saved finishes first, so its outcome is never left unknown.
+            let saving = matches!(&self.view, View::Taste(taste) if taste.saving());
+            if !saving && key.modifiers == KeyModifiers::NONE && key.kind == KeyEventKind::Press {
                 self.help = false;
                 self.view = View::Menu;
             }
@@ -652,6 +664,15 @@ impl Home {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if ctrl && key.code == KeyCode::Char('c') || key.code == KeyCode::F(10) {
             self.quit = true;
+            return;
+        }
+        // Taste's label form takes words: `?` and q type; F1 still opens help.
+        if let View::Taste(taste) = &mut self.view
+            && taste.takes_text()
+            && !self.help
+            && key.code != KeyCode::F(1)
+        {
+            taste.key(key);
             return;
         }
         if matches!(key.code, KeyCode::Char('?') | KeyCode::F(1)) {

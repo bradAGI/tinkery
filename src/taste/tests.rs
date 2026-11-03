@@ -30,7 +30,7 @@ fn row() -> ResultRow {
 }
 
 fn ready() -> Taste {
-    let mut taste = Taste::open(Some(PathBuf::from("/TEST")));
+    let mut taste = Taste::open(Some(PathBuf::from("/TEST")), false);
     taste.rows = vec![row()];
     taste.at = Some(Instant::now());
     taste

@@ -1,7 +1,9 @@
 # Taste
 
 Taste reviews one exact result against its unchanged saved goal. It never records a
-verdict, posts a review, merges, signs a gate or launches an agent. Acceptance and
+verdict, posts a review, merges, signs a gate or launches an agent. Its one write is the
+operator's [label](#labels): their own words about a run, saved by tink-sdlc only on F2.
+A label is not a verdict, approval or gate. Acceptance and
 correction remain deliberate external decisions, not interpretations of green checks.
 An explicit report of external acceptance can reveal an ephemeral next-dump guess.
 
@@ -173,6 +175,8 @@ not an acceptance record or implementation permission.
   transport, not executable approval commands. Copy feedback claims transport only.
   Each request retains the exact goal, run ID, seed digest, PR and full commit,
   condition evidence, gaps and owed gates. Unknown goal/result identity refuses copy.
+- `w` in detail opens the [label](#labels) form. While it is open every key is its own:
+  digits choose the kind, then all characters, `?` and `q` included, are the words.
 - `?`/F1 help blocks underlying actions. Esc closes help, then Evidence, then detail,
   then returns Home from the list; F10 returns Home. The footer always names the next action and exit.
 
@@ -181,6 +185,23 @@ receipts, resolve gates, inspect that exact result, and add the operator's reque
 changes there before recording any decision. Copy remains available with failed or
 missing checks but carries those gaps; it cannot approve around them. External
 expected-input binding is still not guaranteed; changed material needs rereview.
+
+## Labels
+
+Labels are how the operator's judgment of a run is kept: free text in their words,
+naming the first thing that went wrong, so patterns across runs pick the next fix
+([research](https://github.com/jon-devlapaz/tinkery/issues/666)). Recording one must take
+seconds, inside the review, or it won't happen.
+
+`w` opens a form for the selected run: 1 correction, 2 none (prefilled "No corrections"),
+3 accepted, 4 rejected, then the words (typed or pasted; AltGr types, other chords don't).
+Esc discards; leaving discards, but F10 waits while a save runs. Only a pressed F2
+saves, by running the checkout's own `sdlc.py label <slug> --kind … --words … --reviewer
+<git config user.name> --source taste`. Words pass through unchanged. tink-sdlc decides:
+its confirmation, or its refusal word for word (closed run, run building elsewhere, agent
+reviewer), shows in the form, and a refused form keeps the words. No reviewer name refuses
+before tink-sdlc runs. An `--operator agent` launch refuses `w`: labels are the operator's.
+The label lives in `runs/<slug>/labels.jsonl`, owned by tink-sdlc; Taste stores nothing.
 
 ## After external acceptance
 
@@ -224,6 +245,7 @@ gate or authorization. The operator still merges externally.
 `src/taste/tests.rs` and the reader's unit tests cover exact goal preservation,
 unknown identity, missing/unsafe evidence, strict run-ID/URL inputs, statuses, source staleness,
 compact count summaries, complete source words in headed detail, evidence behind `e`,
+label form keys (kind, verbatim words, held F2, Esc, control chords),
 selection identity, clipboard requests, key repeats/modifiers and small-size scrolling.
 The changed-result regression must fail when the exact-head mismatch protection is
 removed, then pass after restoration.
@@ -236,6 +258,10 @@ missing/malformed recorded PRs, ignored handoff prose, usable API 1
 log pointers/methods in both clipboard requests, remote failure, exit/return and cancellation. The checkout stays byte-identical;
 no providers, verdicts or real browser launches run. The [API-shaped fixture](../../tests/fixtures/taste-api1.json)
 preserves the reviewer's log/method/digest example without a private seed locator.
+The [label journey](../../tests/taste_label_terminal.py) uses a real tink-sdlc checkout
+(this repo's bundled scaffold) with a failing `gh` stub: Esc writes nothing, a missing
+reviewer name refuses before tink-sdlc, F2 writes Unicode and quotes byte-identical, a
+closed run's refusal shows word for word, and an agent launch can't open the form.
 Next-dump journeys additionally report acceptance, edit and send only with F2,
 correct without acceptance, and handle nothing unmet, at both sizes with and without
 NO_COLOR. Unit regressions distinguish copying from the explicit report, prioritize

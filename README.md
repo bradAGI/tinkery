@@ -77,7 +77,8 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   check states and plain owed gates. `o` opens the PR; `a`/`c` copy external review
   handoffs, recording no verdict and merging nothing. After accepting externally,
   `l` reports that decision for this snapshot and reveals one italic next-dump guess;
-  `t` opens it for editing in Think. Only F2 sends. No unmet conditions means observe
+  `t` opens it for editing in Think. Only F2 sends. `w` labels the run in your own words
+  (correction, none, accepted or rejected), saved by tink-sdlc only on F2. No unmet conditions means observe
   the accepted behavior, not invent another feature. See [Taste](docs/design/taste.md).
 - **Measure:** `r` explicitly reads this repo's PRs updated in the last 30 days from
   GitHub through `gh`. Lists all states; Enter shows dates, author, URL and reported

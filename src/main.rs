@@ -312,6 +312,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_repo(repo)
             .with_shape_agent(shape_agent)
             .with_shape_held(agent && !live)
+            .with_agent_operator(agent)
             .with_sdlc_root(sdlc_root);
         if let Ok(root) = &record_root {
             menu = menu.with_record_root(root.clone());

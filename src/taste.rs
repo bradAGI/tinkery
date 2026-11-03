@@ -1,8 +1,10 @@
 //! Taste reviews one exact result against its unchanged saved goal. Explicit refresh reads
 //! checkout status and GitHub metadata; o opens a PR and v runs a declared exact-head preview. Copying hands
 //! review back externally without recording a verdict, posting, merging, signing gates or agents.
+//! Its one write is the operator's label (w, then F2), through tink-sdlc; agent launches can't.
 
 mod evidence;
+mod label;
 mod links;
 mod next;
 mod preview;
@@ -28,6 +30,10 @@ use std::{path::PathBuf, process::Command, time::Instant};
 /// One result visit; snapshots, copy requests and any explicit preview die on leaving.
 pub(crate) struct Taste {
     root: Option<PathBuf>,
+    /// Launched with `--operator agent`: labels are the operator's, so `w` refuses.
+    agent: bool,
+    label: Option<label::Form>,
+    labelling: Option<Read<String>>,
     reading: Option<Read<Vec<ResultRow>>>,
     opening: Option<Read<()>>,
     preview: Option<preview::Preview>,
@@ -47,9 +53,12 @@ pub(crate) struct Taste {
 
 impl Taste {
     /// Open without executing helpers or contacting GitHub. r discloses and starts the read.
-    pub(crate) fn open(root: Option<PathBuf>) -> Self {
+    pub(crate) fn open(root: Option<PathBuf>, agent: bool) -> Self {
         Self {
             root,
+            agent,
+            label: None,
+            labelling: None,
             reading: None,
             opening: None,
             preview: None,
@@ -122,6 +131,16 @@ impl Taste {
                 }
             }
         }
+        if let Some(result) = self.labelling.as_ref().and_then(Read::poll) {
+            self.labelling = None;
+            match result {
+                Ok(answer) => {
+                    self.label = None;
+                    self.notice = answer;
+                }
+                Err(why) => self.notice = format!("Not recorded. {why}"),
+            }
+        }
         if let Some(result) = self.opening.as_ref().and_then(Read::poll) {
             self.opening = None;
             self.notice = if result.is_ok() {
@@ -136,13 +155,17 @@ impl Taste {
     /// Handle unmodified deliberate actions. Help is isolated by the menu; repeats never open,
     /// reread or copy. true returns Home, dropping and cancelling every owned helper.
     pub(crate) fn key(&mut self, key: KeyEvent) -> bool {
+        if self.label.is_some() {
+            self.label_key(key);
+            return false;
+        }
         if key.modifiers != KeyModifiers::NONE || key.kind == KeyEventKind::Release {
             return false;
         }
         if key.kind == KeyEventKind::Repeat
             && matches!(
                 key.code,
-                KeyCode::Char('r' | 'o' | 'a' | 'c' | 'l' | 't' | 'e' | 'v') | KeyCode::Enter
+                KeyCode::Char('r' | 'o' | 'a' | 'c' | 'l' | 't' | 'e' | 'v' | 'w') | KeyCode::Enter
             )
         {
             return false;
@@ -261,6 +284,23 @@ impl Taste {
                     }
                 }
             }
+            KeyCode::Char('w')
+                if self.detail
+                    && self.reading.is_none()
+                    && self.rows.get(self.selected).is_some() =>
+            {
+                if self.agent {
+                    self.notice =
+                        "Labels are the operator's; an agent launch can't record one.".into();
+                } else {
+                    self.label = Some(label::Form::default());
+                    self.pause = None;
+                    self.draft = None;
+                    self.evidence = false;
+                    self.scroll = 0;
+                    self.notice.clear();
+                }
+            }
             KeyCode::Char('t') => {
                 if let Some(pause) = &self.pause {
                     self.draft = Some(pause.draft.clone());
@@ -282,6 +322,60 @@ impl Taste {
             _ => {}
         }
         false
+    }
+
+    /// The open label form takes every key: words are typed, F2 saves once, Esc discards.
+    fn label_key(&mut self, key: KeyEvent) {
+        if self.labelling.is_some() {
+            return;
+        }
+        match key.code {
+            KeyCode::Up => return self.scroll = self.scroll.saturating_sub(1),
+            KeyCode::Down => return self.scroll = self.scroll.saturating_add(1),
+            KeyCode::PageUp => return self.scroll = self.scroll.saturating_sub(self.page),
+            KeyCode::PageDown => return self.scroll = self.scroll.saturating_add(self.page),
+            _ => {}
+        }
+        let Some(form) = self.label.as_mut() else {
+            return;
+        };
+        match form.key(key) {
+            label::Action::Stay => {}
+            label::Action::Discard => {
+                self.label = None;
+                self.notice = "Label discarded; nothing recorded.".into();
+            }
+            label::Action::Save => match (form.ready(), &self.root, self.rows.get(self.selected)) {
+                (Ok((kind, words)), Some(root), Some(row)) => {
+                    let (root, slug) = (root.clone(), row.slug.clone());
+                    self.notice = "Saving your label…".into();
+                    self.labelling = Some(Read::task(move |stop| {
+                        label::write(&root, &slug, kind, &words, stop)
+                    }));
+                }
+                (Err(why), _, _) => self.notice = why.into(),
+                _ => self.notice = "Select a result first.".into(),
+            },
+        }
+    }
+
+    /// Whether the label form is taking words, so `?` and digits type instead of acting.
+    pub(crate) fn takes_text(&self) -> bool {
+        self.label.is_some()
+    }
+
+    /// A label is being saved; leaving waits for tink-sdlc's answer.
+    pub(crate) fn saving(&self) -> bool {
+        self.labelling.is_some()
+    }
+
+    /// Pasted text joins the label's words unchanged once a kind is chosen.
+    pub(crate) fn paste(&mut self, text: &str) {
+        if self.labelling.is_none()
+            && let Some(form) = self.label.as_mut()
+        {
+            form.paste(text);
+        }
     }
 
     fn select(&mut self, next: bool) {
@@ -336,7 +430,8 @@ impl Taste {
             "Right now\nq goes back to the menu · F10 Home · ? / Esc close help\n",
             "Enter reviews · e opens evidence · n/p result\n",
             "o opens PR · v runs declared preview at the exact commit; Esc stops/reaps\n",
-            "a/c copy accept/correct requests, never decisions\n\n",
+            "a/c copy accept/correct requests, never decisions\n",
+            "w labels the run in your words; only F2 saves it\n\n",
             "What Taste reads\nOnly r reads the named checkout's API 1 status and each run's\n",
             "recorded PR with gh, using your login. A run without a recorded PR\n",
             "stays unknown; prose supplies none. Reading writes nothing and launches no agents.\n",
@@ -360,7 +455,11 @@ impl Taste {
             area.width,
             2,
         );
-        let actions = if self.preview.is_some() {
+        let actions = if self.labelling.is_some() {
+            "Saving your label with tink-sdlc…\n? help"
+        } else if self.label.is_some() {
+            "1 correction  2 none  3 accepted  4 rejected, then type your words\nF2 save label  Esc discard"
+        } else if self.preview.is_some() {
             "Preview · Esc stops and returns · F10 Home\narrows/PgUp/PgDn scroll  ? help"
         } else if self.rows.get(self.selected).is_none() {
             if self.root.is_some() && self.reading.is_none() && self.opening.is_none() {
@@ -373,7 +472,7 @@ impl Taste {
         } else if self.detail && self.pause.is_some() {
             "t edit in Think (unsent)  e evidence  a/c copy\narrows/PgUp/PgDn scroll  ? help  Esc list"
         } else if self.detail {
-            "v run preview  l accepted externally  e evidence  a/c copy  o open PR\narrows/PgUp/PgDn scroll  n/p result  r reread  ? help  Esc list"
+            "v run preview  l accepted externally  w label  e evidence  a/c copy  o open PR\narrows/PgUp/PgDn scroll  n/p result  r reread  ? help  Esc list"
         } else {
             "arrows move  enter/v open result  l accepted externally\na/c copy  o open PR  r reread  ? help  Esc back"
         };
@@ -394,6 +493,8 @@ impl Taste {
                 Line::raw("Runs python3 _system/scripts/sdlc.py status --json and per-run status."),
                 Line::raw("Reads each run's recorded PR with gh using your login."),
             ]
+        } else if let (Some(form), Some(row)) = (&self.label, self.rows.get(self.selected)) {
+            view::label_form(row, form, &self.notice, body.width, palette)
         } else if let Some(preview) = &self.preview {
             let row = &self.rows[self.selected];
             view::running_preview(row, &preview.status(), body.width, palette)
@@ -438,7 +539,7 @@ impl Taste {
                 .collect::<Vec<_>>(),
         ));
         frame.render_widget(visible.style(palette.ink).wrap(Wrap { trim: false }), body);
-        if !self.notice.is_empty() {
+        if !self.notice.is_empty() && self.label.is_none() {
             frame.render_widget(
                 Paragraph::new(safe(&self.notice)).style(palette.muted),
                 Rect::new(
