@@ -440,8 +440,9 @@ creating an SDLC run stays outside Shape.
   (`Saving your answer.`, then `Answer saved. Looking in NAME for the next question.`),
   elapsed seconds and `esc stop`. F1 says a step is running.
 - Draft display replaces file `status:` and `revision:` lines with `Seed draft rN` and
-  shows `#` headings bold. All other lines remain as written; display never edits
-  `seed-contract.md`.
+  shows `#` headings bold. Acceptance checks drop the Markdown escapes Tinkery wrote
+  for them, so they read as their records say. All other lines remain as written;
+  display never edits `seed-contract.md`.
 
 ### Answering and confirming
 

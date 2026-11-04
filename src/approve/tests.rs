@@ -340,3 +340,29 @@ fn no_checkout_is_unchanged_and_unresolved_checkout_does_not_claim_a_mismatch() 
         false,
     );
 }
+
+#[test]
+fn acceptance_checks_read_as_written_without_markdown_escapes() {
+    let records = crate::seed_me::ledger::Value::parse(
+        r#"[{"statement":"Visiting `/foo` returns 404 & *nothing* else","kind":"cmd","source":"TEST goal","cmd":"grep -c '\\*' TEST-file","expect":"1","cwd":"."},
+            {"statement":"1. TEST [step] #2","kind":"judge","source":"TEST goal","how_to_judge":"Read `TEST.md` <head>"}]"#,
+    )
+    .unwrap();
+    let mut view = view();
+    view.found.as_mut().unwrap().as_mut().unwrap().seeds[0]
+        .seed
+        .acceptance = crate::seed_me::ledger::checks_block(&records).unwrap();
+    let shown = screen(&mut view, 100, 30, false);
+    for written in [
+        "Visiting `/foo` returns 404 & *nothing* else",
+        "check: `grep -c '\\*' TEST-file`",
+        "1. TEST [step] #2",
+        "you judge: Read `TEST.md` <head>",
+    ] {
+        assert!(shown.contains(written), "{written} not shown:\n{shown}");
+    }
+    assert!(
+        !shown.contains("\\`") && !shown.contains("&amp;"),
+        "{shown}"
+    );
+}

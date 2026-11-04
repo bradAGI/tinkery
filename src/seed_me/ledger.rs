@@ -22,7 +22,9 @@ pub(crate) mod fixtures;
 mod seed;
 mod storage;
 pub(crate) use checks::{FULL, prose_headings};
-pub use checks::{checks_block, document_headings, read_checks, validate_checks};
+pub use checks::{
+    checks_block, document_headings, read_checks, readable_acceptance, validate_checks,
+};
 pub(crate) use checks::{goal_criteria, keeps_criterion, validate_goal_checks};
 pub(crate) use seed::status_from_ledger;
 pub use seed::{decisions_block, seed_summary, status, verify_handoff};

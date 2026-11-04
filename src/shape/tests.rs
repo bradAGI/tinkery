@@ -875,6 +875,32 @@ fn without_an_agent_shape_only_reads_and_letters_scroll() {
 }
 
 #[test]
+fn a_draft_shows_acceptance_checks_as_written_and_other_lines_unchanged() {
+    let records = crate::seed_me::ledger::Value::parse(
+        r#"[{"statement":"Visiting `/foo` returns 404","kind":"cmd","source":"TEST goal","cmd":"grep -c '\\*' TEST-file","expect":"1","cwd":"."}]"#,
+    )
+    .unwrap();
+    let seed = format!(
+        "status: draft\n# Seed: TEST\nrevision: r2\n\n## You are confirming\nTEST \\`kept\\`\n{}## Affected users and systems\nTEST \\`kept too\\`\n",
+        crate::seed_me::ledger::checks_block(&records).unwrap()
+    );
+    let mut shape = done(Shaped::Drafted {
+        revision: Some("r2".into()),
+        text: Some(seed),
+    })
+    .with_agent(Some(agent(1)));
+    let text = screen(&mut shape, 100, 30, true);
+    assert!(
+        text.contains("  Acceptance criteria\n\n  Visiting `/foo` returns 404\n  check: `grep -c '\\*' TEST-file`\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("TEST \\`kept\\`") && text.contains("TEST \\`kept too\\`"),
+        "{text}"
+    );
+}
+
+#[test]
 fn a_draft_shows_the_seed_and_f2_needs_the_operators_own_words() {
     let seed =
         "status: draft\n# Seed: TEST\nrevision: r2\n\n## You are confirming\nTEST seed body.\n";

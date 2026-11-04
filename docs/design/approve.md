@@ -25,6 +25,8 @@ same ledger verification as Shape and owns the one canonical, shell-quoted intak
 Seed and ledger bytes are checked before and after verification; observed changes
 refuse the reading. This is a snapshot, not a live freshness claim. Return to the
 menu and reopen to read again. Unsafe terminal controls are escaped only for display.
+The acceptance section is shown without the Markdown escapes Tinkery writes into it, so
+checks read as written; the stored bytes keep them.
 
 One menu-owned verifier survives visits. Reads run off input and paint paths through
 disk reads. Leaving stops publication and further seed

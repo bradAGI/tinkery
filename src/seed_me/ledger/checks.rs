@@ -229,6 +229,58 @@ fn command(value: &str) -> String {
     format!("{fence}{pad}{value}{pad}{fence}")
 }
 
+/// An acceptance section as its checks were written, for display only: undoes the Markdown
+/// escapes and entities `checks_block` adds to prose (#670). Commands, which are code spans, and
+/// legacy JSON sections stay as stored; control characters stay as entities.
+pub fn readable_acceptance(section: &str) -> String {
+    if section.lines().any(|line| line.starts_with("```")) {
+        return section.to_owned();
+    }
+    section
+        .split('\n')
+        .map(|line| match line.strip_prefix("check: ") {
+            Some(code) if code.starts_with('`') => line.to_owned(),
+            _ => unprose(line),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn unprose(line: &str) -> String {
+    let entity = Regex::new(r"^&(?:amp|lt|gt|#(\d+));").unwrap();
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(c) = rest.chars().next() {
+        if c == '\\'
+            && let Some(next) = rest[1..]
+                .chars()
+                .next()
+                .filter(|n| "\\`*_[]#~+-=.)".contains(*n))
+        {
+            out.push(next);
+            rest = &rest[1 + next.len_utf8()..];
+            continue;
+        }
+        if let Some(m) = entity.captures(rest) {
+            let decoded = match (&m[0], m.get(1)) {
+                ("&amp;", _) => Some('&'),
+                ("&lt;", _) => Some('<'),
+                ("&gt;", _) => Some('>'),
+                (_, Some(n)) => n.as_str().parse().ok().and_then(char::from_u32),
+                _ => None,
+            };
+            if let Some(d) = decoded.filter(|d| !d.is_control()) {
+                out.push(d);
+                rest = &rest[m[0].len()..];
+                continue;
+            }
+        }
+        out.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    out
+}
+
 /// Render literal, one-line acceptance cards from records, never from model Markdown.
 pub fn checks_block(records: &Value) -> Result<String> {
     validate_checks(records)?;

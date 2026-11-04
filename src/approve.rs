@@ -440,7 +440,9 @@ impl Approve {
                             lines.push(Line::raw(display(line)));
                         }
                         lines.push(Line::default());
-                        for line in seed.acceptance.split('\n') {
+                        let acceptance =
+                            crate::seed_me::ledger::readable_acceptance(&seed.acceptance);
+                        for line in acceptance.split('\n') {
                             lines.push(Line::raw(display(line)));
                         }
                         lines.push(Line::styled(
