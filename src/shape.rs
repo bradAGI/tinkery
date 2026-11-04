@@ -2072,8 +2072,9 @@ fn render_open(
 }
 
 /// The seed draft for reading: a muted `Seed draft rN` header in place of the file's `status:`
-/// and `revision:` lines, and headings bold without their `#` marks. Every other line is shown
-/// as written. Display only: the file is never changed.
+/// and `revision:` lines, headings bold without their `#` marks, and acceptance checks without
+/// Tinkery's Markdown escapes. Every other line is shown as written. Display only: the file is
+/// never changed.
 fn seed_view(seed: &str, revision: Option<&str>, palette: Palette) -> Text<'static> {
     let mut lines = vec![
         Line::styled(
@@ -2082,6 +2083,20 @@ fn seed_view(seed: &str, revision: Option<&str>, palette: Palette) -> Text<'stat
         ),
         Line::default(),
     ];
+    let seed = match seed.split_once("\n## Acceptance criteria\n") {
+        Some((before, section)) => {
+            let end = section.find("\n## ").map_or(section.len(), |end| end + 1);
+            format!(
+                "{before}\n{}{}",
+                crate::seed_me::ledger::readable_acceptance(&format!(
+                    "## Acceptance criteria\n{}",
+                    &section[..end]
+                )),
+                &section[end..]
+            )
+        }
+        None => seed.to_owned(),
+    };
     let mut header = true;
     for line in seed.trim_end_matches('\n').split('\n') {
         header &= !line.trim().is_empty();
