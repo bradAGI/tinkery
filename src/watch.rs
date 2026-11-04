@@ -204,6 +204,12 @@ fn steps(run: &Value) -> Result<Option<(Vec<String>, Worker)>, String> {
                 format!(" · {words}")
             }
             ("prepared" | "completed" | "uncertain" | "unreadable", None) => String::new(),
+            // A worker stopped before its turn ended is never shown as a finished turn.
+            ("stopped", None) => match step["stopped_by"].as_str() {
+                Some("operator") => " by you".into(),
+                Some("cap") => " at its response cap".into(),
+                _ => return Err(refuse().into()),
+            },
             _ => return Err(refuse().into()),
         };
         lines.push(format!("Worker step {name}: {state}{seen}"));
