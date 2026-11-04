@@ -297,11 +297,12 @@ already exists:
 ```sh
 python3 _system/scripts/sdlc.py step <run> build prepare \
   --report /absolute/run-notes/build-report.md \
-  --model provider/exact-model-id --launcher /absolute/trusted-adapter
+  --model provider/exact-model-id --launcher /absolute/trusted-adapter [--max-responses N]
 python3 _system/scripts/sdlc.py step <run> build show
 python3 _system/scripts/sdlc.py step <run> build launch
 python3 _system/scripts/sdlc.py step <run> build resume
 python3 _system/scripts/sdlc.py step <run> build complete
+python3 _system/scripts/sdlc.py step <run> build complete --stopped-by operator  # or cap
 ```
 
 These are separate deliberate actions, not a script to run without inspection.
@@ -311,7 +312,10 @@ its SHA-256, plus state, session identity and when it was prepared (`prepared_ns
 within a run; prepare refuses an existing contract or report. Relative report paths,
 model aliases/wildcards, changed launchers, copied contracts in another checkout,
 path substitutions and launch/resume overrides are refused. Prepare a new step
-in a new checkout; contracts are not portable session records. While the run's
+in a new checkout; contracts are not portable session records. `--max-responses N` stores a
+response cap (`max_responses`) that every resolve, launch and resume passes to the adapter as
+`--max-responses N`; an adapter that cannot enforce it must refuse at resolve, so a cap is never
+silently ignored. The bundled Claude Code adapter does not enforce caps and refuses them. While the run's
 branch is checked out in another worktree, prepare refuses here and names that checkout.
 
 `launch` and `resume` recheck every definition gate and perform offline exact-model
@@ -333,7 +337,13 @@ session. The adapter owns delivering the contract/report instructions to the age
 `complete` requires an active step, a nonempty regular report at the exact
 recorded path and the adapter's offline confirmation that the agent finished its
 latest turn on the pin, then stores the report digest. A paused, stopped, failed or
-still-running agent leaves the step `active`: resume it, then complete. For an active step, `show` adds
+still-running agent leaves the step `active`: resume it, then complete, or finish it as stopped.
+`complete --stopped-by operator|cap` is for a worker stopped before its turn ended, by the operator
+or at a response cap. It ends the step's process group (so children such as dev servers stop too) and
+records the step `stopped` with who stopped it and the report digest, or none if no report exists. It
+is never recorded as an ended turn; status moves on past it. It refuses to end a process group whose
+live leader does not name this step's contract, and says so when the adapter reported no group.
+For an active step, `show` adds
 `observed_turn` from the same offline probe (`ended`, `not ended` or `unknown` with the reason); it is
 read now, never stored, and makes no provider request. Missing reports refuse completion: no root
 fallback, copying or invented report. A report is not proof of passing checks,
@@ -360,7 +370,9 @@ implementing `tink-sdlc-launcher` protocol 1 (one is bundled for Pi, below):
 - Each operation returns exit zero and one JSON object on stdout containing
   `protocol: "tink-sdlc-launcher"`, integer `api_version: 1`, `operation` (launch, resume
   or finished) and the exact `model`. Resume and finished responses include the same `session`;
-  admissions require a nonblank session identity. Diagnostics belong on stderr.
+  admissions require a nonblank session identity. Admissions may add `process_group`, the
+  detached worker's process group, whose leader's command line names the contract path; a stop
+  ends that group. Diagnostics belong on stderr.
   Failed, malformed, unsupported or mismatching offline replies refuse admission.
 - Probe timeouts are 15 seconds; admission timeout is 60 seconds. A crash or failed
   admission leaves `uncertain`, never automatic retry or completion. Inspect the
@@ -389,7 +401,7 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   if the cache lacks a model; the adapter never refreshes it.
 - Launch starts `pi --mode json` detached, with a new `tsdlc-<uuid>` session ID in Pi's
   per-checkout session directory (`PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` respected), and returns once
-  the session file records the pin. Output goes to `runs/<run>/steps/<name>.<op>-<time>.pi.log`.
+  the session file records the pin, replying with Pi's process group. Output goes to `runs/<run>/steps/<name>.<op>-<time>.pi.log`.
 - Resume refuses a session that is missing, archived by session rotation, or whose last
   recorded model (`model_change` or assistant answer on the active branch) differs from
   the pin. It passes the session file path, then waits up to 50 seconds for the first
@@ -401,6 +413,11 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   aborted, failed or answered off the pin is not finished.
 - The check is per answer the adapter observes. Later model switches inside the session
   are not watched.
+- With `--max-responses N`, admission leaves a watcher (in its own session) that counts the
+  assistant answers in the session file every half second and, once there are N, ends Pi's
+  process group and writes the stop to the step's `.pi.log`. Finish such a step with
+  `complete --stopped-by cap`. Resume refuses a session that already holds N answers. An
+  answer requested before the stop may still be charged; the cap counts recorded answers.
 
 pi-herdr 0.6.0's `herdr_resume_agent` re-derives the model without the spawn-level pin
 (it falls back to the parent's model), so do not resume pinned steps through it.
@@ -632,8 +649,10 @@ Preview, then apply (the receipt `_system/scaffold.json` is the trust baseline):
   with `--overwrite-customized` to take the package version (git keeps your old copy).
 - Only the router block of `AGENTS.md` is replaced; the rest of the file is preserved.
   Missing or duplicated router markers refuse the upgrade. Downgrades are refused.
-- `runs/` is never modified. When stage `CONTEXT.md` files change, approvals in runs that
-  have decision receipts read as stale until re-approved.
+- `runs/` is never modified. A stage's approval binds the `CONTEXT.md` files of stages 1
+  up to it, so when those change, approvals in runs that have decision receipts read as stale
+  until re-approved; a change to stages 4-6 alone keeps them current. Upgrading from before
+  1.52.0 stales in-flight approvals once, because the binding changed.
 - The receipt is written last, so an interrupted upgrade is safe to rerun.
 - Afterward run `python3 _system/scripts/sdlc.py walk`.
 

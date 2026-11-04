@@ -463,7 +463,23 @@ fn a_run_says_whether_a_worker_is_building_it_and_an_ended_turn_needs_you() {
     watch.key(KeyEvent::from(KeyCode::Enter));
     settle(&mut watch);
     assert!(screen(&mut watch, 100, 30).contains("No worker step has been started for this run."));
+    for (by, words) in [
+        ("operator", "stopped by you"),
+        ("cap", "stopped at its response cap"),
+    ] {
+        // tink-sdlc#151: a step finished as stopped reads as stopped, never as an ended turn.
+        let mut value = detail(vec![]);
+        let mut stopped = step("stopped", None);
+        stopped["stopped_by"] = by.into();
+        value["run"]["steps"] = vec![stopped].into();
+        let detail = parse_detail(&value.to_string()).unwrap();
+        assert_eq!(
+            detail.steps,
+            Some(vec![format!("Worker step build: {words}")])
+        );
+    }
     for bad in [
+        step("stopped", None),
         step("running", None),
         step("active", None),
         step("prepared", Some("ended")),

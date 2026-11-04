@@ -450,9 +450,11 @@ def marks(path, items, include_agents=False):
 
 
 def inputs(path, stage):
+    """Digest of what a stage-N approval rests on: the run's definitions and the contracts of stages 1..N.
+    A later stage's contract is not bound, so changing it never stales an earlier approval (#153)."""
     metadata = require_run(path)
     files = [path / 'brief.md'] if metadata['profile'] == 'light' else [path / p for p in ARTIFACTS[:stage]]
-    files += sorted((ROOT / 'stages').glob('*/CONTEXT.md'))
+    files += [context for n in range(1, stage + 1) if (context := ROOT / 'stages' / STAGE_DIRS[n] / 'CONTEXT.md').is_file()]
     values = {str(p.relative_to(ROOT)): digest(p.read_bytes()) for p in files}
     seed_contract = metadata.get('seed_contract')
     if seed_contract:
@@ -639,7 +641,10 @@ def test_lock(path):
     lock = path / 'test-lock.json'
     if not lock.exists():
         if require_run(path)['kind'] == 'bug':
-            raise ValueError('Bug runs require a reproduction test lock.')
+            raise ValueError('Bug runs require a reproduction test lock. Have the failing test reviewed by someone '
+                             'other than the worker that wrote it (a human or a separate agent session), then lock it: '
+                             f'python3 _system/scripts/sdlc.py lock-tests {path.name} TEST_PATHS '
+                             "--source 'REVIEW REFERENCE' --failure-evidence 'FAILURE EVIDENCE' --reproduce 'ARGV_JSON'.")
         return None
     record = read_json(lock)
     for name, expected in record['files'].items():
@@ -2340,6 +2345,8 @@ def step_adapter(record, operation, contract, resolve=False):
         argv += ['--for-operation', operation]
     if operation in ('resume', 'finished'):
         argv += ['--session', record['session']]
+    if operation in ('launch', 'resume') and 'max_responses' in record:
+        argv += ['--max-responses', str(record['max_responses'])]
     offline = resolve or operation == 'finished'
     result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, timeout=15 if offline else 60)
     if result.returncode:
@@ -2361,6 +2368,51 @@ def step_adapter(record, operation, contract, resolve=False):
 
 
 NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, stopped, failed or still running)'
+STEP_STATES = ('prepared', 'active', 'uncertain', 'completed', 'stopped')
+FINISHED_STEPS = ('completed', 'stopped')
+STOPPED_WORDS = {'operator': 'by the operator', 'cap': 'at its response cap'}
+STOP_GRACE_SECONDS = 5
+
+
+def group_alive(group):
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def end_process_group(record, contract):
+    """Ends the step's detached process group, children such as dev servers included, and says what it did.
+    Refuses a group whose live leader does not name this step's contract: its id may belong to another program now."""
+    group = record.get('process_group')
+    if group is None:
+        return 'The adapter recorded no process group for this step, so no process was ended; check for leftovers yourself.'
+    if type(group) is not int or group <= 1:
+        raise ValueError('Step contract has an invalid process group.')
+    try:
+        leader = subprocess.run(['ps', '-ww', '-o', 'args=', '-p', str(group)], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError(f'Cannot check process {group} before ending it: {error}') from error
+    if leader.returncode == 0 and leader.stdout.strip() and str(contract) not in leader.stdout:
+        raise ValueError(f'Process {group} is no longer this step\'s worker; nothing was ended or recorded.')
+    if not group_alive(group):
+        return 'No process of this step was still running.'
+    try:
+        for sig, wait in ((signal.SIGTERM, STOP_GRACE_SECONDS), (signal.SIGKILL, 1)):
+            os.killpg(group, sig)
+            deadline = time.monotonic() + wait
+            while group_alive(group) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if not group_alive(group):
+                return f'Ended the step\'s process group {group}.'
+    except ProcessLookupError:
+        return f'Ended the step\'s process group {group}.'
+    except PermissionError as error:
+        raise ValueError(f'Cannot end process group {group}: {error}') from error
+    raise ValueError(f'Process group {group} survived SIGKILL; nothing was recorded.')
 
 
 def probe_turn(record, contract):
@@ -2388,10 +2440,12 @@ def step_facts(path):
         with contextlib.suppress(ValueError, OSError):
             record = read_json(contract)
         state = record.get('state') if isinstance(record, dict) else None
-        if state not in ('prepared', 'active', 'uncertain', 'completed'):
+        if state not in STEP_STATES:
             facts.append({'name': contract.stem, 'state': 'unreadable'})
             continue
         fact = {'name': contract.stem, 'state': state}
+        if state == 'stopped':
+            fact['stopped_by'] = record.get('stopped_by')
         if state == 'active':
             fact['turn'], fact['observed_turn'] = probe_turn(record, contract)
         facts.append(fact)
@@ -2428,7 +2482,8 @@ def worker_action(slug, steps, newest=None):
     if step['turn'] == 'ended':
         return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
     if step['turn'] == 'not-ended':
-        return f"The {step['name']} worker has not ended its turn. Check it with {command} show."
+        return (f"The {step['name']} worker has not ended its turn. Check it with {command} show; "
+                f'if you or its response cap stopped it, finish it with {command} complete --stopped-by operator (or cap).')
     return f"Whether the {step['name']} worker is running is {step['observed_turn']}"
 
 
@@ -2436,7 +2491,7 @@ def fix_step_action(path, steps, newest):
     """After lock-tests, the command that prepares the fix's step: a completed build step cannot be prepared again.
     Says nothing once a step has been prepared since the lock, or while any step is unfinished or unreadable."""
     lock = path / 'test-lock.json'
-    if not lock.is_file() or not steps or any(s['state'] != 'completed' for s in steps):
+    if not lock.is_file() or not steps or any(s['state'] not in FINISHED_STEPS for s in steps):
         return ''
     try:
         record = read_json(path / 'steps' / f'{newest}.json')
@@ -2465,9 +2520,11 @@ def step(args):
     contract = path / 'steps' / f'{args.name}.json'
     if contract.resolve() != contract.absolute():
         raise ValueError('Step contract paths must not contain symlinks.')
-    supplied = (args.report, args.model, args.launcher)
+    supplied = (args.report, args.model, args.launcher, args.max_responses)
     if args.action != 'prepare' and any(value is not None for value in supplied):
-        raise ValueError('Step report, model and launcher are fixed at prepare; overrides are refused.')
+        raise ValueError('Step report, model, launcher and response cap are fixed at prepare; overrides are refused.')
+    if args.stopped_by and args.action != 'complete':
+        raise ValueError('--stopped-by only completes a stopped step.')
     if args.action == 'show':
         record = read_json(contract)
         if isinstance(record, dict) and record.get('state') == 'active':
@@ -2486,10 +2543,13 @@ def step(args):
             model = step_model(args.model)
             if report.exists():
                 raise ValueError('Step report already exists; choose a fresh destination, never reuse old evidence.')
+            if args.max_responses is not None and args.max_responses < 1:
+                raise ValueError('A response cap must be at least 1.')
             record = {'schema': 1, 'run_id': meta['run_id'], 'checkout': str(ROOT),
                       'report': str(report), 'model': model, 'launcher': str(launcher),
                       'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None,
-                      'prepared_ns': time.time_ns()}
+                      'prepared_ns': time.time_ns(),
+                      **({'max_responses': args.max_responses} if args.max_responses is not None else {})}
             step_paths(record)
             write_json(contract, record)
         else:
@@ -2498,17 +2558,28 @@ def step(args):
                     or record.get('run_id') != meta['run_id'] or record.get('checkout') != str(ROOT)):
                 raise ValueError('Step contract is invalid or belongs to another run/checkout; prepare a new step here.')
             step_model(record['model'])
-            if record.get('state') not in ('prepared', 'active', 'uncertain', 'completed'):
+            if 'max_responses' in record and not (type(record['max_responses']) is int and record['max_responses'] >= 1):
+                raise ValueError('Step contract has an invalid response cap.')
+            if record.get('state') not in STEP_STATES:
                 raise ValueError('Step contract has an invalid state.')
             session = record.get('session')
             if ((session is not None and (not isinstance(session, str) or not session.strip()))
-                    or (record['state'] in ('active', 'completed') and session is None)
+                    or (record['state'] in ('active', *FINISHED_STEPS) and session is None)
                     or (record['state'] == 'prepared' and session is not None)):
                 raise ValueError('Step contract has no valid session for its state.')
             report, _ = step_paths(record)
             if args.action == 'complete':
                 if record['state'] != 'active':
                     raise ValueError('Only an active step with a known session can be completed.')
+                if args.stopped_by:
+                    print(end_process_group(record, contract))
+                    contents = report.read_bytes() if report.is_file() else b''
+                    record.update(state='stopped', stopped_by=args.stopped_by,
+                                  report_sha256=digest(contents) if contents.strip() else None)
+                    write_json(contract, record)
+                    print(f'Recorded step {args.name} as stopped ({STOPPED_WORDS[args.stopped_by]}), not as an ended turn; '
+                          + ('its report digest is stored.' if contents.strip() else 'it left no report.'))
+                    return
                 if not report.is_file():
                     raise ValueError(f'Step report is missing at {report}; completion refused, with no project-root fallback.')
                 contents = report.read_bytes()
@@ -2534,6 +2605,9 @@ def step(args):
                 write_json(contract, record)
                 reply = step_adapter(record, args.action, contract)
                 record.update(state='active', session=reply['session'])
+                record.pop('process_group', None)
+                if type(reply.get('process_group')) is int and reply['process_group'] > 1:
+                    record['process_group'] = reply['process_group']
                 write_json(contract, record)
         print(json.dumps(record, indent=2))
 
@@ -2621,6 +2695,10 @@ def main():
     execution.add_argument('--report', metavar='ABSOLUTE_PATH')
     execution.add_argument('--model', metavar='PROVIDER/MODEL')
     execution.add_argument('--launcher', metavar='ABSOLUTE_PATH')
+    execution.add_argument('--max-responses', type=int, metavar='N',
+                           help='at prepare: the launcher stops the worker once its session holds N responses')
+    execution.add_argument('--stopped-by', choices=list(STOPPED_WORDS),
+                           help='complete a worker stopped before its turn ended: ends its process group, records what exists')
     lint = commands.add_parser('walk', help='structural walk lint (read-only)')
     lint.add_argument('--json', action='store_true')
     args = parser.parse_args()
