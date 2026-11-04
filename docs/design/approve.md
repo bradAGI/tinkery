@@ -62,8 +62,9 @@ cd '<named checkout>' && python3 _system/scripts/sdlc.py new seed-title && pytho
 
 One shell line changes to the explicitly named `--sdlc-root`, creates a run and
 imports its seed and checks for definition review. The default slug comes from the
-seed's H1 title (without `Seed:`): lowercase ASCII words joined by hyphens, capped
-at tink-sdlc's 80 characters without a trailing hyphen. Paths use the shared canonical
+seed's H1 title (without `Seed:`): whole lowercase ASCII words joined by hyphens,
+at most 40 characters, so folder, Watch and Taste rows stay scannable; only a first
+word longer than that is cut. Paths use the shared canonical
 shell quoting; no placeholder needs replacing. Existing run names still refuse creation.
 Copying runs nothing and grants no approval. Missing checkout, an empty slug or
 unsafe paths leave the verified seed readable with a reason and no copy action.

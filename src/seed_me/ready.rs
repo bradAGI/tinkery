@@ -115,15 +115,26 @@ fn intake(session: &Path, executable: &Path, run: &str, root: &Path) -> Option<S
     ))
 }
 
+/// Run names stay scannable: whole lowercase ASCII words joined by hyphens, at most
+/// `SLUG_MAX` bytes. Only a first word longer than the bound is cut.
+const SLUG_MAX: usize = 40;
+
 fn slug(title: &str) -> Option<String> {
-    let words: Vec<_> = title
+    let mut slug = String::new();
+    for word in title
         .split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|word| !word.is_empty())
-        .collect();
-    let mut slug = words.join("-").to_ascii_lowercase();
-    slug.truncate(80);
-    let slug = slug.trim_end_matches('-');
-    (!slug.is_empty()).then(|| slug.to_owned())
+    {
+        if slug.is_empty() {
+            slug = word[..word.len().min(SLUG_MAX)].to_ascii_lowercase();
+        } else if slug.len() + 1 + word.len() <= SLUG_MAX {
+            slug.push('-');
+            slug.push_str(&word.to_ascii_lowercase());
+        } else {
+            break;
+        }
+    }
+    (!slug.is_empty()).then_some(slug)
 }
 
 fn acceptance(seed: &str) -> Result<String, String> {
@@ -432,8 +443,13 @@ mod tests {
             Some("test-caf-touch-nope".into())
         );
         assert_eq!(slug("你好"), None);
-        assert_eq!(slug(&"a".repeat(200)).unwrap().len(), 80);
-        assert_eq!(slug(&format!("{} next", "a".repeat(79))).unwrap().len(), 79);
+        assert_eq!(slug(&"a".repeat(200)).unwrap().len(), 40);
+        assert_eq!(slug(&format!("{} next", "a".repeat(39))).unwrap().len(), 39);
+        assert_eq!(
+            slug("Encounter an explicit unknown route state on unsupported paths rather than the app"),
+            Some("encounter-an-explicit-unknown-route".into())
+        );
+        assert_eq!(slug("Fix the Safari export"), Some("fix-the-safari-export".into()));
         let (_root, session) = fixture(true);
         assert!(read(&session, None).unwrap().unwrap().commands.is_none());
     }

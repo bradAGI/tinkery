@@ -212,7 +212,8 @@ def approve_watch(root, env, session, project):
         words = shlex.split(commands[0])
         copied_slug = words[6]
         title = (session / 'seed-contract.md').read_text().split('# Seed: ', 1)[1].splitlines()[0]
-        assert copied_slug == re.sub('[^a-z0-9]+', '-', title.lower()).strip('-')[:80].rstrip('-'), words
+        expected = re.sub('[^a-z0-9]+', '-', title.lower()).strip('-')
+        assert len(copied_slug) <= 40 and (expected + '-').startswith(copied_slug + '-'), words
         # Paste byte-for-byte from outside the checkout: no slug replacement or split shell.
         command(['bash', '-c', commands[0]], root, env)
         runtime = project / '_system/scripts/sdlc.py'
