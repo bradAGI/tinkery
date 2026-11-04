@@ -1,7 +1,7 @@
 """Taste labels (#666, #672): "Is this good?" answered pass or fail in the operator's words reaches
 tink-sdlc's own labels.jsonl verbatim, only on F2, signed with the name the form showed.
 
-A real tink-sdlc checkout (this repo's bundled 1.51.0 scaffold) in a TEST root; no providers, no gh.
+A real tink-sdlc checkout (this repo's bundled 1.52.0 scaffold) in a TEST root; no providers, no gh.
 """
 import json
 import os
