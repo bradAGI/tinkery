@@ -232,17 +232,21 @@ os.execv({git!r}, [{git!r}, *args])
             send(b'6', 'Press r to read results')
             assert not started.exists() and not opened.exists()
             send(b'r', '›  TEST café')
-            assert 'enter/v open result' in screen.text(), screen.text()
-            send(b'v', 'v run preview')
+            assert 'Enter open result' in screen.text(), screen.text()
+            send(b'v', 'Is this good?')
             text = screen.text().replace('\n', '').replace(' ', '')
-            assert head in text and spec['command'].replace(' ', '') in text, screen.text()
+            assert f'vruns"{spec["command"]}",thenopens{spec["url"]}'.replace(' ', '') in text, screen.text()
+            assert head not in text, 'the commit is checked at launch and shown in details'
+            send(b'e', 'You owe')
+            send(b'\x1b[F', head)
+            send(b'e', 'Is this good?')
             assert not started.exists() and not opened.exists(), 'read/navigation executed command'
             send(b'?', 'What Taste reads')
             os.write(master, b'v')
             time.sleep(.1)
             assert not started.exists(), 'help leaked preview execution'
             os.write(master, b'\x1b')
-            wait(lambda: 'What Taste reads' not in screen.text() and 'v run "' in screen.text())
+            wait(lambda: 'What Taste reads' not in screen.text() and 'v runs "' in screen.text())
             os.write(master, b'v')
             if wrong_head:
                 wait(lambda: 'Checkout commit disagrees' in screen.text())
@@ -271,11 +275,13 @@ os.execv({git!r}, [{git!r}, *args])
                 state['no_preview'] = True
                 statefile.write_text(json.dumps(state))
                 send(b'r', '›  TEST café')
-                send(b'\r', 'Checks')
-                send(b'v', 'No preview declared')
-                assert 'tinkery.preview' in screen.text() and 'command' in screen.text(), screen.text()
+                send(b'\r', 'No preview for this project.')
+                send(b'v', '? says how to add one.')
+                send(b'?', 'commit tinkery.preview at the project root')
+                assert '"command"' in screen.text(), screen.text()
                 # The suggested declaration binds the probed address, not localhost (often ::1 only).
                 assert '--host 127.0.0.1' in ' '.join(screen.text().split()), screen.text()
+                send(b'\x1b', 'Is this good?')
                 assert not opened.exists(), 'undeclared preview opened a browser'
             assert tree(checkout) == original and tree(repo) == repo_original
             events = base / 'http-events'

@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const DECLARE: &str = "No preview declared. Add tinkery.preview: {\"command\":\"npm run dev -- --host 127.0.0.1 --port 5173 --strictPort\",\"url\":\"http://127.0.0.1:5173/\"}";
+const DECLARE: &str = "No preview for this project.";
 
 /// A declared shell line and loopback-only HTTP address from the exact result commit.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -72,6 +72,12 @@ impl Spec {
             "v run {:?} at {head}\nLocal preview: {}",
             self.command, self.url
         )
+    }
+
+    /// The exact command and address on the review, before v can execute it; the commit is
+    /// checked at launch and shown in details.
+    pub(super) fn offer(&self) -> String {
+        format!("v runs {:?}, then opens {}", self.command, self.url)
     }
 }
 

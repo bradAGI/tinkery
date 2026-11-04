@@ -1,4 +1,5 @@
-"""Quiet Taste and unchanged detail/copy transport, using synthetic API 1 and gh only."""
+"""Quiet Taste: a one-question review, details behind e, and unchanged copy transport, using
+synthetic API 1 and gh only."""
 from terminal_process import wait_output
 import base64
 import fcntl
@@ -153,7 +154,7 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
         if not legacy:
             list_only()
         copies = transport()
-        send(b'\r', 'Goal (unchanged)' if legacy else 'Checks')
+        send(b'\r', 'Goal (unchanged)' if legacy else 'Is this good?')
         send(b'l', 'Guess · Next:')
         main = screen.text()
         assert main.count('Guess · Next:') == 1, main
@@ -164,23 +165,33 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
             first = '\n'.join(screen.text().split('\n')[:7]) + document(detail, True)
             evidence_frames = []
         else:
-            detail = frames_until('Read 0 min ago')
-            first = document(detail)
-            for heading in ['You owe', 'Checks', 'Goal', 'Details']:
-                assert heading in first, (heading, detail)
-            assert first.index('You owe') < first.index('Checks') < first.index('Goal') < first.index('Details')
-            assert 'matching evidence missing' not in first and '(automated)' not in first, first
-            for hidden in ['argv:', 'cwd:', '/TEST/receipt', 'TEST-gap-command',
-                           state['detail']['run']['verification']['log']]:
-                assert hidden not in first, (hidden, detail)
-            assert first.count(URL) == 1 and first.count('Commit:') == 1, first
-            checks = first[first.index('Checks'):first.index('Goal')]
+            review = screen.text()
+            first = document([review])
+            for part in ['TEST clinic allocation comparison', 'Your goal', 'Is this good?',
+                         'w  answer pass or fail', 'No preview for this project.', '! ' + GAP[:20],
+                         'w is this good?', 'e details']:
+                assert part in review, (part, review)
+            order = [review.index(part) for part in ['TEST clinic allocation', 'Your goal', 'Is this good?']]
+            assert order == sorted(order), review
+            for hidden in [URL, HEAD, RUN_ID, 'TEST-result', record['sha256'], 'You owe', 'Checks', 'Must not',
+                           'Why:', 'Done when', 'argv:', 'cwd:', 'tinkery.preview', 'accepted externally',
+                           'a/c copy', 'Read 0 min ago', *[item['verify'][:30]
+                                                           for item in state['detail']['run']['checklist']]]:
+                assert hidden not in review, (hidden, review)
+            detail = [review]
+            send(b'e', 'You owe')
+            evidence_frames = frames_until('No preview for this project.')
+            details = document(evidence_frames)
+            for heading in ['You owe', 'Checks', 'Goal', 'Evidence', 'Result']:
+                assert heading in details, (heading, evidence_frames)
+            assert details.index('You owe') < details.index('Checks') < details.index('Goal') \
+                < details.index('Evidence') < details.index('\nResult'), details
+            assert details.count(URL) == 1 and details.count('Commit:') == 1, details
+            checks = details[details.index('Checks'):details.index('Goal')]
             human = state['detail']['run']['checklist'][-1]['verify']
             assert re.sub(r'\s+', '', human) not in re.sub(r'\s+', '', checks), checks
             if long_checks:
-                assert '? unknown: no CI reported' in first and 'waiting: no record found' in first, first
-            send(b'e', 'Evidence')
-            evidence_frames = frames_until('TEST-gap-command')
+                assert '? unknown: no CI reported' in details and 'waiting: no record found' in details, details
         joined = re.sub(r'\s+', '', first + document(evidence_frames))
         for value in [goal, URL, HEAD, RUN_ID, 'TEST-result', GAP,
                       str(checkout / 'runs/TEST-result/04-test/output/test-log.md'),
@@ -190,8 +201,8 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
             assert re.sub(r'\s+', '', value) in joined, (value, detail, evidence_frames)
         assert transport() == copies, 'evidence view copy bytes differ'
         if not legacy:
-            send(b'\x1b', 'e evidence')
-        send(b'\x1b', 'Results waiting on you' if legacy else 'enter/v open result')
+            send(b'\x1b', 'e details')
+        send(b'\x1b', 'Results waiting on you' if legacy else 'Enter open result')
         if not legacy:
             list_only()
         send(b'\x1b', '1  think')

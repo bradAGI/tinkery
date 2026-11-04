@@ -86,11 +86,11 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `voice/` | Local dictation: the host boundary, helper process, protocol and owned setup. |
 | `watch.rs` | The runs in one named tink-sdlc checkout from its API 1 `status --json`: refusing other interfaces, waiting runs first, one run's detail. |
 | `sdlc.rs`, `sdlc/run.rs` | Shared read-only API 1 status, exact original-seed matching, cancellable transactions and bounded command ownership; no store, checkout discovery or phase policy. |
-| `taste.rs`, `taste/read.rs` | One result's unchanged goal, revision-bound observations and external copy handoff; explicitly mapped PRs, read-only status/GitHub reads and deliberate browser navigation, never a verdict or agent launch. |
+| `taste.rs`, `taste/read.rs` | One result's unchanged goal, revision-bound observations, the one question and external copy handoff; explicitly mapped PRs, read-only status/GitHub reads and deliberate browser navigation, never an approval, merge or agent launch. |
 | `taste/preview.rs` | Exact-head repo preview declarations, local HTTP readiness and explicitly launched temporary checkout/process ownership; no inferred commands, public URLs, agent or verdict. |
 | `taste/next.rs` | Deterministic post-acceptance pause and next-dump proposal from snapshot evidence; no model, verdict, structural diagnosis or permission. The menu alone passes its unsent draft to Think. |
-| `taste/label.rs` | The operator's label form and its one write through the checkout's `sdlc.py label`, only on F2, words unchanged; never a verdict, approval or agent. |
-| `taste/view.rs` | Count-only result blocks, palette-bound headings and statuses, verbatim hanging check wraps and separately requested evidence; no source reads, gate derivation or copy formatting. |
+| `taste/label.rs` | The operator's pass/fail label, their verdict on the result, and its one write through the checkout's `sdlc.py label`, only on F2, words unchanged, signed with the name shown; never an approval, merge or agent. |
+| `taste/view.rs` | Count-only result blocks, a one-question review, palette-bound headings and statuses, and details on request with verbatim hanging check wraps and evidence; no source reads, gate derivation or copy formatting. |
 | `taste/links.rs`, `taste/evidence.rs` | The run's own recorded PR (API 1 `pr`), unknown when absent or malformed; source-owned log pointers and check methods as evidence references, never prose parsing, a mapping store, log reads or check execution. |
 
 Vendored libraries are path dependencies, not phases: `vendor/pinstar/` owns

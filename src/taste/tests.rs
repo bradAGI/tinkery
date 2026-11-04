@@ -10,6 +10,7 @@ fn row() -> ResultRow {
                 .into(),
         ),
         url: Some("https://github.com/TEST/example/pull/1".into()),
+        title: Some("TEST clinic allocation comparison".into()),
         head: Some("a".repeat(40)),
         merged: false,
         preview: Err("No preview declared".into()),
@@ -26,6 +27,7 @@ fn row() -> ResultRow {
             "confirm no clinical claims".into(),
         ],
         gaps: Vec::new(),
+        labelled: Some(false),
     }
 }
 
@@ -61,18 +63,31 @@ fn preview_disclosure_says_each_fact_once_without_running_on_navigation() {
             "url": "http://127.0.0.1:5173/"
         }))
         .unwrap());
-        assert!(screen(&mut taste, width, height).contains("enter/v open result"));
+        assert!(screen(&mut taste, width, height).contains("Enter open result"));
         taste.key(KeyEvent::from(KeyCode::Enter));
-        assert!(screen(&mut taste, width, height).contains("v run preview"));
+        let review = screen(&mut taste, width, height);
+        assert!(
+            review.contains(r#"v runs "TEST preview", then opens http://127.0.0.1:5173/"#),
+            "{review}"
+        );
+        assert!(!review.contains(&"a".repeat(40)), "commit stays in details");
         let detail = result_lines(&taste.rows[0]).join("\n");
         assert_eq!(detail.matches(&"a".repeat(40)).count(), 1);
         assert!(taste.preview.is_none(), "navigation ran the command");
-        taste.rows[0].preview =
-            Err("No preview declared. Add tinkery.preview with command and url.".into());
+        taste.rows[0].preview = Err("No preview for this project.".into());
         taste.key(KeyEvent::from(KeyCode::Char('v')));
         let shown = screen(&mut taste, width, height);
-        assert_eq!(shown.matches("No preview declared").count(), 1, "{shown}");
-        assert!(shown.contains("tinkery.preview") && taste.preview.is_none());
+        assert_eq!(
+            shown.matches("No preview for this project.").count(),
+            2,
+            "review line and notice: {shown}"
+        );
+        assert!(shown.contains("? says how to add one") && taste.preview.is_none());
+        assert!(
+            taste
+                .help_text()
+                .contains("commit tinkery.preview at the project root")
+        );
     }
 }
 
@@ -219,27 +234,52 @@ fn list_uses_counts_and_detail_keeps_every_source_word_with_evidence_behind_e() 
             assert!(!list.contains(hidden), "{hidden}: {list}");
             assert!(full.contains(hidden), "{hidden}: {full}");
         }
+        assert!(list.contains("waiting for your label"), "{list}");
         taste.key(KeyEvent::from(KeyCode::Enter));
         assert!(taste.detail && !taste.evidence);
+        let review = screen(&mut taste, w, h);
+        for visible in [
+            "TEST clinic allocation comparison",
+            "Your goal",
+            " TEST café",
+            "Is this good?",
+            "w  answer pass or fail",
+            "! TEST gap /TEST/source",
+            "w is this good?",
+        ] {
+            assert!(review.contains(visible), "{visible}: {review}");
+        }
+        for hidden in [
+            "TEST exact",
+            "Why: TEST reason",
+            "github.com",
+            "Commit:",
+            "Run ID:",
+            "TEST-digest",
+            "accepted externally",
+            "a/c copy",
+        ] {
+            assert!(!review.contains(hidden), "{hidden}: {review}");
+        }
         let document = view::detail(
             &taste.rows[0],
             None,
             taste.at,
             u16::MAX,
             Palette::new(true),
-            false,
+            true,
         )
         .into_iter()
         .map(|line| line.to_string())
         .collect::<Vec<_>>()
         .join("\n");
-        for heading in ["You owe", "Checks", "Goal", "Details"] {
+        for heading in ["You owe", "Checks", "Goal", "Result", "Evidence"] {
             assert!(document.contains(heading));
         }
         for item in &taste.rows[0].items {
             assert!(document.contains(&item.label));
         }
-        assert!(!document.contains("/TEST/log") && !document.contains("argv:"));
+        assert!(document.contains("/TEST/log") && document.contains("argv:"));
         assert!(document.contains("waiting: not finished"));
         taste.key(KeyEvent::from(KeyCode::Char('l')));
         assert!(screen(&mut taste, w, h).contains("Guess · Next:"));
@@ -267,19 +307,22 @@ fn both_sizes_scroll_to_full_evidence_and_keep_navigation() {
             format!("{} TEST-LAST-EVIDENCE", "TEST evidence ".repeat(500));
         taste.key(KeyEvent::from(KeyCode::Enter));
         let first = screen(&mut taste, w, h);
-        assert!(first.contains("TEST café") && first.contains("e evidence"));
+        for visible in ["TEST clinic", "TEST café", "Is this good?", "e details"] {
+            assert!(first.contains(visible), "{visible}: {first}");
+        }
         assert!(!first.contains("TEST-LAST-EVIDENCE"));
         taste.key(KeyEvent::from(KeyCode::Char('e')));
+        let details = screen(&mut taste, w, h);
+        assert!(details.contains("You owe") && details.contains("e back to the result"));
+        assert!(!details.contains("TEST-LAST-EVIDENCE"));
         taste.key(KeyEvent::from(KeyCode::End));
         let tail = screen(&mut taste, w, h);
-        assert!(tail.contains("TEST-LAST-EVIDENCE"));
+        assert!(tail.contains("TEST-LAST-EVIDENCE"), "{tail}");
+        assert!(tail.contains(&"a".repeat(40)), "{tail}");
+        assert_eq!(tail.matches("Commit:").count(), 1);
         taste.key(KeyEvent::from(KeyCode::Esc));
-        taste.key(KeyEvent::from(KeyCode::End));
-        let identity = screen(&mut taste, w, h);
-        assert!(identity.contains(&"a".repeat(40)), "{identity}");
-        assert_eq!(identity.matches("Commit:").count(), 1);
-        taste.key(KeyEvent::from(KeyCode::Home));
-        assert!(screen(&mut taste, w, h).contains("TEST café"));
+        assert!(taste.detail && !taste.evidence);
+        assert!(screen(&mut taste, w, h).contains("Is this good?"));
         taste.key(KeyEvent::from(KeyCode::Esc));
         assert!(!taste.detail);
         assert!(taste.key(KeyEvent::from(KeyCode::Esc)));
@@ -387,7 +430,7 @@ fn merged_result_is_labelled_but_needs_explicit_acceptance_before_the_note() {
         taste.key(KeyEvent::from(KeyCode::End));
         let detail = screen(&mut taste, w, h);
         assert!(
-            detail.contains(" · merged") && !detail.contains("Guess · Next:"),
+            detail.lines().any(|line| line.trim() == "merged") && !detail.contains("Guess · Next:"),
             "{detail}"
         );
         taste.key(KeyEvent::from(KeyCode::Char('t')));
@@ -527,21 +570,22 @@ fn next_line_stays_single_and_italic_in_both_palettes() {
 fn hanging_check_words_and_final_metadata_remain_reachable_past_u16_rows() {
     let mut taste = ready();
     taste.detail = true;
+    taste.evidence = true;
     taste.rows[0].items[0].state = Check::FailureRevisionDiffers;
     taste.rows[0].items[0].label = format!("{}TEST-LAST-CHECK-WORD", "word ".repeat(500_000));
-    let rows = view::detail(
-        &taste.rows[0],
-        None,
-        taste.at,
-        80,
-        Palette::new(true),
-        false,
-    );
+    let rows = view::detail(&taste.rows[0], None, taste.at, 80, Palette::new(true), true);
     assert!(rows.len() > u16::MAX as usize);
+    let metadata = rows
+        .iter()
+        .position(|line| line.to_string().contains("Run ID:"))
+        .unwrap();
+    assert!(
+        metadata > u16::MAX as usize,
+        "identity follows the long check"
+    );
     taste.key(KeyEvent::from(KeyCode::End));
     let tail = screen(&mut taste, 80, 24);
     assert!(taste.scroll > u16::MAX as usize);
-    assert!(tail.contains("TEST-LAST-CHECK-WORD"), "{tail}");
     assert!(
         tail.contains("Commit:") && tail.contains("Run ID:"),
         "{tail}"

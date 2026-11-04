@@ -1,11 +1,12 @@
 # Taste
 
-Taste reviews one exact result against its unchanged saved goal. It never records a
-verdict, posts a review, merges, signs a gate or launches an agent. Its one write is the
-operator's [label](#labels): their own words about a run, saved by tink-sdlc only on F2.
-A label is not a verdict, approval or gate. Acceptance and
-correction remain deliberate external decisions, not interpretations of green checks.
-An explicit report of external acceptance can reveal an ephemeral next-dump guess.
+Taste shows one exact result beside its unchanged saved goal and asks one question: "Is this
+good?" Its one write is the operator's [label](#labels): pass or fail in their own words,
+saved by tink-sdlc only on F2. The label is the operator's verdict on the result; it still
+approves, merges and signs nothing. Taste never posts a review, merges, signs a gate or
+launches an agent. Merging remains a deliberate external decision, not an interpretation of
+green checks. How the run went (where it stalled, who stepped in) belongs to Measure, not
+Taste. An explicit report of external acceptance can reveal an ephemeral next-dump guess.
 
 ## Sources and selection
 
@@ -29,7 +30,9 @@ If GitHub names a different PR (owner and repo compare case-insensitively), the 
 stays unknown. Tinkery stores no mapping and launches take no PR input.
 
 Only `r` reads result metadata from GitHub, via `gh pr view <recorded URL> --json` using the operator's
-login. Read the current head, state and PR-head checks. Recorded open and
+login. Read the title, current head, state and PR-head checks. The title is display text only;
+a missing one falls back to the recorded URL. Per-run status also reports how many labels
+the run has; a checkout that doesn't say leaves the list silent rather than guessing. Recorded open and
 merged PRs stay listed, including green PRs with no source gates owed: checks never
 remove the need for human review. Merged results are marked “merged” in the list
 and review; neither merge state nor green checks imply acceptance. Closed-unmerged
@@ -47,13 +50,20 @@ with a reason. No complete empty claim survives a failed read.
 The list gives each result a compact two-line block: a one-row goal preview with
 an explicit ellipsis when needed and muted open/merged/unknown context, then glyphs
 and counts for passed, waiting, stale, failed and unknown observations, plus
-“You owe N” when gates are owed. No check sentences, PR URLs, paths, hashes, run IDs
+“You owe N” when gates are owed and “waiting for your label” when the run has none. No check sentences, PR URLs, paths, hashes, run IDs
 or commands appear in the list. Jade marks selection; the goal remains ink.
 Counts are observations, never an aggregate done/approved verdict.
 
-Enter opens headed detail in this order: **Next** (only after `l`), **You owe**,
-**Checks**, **Goal**, **Details**. Blank space separates sections. You owe retains
-the source's plain actions in jade. A human-attestation item already represented
+Enter opens the review, which fits the first screen at 80×24: what was built (the PR
+title, plus “merged” when it is), the preview offer or “No preview for this project.”,
+**Your goal** as its first line, then **Is this good?** with `w` in jade as the one next
+step. **Next** follows only after `l`. Identity is checked silently: a source gap or
+unknown revision shows as a rust `!` line, and a read older than ten minutes says
+“may be out of date, press r”. Nothing else appears.
+
+`e` opens details, one scrollable document in this order: **You owe**, **Checks**,
+**Goal** (whole), **Evidence**, **Source notes**, **Result**. Blank space separates
+sections. You owe retains the source's plain actions in jade. A human-attestation item already represented
 there is not repeated under Checks; this is an exact-wording presentation rule,
 not a change to owed-source derivation.
 
@@ -63,9 +73,9 @@ Checks begin with a glyph and plain status: “✓ passed,” “! failed,” �
 shortened, abbreviated, clipped or given an ellipsis, in any view. Method-owner
 tags move to Evidence rather than being repeated after each check.
 
-The whole saved goal remains unchanged in ink, including completion conditions and
-constraints. Details gives the PR URL, commit, run ID/locator, seed digest and read
-time once, muted, below the goal rather than in a competing fixed header.
+The whole saved goal remains unchanged in ink in details, including completion conditions
+and constraints. Result gives the PR URL, commit, run ID/locator, seed digest, read
+time and preview declaration once, muted, last rather than in a competing fixed header.
 The shared source/path-and-digest join supplies the goal; changed, moved, missing or
 unmatchable originals stay unknown. Escape unsafe controls only for display, not
 storage or copying. The list's goal preview is the only shortened source text.
@@ -91,7 +101,7 @@ When the run report has no verification receipt, no decisions, no human marks an
 only default pending gates, its local checks and gate obligations say
 **unknown: receipts not found here**, never owed, pending or waiting. This cannot
 distinguish a never-verified run from receipts left in another checkout. The list
-counts these checks as unknown, not as obligations; detail and both copied requests
+counts these checks as unknown, not as obligations; details and both copied requests
 retain the unknown gate state. Raw source defaults remain in Evidence, not claims
 that the operator owes another signature. No other checkout is searched. Relaunch
 with `--sdlc-root` naming the receipt-holding checkout and read again; per-run roots
@@ -100,8 +110,7 @@ GitHub observations and independent review remain separate from these local gaps
 
 Owed gates use plain actions: “approve the plan” or “re-approve the plan,” plus
 owed manual expectations in their source words, never checklist IDs or seed jargon.
-`e` opens a separate Evidence view, one item per block with indentation and blank
-space. It retains full check wording, raw reported states, method owners, human
+Evidence in details gives one item per block with indentation and blank space. It retains full check wording, raw reported states, method owners, human
 marks and source diagnostics. No source fact is deleted. Evidence and the
 unchanged copied request retain each automatic item's API 1
 `run.log.path`, resolved lexically against the named checkout within the selected
@@ -136,12 +145,12 @@ redirect following, deployment, agents or model calls. The command must listen o
 answer. The URL restriction is not a network sandbox for arbitrary repo code.
 
 The explicit `r` read also reads that file through `gh api` at the displayed head.
-404 means “No preview declared” with the format above; authentication, invalid files
-and other failures remain read refusals, not invented absence. Detail shows the exact
-command, full commit and URL before execution; Details does not repeat that commit.
-Missing-declaration guidance appears once, without a duplicate notice. The list labels
-Enter/`v` as “open result”; `v` opens detail, just like Enter. Detail labels `v` as
-“run preview” because it runs the disclosed command. Reading, navigation, help and copying never
+404 means “No preview for this project.”; the format above lives in help (`?`).
+Authentication, invalid files and other failures remain read refusals, not invented
+absence. The review shows the exact command and URL before execution; the commit it
+runs at is checked at launch and shown once in details. `v` from the list opens the
+review, just like Enter; on the review it runs the disclosed command, and without a
+declaration it says where help explains adding one. Reading, navigation, help and copying never
 execute it; repeated or modified v is ignored.
 
 Execution fetches that exact head into a temporary Git checkout, checks HEAD and
@@ -162,12 +171,12 @@ not an acceptance record or implementation permission.
 
 ## Keys and handoff
 
-- List arrows choose; Enter opens detail. `l` from the list opens detail with the
-  explicitly reported acceptance's Next block. In detail, `e` opens Evidence;
-  `e` or Esc there returns to detail. Arrows, PgUp/PgDn and Home/End scroll each
+- List arrows choose; Enter opens the review. `l` from the list opens the review with the
+  explicitly reported acceptance's Next block. On the review, `e` opens details;
+  `e` or Esc there returns to the review. Arrows, PgUp/PgDn and Home/End scroll each
   complete document. `n`/`p` or Right/Left change result, clamped. Esc from detail
   returns to the list and discards the ephemeral report, without rereading.
-- `v` in detail runs the explicitly declared local preview above; Esc stops and reaps it.
+- `v` on the review runs the explicitly declared local preview above; Esc stops and reaps it.
 - `o` alone uses `gh pr view <recorded URL> --web` to open the PR. Navigation records
   nothing and rereads no checks. Browser failure names the retry. Repeated or modified
   action keys never open, reread or copy.
@@ -175,10 +184,11 @@ not an acceptance record or implementation permission.
   transport, not executable approval commands. Copy feedback claims transport only.
   Each request retains the exact goal, run ID, seed digest, PR and full commit,
   condition evidence, gaps and owed gates. Unknown goal/result identity refuses copy.
-- `w` in detail opens the [label](#labels) form. While it is open every key is its own:
-  digits choose the kind, then all characters, `?` and `q` included, are the words.
-- `?`/F1 help blocks underlying actions. Esc closes help, then Evidence, then detail,
-  then returns Home from the list; F10 returns Home. The footer always names the next action and exit.
+- `w` on the review opens the [label](#labels) form. While it is open every key is its own:
+  1 or 2 chooses, then all characters, `?` and `q` included, are the words.
+- `?`/F1 help blocks underlying actions. Esc closes help, then details, then the review,
+  then returns Home from the list; F10 returns Home. The review's footer names only `w`,
+  `o`, Esc, details and `?`; help lists every other key. Help fits 80×24 without scrolling.
 
 The copied request asks the external process to recheck current head, inputs and
 receipts, resolve gates, inspect that exact result, and add the operator's requested
@@ -188,20 +198,27 @@ expected-input binding is still not guaranteed; changed material needs rereview.
 
 ## Labels
 
-Labels are how the operator's judgment of a run is kept: free text in their words,
-naming the first thing that went wrong, so patterns across runs pick the next fix
-([research](https://github.com/jon-devlapaz/tinkery/issues/666)). Recording one must take
-seconds, inside the review, or it won't happen.
+The label is the operator's answer to "Is this good?": their verdict on the result, pass or
+fail plus their own words. Pass/fail with a written critique beats rating scales, whose
+middle options blur ([research](https://github.com/jon-devlapaz/tinkery/issues/672)).
+Recording one must take seconds, inside the review, or it won't happen. It approves,
+merges and gates nothing.
 
-`w` opens a form for the selected run: 1 correction, 2 none (prefilled "No corrections"),
-3 accepted, 4 rejected, then the words (typed or pasted; AltGr types, other chords don't).
-Esc discards; leaving discards, but F10 waits while a save runs. Only a pressed F2
-saves, by running the checkout's own `sdlc.py label <slug> --kind … --words … --reviewer
-<git config user.name> --source taste`. Words pass through unchanged. tink-sdlc decides:
-its confirmation, or its refusal word for word (closed run, run building elsewhere, agent
-reviewer), shows in the form, and a refused form keeps the words. No reviewer name refuses
-before tink-sdlc runs. An `--operator agent` launch refuses `w`: labels are the operator's.
-The label lives in `runs/<slug>/labels.jsonl`, owned by tink-sdlc; Taste stores nothing.
+`w` opens a form for the selected run: 1 pass (“It does what you asked, and you'd keep
+it.”) or 2 fail (“Something is wrong or missing.”), saved as tink-sdlc's existing
+`accepted` and `rejected` kinds. Taste doesn't offer `correction` or `none`; tink-sdlc keeps
+them for its other callers. The hint “What makes it good, or what is wrong with it?” sits
+above the words (typed or pasted; AltGr types, other chords don't). The form shows the name
+it will sign with, read from the checkout's `git config user.name` when it opens; there is
+no Tinkery setting. Only that shown name signs: with none, F2 reads it again and the form
+shows the result before another F2 can save. Esc cancels and leaves the run waiting for its
+label; leaving discards, but F10 waits while a save runs. Only a pressed F2 saves, by
+running the checkout's own `sdlc.py label <slug> --kind … --words … --reviewer <shown name>
+--source taste`. Words pass through unchanged. Success says “Saved your label.”; a refusal
+from tink-sdlc (closed run, run building elsewhere, agent reviewer) shows word for word in
+the form, which keeps the words. An `--operator agent` launch refuses `w`: labels are the
+operator's. The label lives in `runs/<slug>/labels.jsonl`, owned by tink-sdlc and
+append-only; Taste stores nothing.
 
 ## After external acceptance
 
@@ -244,8 +261,9 @@ gate or authorization. The operator still merges externally.
 
 `src/taste/tests.rs` and the reader's unit tests cover exact goal preservation,
 unknown identity, missing/unsafe evidence, strict run-ID/URL inputs, statuses, source staleness,
-compact count summaries, complete source words in headed detail, evidence behind `e`,
-label form keys (kind, verbatim words, held F2, Esc, control chords),
+compact count summaries, a review holding only the title, goal line and question,
+complete source words and evidence in details behind `e`, label form keys (pass or fail,
+verbatim words, held F2, Esc, control chords), the form's kind lines, hint and signer,
 selection identity, clipboard requests, key repeats/modifiers and small-size scrolling.
 The changed-result regression must fail when the exact-head mismatch protection is
 removed, then pass after restoration.
@@ -259,9 +277,11 @@ log pointers/methods in both clipboard requests, remote failure, exit/return and
 no providers, verdicts or real browser launches run. The [API-shaped fixture](../../tests/fixtures/taste-api1.json)
 preserves the reviewer's log/method/digest example without a private seed locator.
 The [label journey](../../tests/taste_label_terminal.py) uses a real tink-sdlc checkout
-(this repo's bundled scaffold) with a failing `gh` stub: Esc writes nothing, a missing
-reviewer name refuses before tink-sdlc, F2 writes Unicode and quotes byte-identical, a
-closed run's refusal shows word for word, and an agent launch can't open the form.
+(this repo's bundled scaffold) with a failing `gh` stub: the list says the run waits for a
+label, the review asks the question, the form shows pass/fail lines and the hint, Esc writes
+nothing, a missing name refuses before tink-sdlc and signs nothing until the form shows the
+new name, F2 writes Unicode and quotes byte-identical as `accepted` or `rejected`, a closed
+run's refusal shows word for word, and an agent launch can't open the form.
 Next-dump journeys additionally report acceptance, edit and send only with F2,
 correct without acceptance, and handle nothing unmet, at both sizes with and without
 NO_COLOR. Unit regressions distinguish copying from the explicit report, prioritize
@@ -276,7 +296,7 @@ The merged-result retention regression must fail when the open-only filter retur
 then pass after restoration. The report-boundary regression must fail with its
 acceptance protection reverted.
 The [quiet-review journeys](../../tests/taste_quiet_terminal.py) check compact lists,
-headed detail and the evidence key, at both sizes and both colour settings. They
+the one-question review and headed details, at both sizes and both colour settings. They
 pin both OSC 52 payloads byte-for-byte to the synthetic
 [a61f719 baseline](../../tests/fixtures/taste-handoff-355.json), substituting only the
 TEST root into expected strings. Retained parent binaries additionally compare raw
@@ -293,7 +313,7 @@ must fail when truncation returns, then pass after restoration. Next content,
 source reads, copied payloads and owed-source derivation do not change.
 Missing-receipt journeys place synthetic signed receipts in another TEST checkout
 and read the receipt-free intake report, at both sizes and both colour settings.
-They require unknown local checks and gates in detail and both copied requests,
+They require unknown local checks and gates in details and both copied requests,
 no owed count, no extra reads, and byte-identical source trees. The missing-receipt
 unit regression must fail when the protection is reverted, then pass after restoration.
 [Preview journeys](../../tests/taste_preview_terminal.py) use a real temporary Git

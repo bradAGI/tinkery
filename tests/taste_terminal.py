@@ -155,6 +155,13 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
         def update():
             statefile.write_text(json.dumps(state))
 
+        def reread():
+            update()
+            before = len(calls())
+            os.write(master, b'r')
+            wait(lambda: len(calls()) >= before + 2 and 'Is this good?' in screen.text()
+                 and 'Reading results' not in screen.text())
+
         def copied():
             payloads = re.findall(rb'\x1b\]52;[^;]*;([A-Za-z0-9+/=]+)(?:\x07|\x1b\\)', raw)
             return [base64.b64decode(p).decode() for p in payloads]
@@ -194,17 +201,19 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             assert not calls(), 'help leaked actions'
             send(b'\x1b', 'Press r to read results')
             send(b'r', '›  TEST café')
-            assert 'enter/v open result' in screen.text() and 'a/c copy' in screen.text()
+            assert 'Enter open result' in screen.text() and 'a/c copy' not in screen.text()
             if mapping_case not in ('valid', 'case'):
                 github = 1 if mapping_case == 'moved' else 0
                 assert len(calls()) == 2 + github, calls()
                 assert sum('pr' in call for call in calls()) == github, calls()
-                send(b'\r', 'Checks')
+                send(b'\r', 'Is this good?')
+                send(b'e', 'Checks')
                 assert 'waiting: revision unknown  Allocation works' in screen.text(), screen.text()
                 send(b'\x1b[F', 'Commit: unknown')
                 send(b'a', 'Result identity unknown')
                 assert not copied(), 'a result without a recorded PR was copied'
-                send(b'\x1b', 'enter/v open result')
+                send(b'\x1b', 'e details')
+                send(b'\x1b', 'Enter open result')
                 send(b'\x1b', '1  think')
                 os.write(master, b'q')
                 process.wait(timeout=5)
@@ -217,8 +226,10 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             if next_case == 'receipts elsewhere':
                 assert 'You owe' not in screen.text(), screen.text()
                 assert '? 2 unknown' in screen.text(), screen.text()
-                send(b'\r', 'Checks')
-                assert screen.text().count('unknown: receipts not found here') == 3, screen.text()
+                send(b'\r', 'Is this good?')
+                send(b'e', 'Checks')
+                owed_and_checks = screen.text().split('Goal')[0]
+                assert owed_and_checks.count('unknown: receipts not found here') == 3, screen.text()
                 assert 'approve the plan' not in screen.text(), screen.text()
                 assert 'No source gate owed' not in screen.text(), screen.text()
                 for action in [b'a', b'c']:
@@ -232,7 +243,8 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                     assert GOAL in payload and HEAD in payload
                     assert 'pending (matching evidence missing)' not in payload
                 assert len(calls()) == 3, calls()
-                send(b'\x1b', 'enter/v open result')
+                send(b'\x1b', 'e details')
+                send(b'\x1b', 'Enter open result')
                 send(b'\x1b', '1  think')
                 os.write(master, b'q')
                 process.wait(timeout=5)
@@ -245,9 +257,11 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 assert ' · merged' in screen.text(), screen.text()
                 assert 'Guess · Next:' not in screen.text(), 'merge is not acceptance'
                 os.write(master, b't')
-            send(b'\r', 'Checks')
+            send(b'\r', 'Is this good?')
             assert 'Guess · Next:' not in screen.text(), 'review is not acceptance'
-            assert 'TEST café' in screen.text(), screen.text()
+            assert 'TEST café' in screen.text() and 'TEST clinic allocation comparison' in screen.text(), screen.text()
+            assert HEAD not in screen.text() and RUN_ID not in screen.text(), screen.text()
+            send(b'e', 'Checks')
             send(b'\x1b[F', HEAD)
             if next_case == 'merged':
                 assert ' · merged' in screen.text(), screen.text()
@@ -255,8 +269,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             # Reads and scrolling never launch anything; the whole goal is retained in the copy.
             read_count = len(calls())
             assert 'TEST-checked-allocation-success' not in screen.text(), 'log contents must not be dumped'
-            send(b'e', 'Evidence')
-            send(b'\x1b[F', 'run API')
+            wait(lambda: 'run API' in screen.text())
             send(b'a', 'Handoff copied; decide externally.')
             wait(lambda: bool(copied()))
             assert GOAL in copied()[-1] and HEAD in copied()[-1]
@@ -277,7 +290,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             send(b'o', 'PR sent to browser')
             assert calls()[-1] == ['pr', 'view', URL, '--web']
             if next_case:
-                send(b'e', 'e evidence')
+                send(b'e', 'e details')
                 assert 'Guess · Next:' not in screen.text(), 'copy/open is not acceptance'
                 if next_case in ['nothing unmet', 'absent ci', 'failed']:
                     state['detail']['run']['gates'][0]['status'] = 'approved'
@@ -293,12 +306,13 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                     before = len(calls())
                     os.write(master, b'r')
                     wait(lambda: len(calls()) == before + 3 and 'Reading results' not in screen.text())
-                send(b'\x1b[H', 'Checks')
+                send(b'\x1b[H', 'Is this good?')
                 before = len(calls())
                 send(b'?', 'After external acceptance')
                 os.write(master, b'lte')
                 time.sleep(.1)
-                send(b'\x1b', 'Checks')
+                os.write(master, b'\x1b')
+                wait(lambda: 'What Taste reads' not in screen.text() and 'Is this good?' in screen.text())
                 assert 'Guess · Next:' not in screen.text(), 'help leaked acceptance'
                 send(b'l', 'Guess · Next:')
                 assert screen.text().count('Next:') == 1, screen.text()
@@ -351,7 +365,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             update()
             before_green = len(calls())
             os.write(master, b'r')
-            wait(lambda: len(calls()) == before_green + 3 and 'Checks' in screen.text()
+            wait(lambda: len(calls()) == before_green + 3 and 'Is this good?' in screen.text()
                  and 'Reading results' not in screen.text())
             count = len(copied())
             os.write(master, b'a')
@@ -363,12 +377,12 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             state['pr']['headRefOid'] = NEXT
             state['pr']['statusCheckRollup'] = []
             update()
-            send(b'r', '… stale  Allocation works')
+            reread()
+            send(b'e', '… stale  Allocation works')
             assert '✓ passed  Allocation works' not in screen.text()
             send(b'\x1b[F', NEXT)
             assert HEAD not in screen.text(), 'old revision repeated in detail'
-            send(b'e', 'Evidence')
-            send(b'\x1b[F', 'run API')
+            wait(lambda: 'run API' in screen.text())
             count = len(copied())
             os.write(master, b'c')
             wait(lambda: len(copied()) > count)
@@ -380,8 +394,10 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             state['detail']['run']['verification_status'] = 'failed'
             state['detail']['run']['checklist'][0]['status'] = 'failed'
             update()
-            send(b'r', '! failed  Allocation works')
+            reread()
+            send(b'e', '! failed  Allocation works')
             assert 'waiting' in screen.text()
+            send(b'e', 'Is this good?')
             # Unknown original refuses copying, without falling back to the old goal.
             seed.write_text('TEST changed original\n')
             send(b'r', 'Goal unknown')
@@ -417,7 +433,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 with replaced_seed(seed, kind):
                     started = time.monotonic()
                     send(b'r', 'Goal unknown')
-                    send(b'\x1b', 'enter/v open result')
+                    send(b'\x1b', 'Enter open result')
                     assert time.monotonic() - started < 2, 'non-regular seed delayed Taste or Escape'
                     send(b'\r', 'Goal unknown')
                 send(b'r', 'TEST café')
@@ -426,24 +442,28 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             update()
             before_prose = len(calls())
             os.write(master, b'r')
-            wait(lambda: len(calls()) == before_prose + 3 and 'Checks' in screen.text()
+            wait(lambda: len(calls()) == before_prose + 3 and 'Is this good?' in screen.text()
                  and 'Reading results' not in screen.text())
+            send(b'e', 'Checks')
             send(b'\x1b[F', HEAD)
             assert calls()[-1][2] == URL, 'handoff prose retargeted the explicit result'
             handoff.write_bytes(original['runs/TEST-result/handoff.md'])
             state['gh_fail'] = True
             update()
-            send(b'r', 'waiting: revision unknown')
+            reread()
+            assert "! Couldn't read GitHub" in screen.text(), 'a mismatch must show on the review'
+            send(b'e', 'waiting: revision unknown')
             send(b'\x1b[F', 'Commit: unknown')
-            send(b'\x1b', 'enter/v open result')
-            assert "Couldn't read GitHub" not in screen.text(), 'source diagnostics leaked out of detail'
-            send(b'\r', 'Checks')
-            send(b'e', 'Evidence')
+            send(b'\x1b', 'e details')
+            send(b'\x1b', 'Enter open result')
+            assert "Couldn't read GitHub" not in screen.text(), 'source diagnostics leaked into the list'
+            send(b'\r', 'Is this good?')
+            send(b'e', 'Checks')
             send(b'\x1b[F', "Couldn't read GitHub")
             del state['gh_fail']
             update()
-            send(b'\x1b', 'e evidence')
-            send(b'\x1b', 'enter/v open result')
+            send(b'\x1b', 'e details')
+            send(b'\x1b', 'Enter open result')
             send(b'\x1b', '1  think')
             before_reopen = len(calls())
             send(b'6', 'Press r to read results')

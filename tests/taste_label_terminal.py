@@ -1,4 +1,5 @@
-"""Taste labels (#666): the operator's words reach tink-sdlc's own labels.jsonl verbatim, only on F2.
+"""Taste labels (#666, #672): "Is this good?" answered pass or fail in the operator's words reaches
+tink-sdlc's own labels.jsonl verbatim, only on F2, signed with the name the form showed.
 
 A real tink-sdlc checkout (this repo's bundled 1.51.0 scaffold) in a TEST root; no providers, no gh.
 """
@@ -82,43 +83,51 @@ def journey(width, height, no_color, operator):
             wait('1  think')
             send(b'6', 'Press r to read results')
             send(b'r', 'No confirmed seed')
-            send(b'\r', 'Details')
-            assert 'w label' in screen.text(), screen.text()
+            assert 'waiting for your label' in screen.text(), screen.text()
+            send(b'\r', 'Is this good?')
+            assert 'w is this good?' in screen.text() and 'Run ID' not in screen.text(), screen.text()
             if operator == 'agent':
                 send(b'w', "Labels are the operator's")
-                assert 'Label this run' not in screen.text()
+                assert 'Signed as' not in screen.text()
                 assert labels(root) == []
                 print(json.dumps(dict(journey='Taste label refused for agent', width=width, height=height,
                                       no_color=no_color, labels=0, provider_calls=0)))
                 return
             # Esc discards: nothing reaches tink-sdlc.
-            send(b'w', 'Label this run')
-            send(b'1', 'Your words')
+            send(b'w', 'Your words')
+            for line in ('1 pass', 'you\'d keep it', '2 fail', 'wrong or missing',
+                         'What makes it good, or what is wrong with it?'):
+                assert line in screen.text(), (line, screen.text())
+            assert 'tink-sdlc' not in screen.text() and 'correction' not in screen.text(), screen.text()
+            send(b'1', '› 1 pass')
             send('half'.encode(), 'half')
             send(ESC, 'Label discarded; nothing recorded.')
             assert labels(root) == []
-            # No reviewer name: tink-sdlc is never asked, and the words stay in the form.
-            send(b'w', 'Label this run')
-            send(b'1', 'Your words')
+            # No name to sign with: tink-sdlc is never asked, and the words stay in the form.
+            send(b'w', 'No name to sign with')
+            send(b'1', '› 1 pass')
             send(WORDS.encode(), 'Ω')
-            send(F2, 'No reviewer name')
-            assert labels(root) == [] and 'Label this run' in screen.text()
+            send(F2, 'Checking your name again')
+            wait('No name to sign with')
+            assert labels(root) == [] and 'Your words' in screen.text()
             git('config', 'user.name', 'TEST operator')
-            send(F2, 'Recorded correction label for test-label.')
+            send(F2, 'Signed as TEST operator.')
+            assert labels(root) == [], 'a name the form had not shown signed a label'
+            send(F2, 'Saved your label.')
             [record] = labels(root)
             assert (record['kind'], record['words'], record['reviewer'], record['source']) == (
-                'correction', WORDS, 'TEST operator', 'taste'), record
-            assert 'Label this run' not in screen.text()
-            # Words that look like an option still arrive as words.
-            send(b'w', 'Label this run')
-            send(b'4', 'Your words')
+                'accepted', WORDS, 'TEST operator', 'taste'), record
+            assert 'Your words' not in screen.text() and 'test-label' not in screen.text()
+            # Words that look like an option still arrive as words; fail saves as rejected.
+            send(b'w', 'Signed as TEST operator.')
+            send(b'2', '› 2 fail')
             send(b'--no-verify', '--no-verify')
-            send(F2, 'Recorded rejected label for test-label.')
+            send(F2, 'Saved your label.')
             assert [(r['kind'], r['words']) for r in labels(root)][1] == ('rejected', '--no-verify')
             # tink-sdlc's own refusal comes back word for word once the run is closed.
             sdlc(root, env, 'close', 'test-label', '--outcome', 'abandoned')
-            send(b'w', 'Label this run')
-            send(b'3', 'Your words')
+            send(b'w', 'Signed as TEST operator.')
+            send(b'1', '› 1 pass')
             send(b'ok', 'ok')
             send(F2, 'This run is closed;')
             assert 'Not recorded. tink-sdlc said:' in screen.text() and len(labels(root)) == 2
