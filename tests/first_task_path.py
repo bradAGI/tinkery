@@ -43,6 +43,16 @@ with open(os.environ['TEST_PI_CALLS'], 'a') as calls:
 '''
 
 
+def without_pi(tinkery_src):
+    """The Next line when Pi is off PATH, given what cloud-setup left in `tinkery_src`."""
+    setup = tinkery_src / '.cloud-tools/node/bin'
+    if (setup / 'pi').is_file():
+        return f'Next: Pi is installed but not on PATH; run: export PATH={shlex.quote(str(setup))}:"$PATH"'
+    if (setup / 'node').is_file():
+        return f'Next: Put the setup Node on PATH (export PATH={shlex.quote(str(setup))}:"$PATH")'
+    return 'Next: Install Pi and log in'
+
+
 def blocks(heading):
     """The sh blocks under one `## ` heading of the guide, in order."""
     section = GUIDE.split(f'\n## {heading}\n', 1)[1].split('\n## ', 1)[0]
@@ -127,8 +137,21 @@ def main():
               f' && git checkout -q --detach FETCH_HEAD', env, root)
         out = shell(prelude + connect.replace(clone, '', 1), env, root, waiting=True)
         assert 'ready: The workflow is connected' in out, out
-        assert out.splitlines()[-1].startswith('Next: Install Pi and log in'), out
+        assert out.splitlines()[-1].startswith(without_pi(REPO)), out
         project = home / 'dev/my-project'
+        # Pi or Node that cloud-setup installed but left off PATH: the check gives the PATH line.
+        setup_src = root / 'TEST tinkery src'
+        (setup_src / 'scripts').mkdir(parents=True)
+        shutil.copy(REPO / 'scripts/first-task-check.py', setup_src / 'scripts')
+        setup_bin = setup_src / '.cloud-tools/node/bin'
+        setup_bin.mkdir(parents=True)
+        setup_check = f'python3 {shlex.quote(str(setup_src))}/scripts/first-task-check.py --sdlc-root ~/dev/my-project'
+        for name in ('node', 'pi'):
+            (setup_bin / name).write_text('#!/bin/sh\nexit 97\n')
+            (setup_bin / name).chmod(0o755)
+            out = shell(setup_check, env, root, waiting=True)
+            assert out.splitlines()[-1].startswith(without_pi(setup_src)), out
+        assert 'Pi is installed but not on PATH' in out and not host_calls.exists(), out
         # An install not yet committed is not connected (the fresh-Pi run read it as ready).
         out = shell('mkdir ~/dev/uncommitted && git -C ~/dev/uncommitted init -q'
                     ' && python3 ~/dev/tink-sdlc/scripts/init.py ~/dev/uncommitted >/dev/null\n'
@@ -159,6 +182,10 @@ def main():
         out = shell(readiness, env, root, waiting=True)
         assert out.splitlines()[-1].startswith('Next: Press m on the menu'), out
         assert '--shape-budget CALLS' in out.splitlines()[-1], out
+        # An agent operator names its model at launch, so no saved setup is needed.
+        out = shell(readiness + ' --operator agent', env, root, waiting=True)
+        assert 'ready: Drafting is set up; the first real send proves it. Pi has a login' in out, out
+        assert out.splitlines()[-1].startswith('Next: Name the build model'), out
         (home / '.config/tinkery').mkdir(parents=True)
         (home / '.config/tinkery/model.json').write_text(json.dumps(
             {'harness': 'pi', 'model': PIN.rsplit(':', 1)[0], 'thinking': 'low', 'calls': 4}))
