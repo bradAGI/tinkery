@@ -90,6 +90,8 @@ pub(super) struct ResultRow {
     pub(super) goal: Goal,
     /// Canonical explicit PR URL; never inferred from a branch.
     pub(super) url: Option<String>,
+    /// The PR's title from GitHub, shown as what was built; absent means unknown.
+    pub(super) title: Option<String>,
     /// Current PR head from GitHub; absent means unknown.
     pub(super) head: Option<String>,
     /// GitHub explicitly reported a merged PR; never an acceptance claim.
@@ -106,6 +108,8 @@ pub(super) struct ResultRow {
     pub(super) gates: Vec<String>,
     /// Unresolved source problems, not concealed by other successes.
     pub(super) gaps: Vec<String>,
+    /// Whether tink-sdlc reports any operator label; absent when the checkout doesn't say.
+    pub(super) labelled: Option<bool>,
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
@@ -296,6 +300,10 @@ fn remote(pr: &Value, row: &mut ResultRow) -> Result<(), String> {
     if !same_pr(pr, row) {
         return Err("PR identity disagrees with the run's record.".into());
     }
+    row.title = pr["title"]
+        .as_str()
+        .filter(|t| !t.trim().is_empty())
+        .map(Into::into);
     for check in pr["statusCheckRollup"]
         .as_array()
         .ok_or("PR checks unavailable.")?
@@ -369,7 +377,7 @@ fn gh(root: &Path, url: &str, stop: &AtomicBool) -> Result<Value, String> {
         "view",
         url,
         "--json",
-        "url,headRefOid,state,statusCheckRollup",
+        "url,title,headRefOid,state,statusCheckRollup",
     ]);
     let out = sdlc::execute(root, command, stop, DEADLINE)?;
     serde_json::from_str(&out).map_err(|_| "GitHub report unreadable.".into())
@@ -408,6 +416,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
             slug: slug.into(),
             goal: Goal::Unknown,
             url: None,
+            title: None,
             head: None,
             merged: false,
             preview: Err("Preview identity unknown; press r.".into()),
@@ -416,6 +425,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
             receipts_missing: false,
             gates: Vec::new(),
             gaps: Vec::new(),
+            labelled: None,
         };
         if summary["verification_status"] == "invalid" || !canonical_run_id(&row.id) {
             row.gaps
@@ -441,6 +451,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
             return Err("Unknown run verification state.".into());
         }
         row.goal = sdlc::goal(run);
+        row.labelled = run["labels"]["count"].as_u64().map(|n| n > 0);
         row.seed = run["seed_contract"]["sha256"]
             .as_str()
             .unwrap_or("unknown seed")
@@ -455,7 +466,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
                             row.gaps.push("GitHub names a different PR than the run recorded (renamed or moved?); result revision unknown.".into());
                         } else {
                             if !listed(&pr, &mut row)? { continue; }
-                            if let Err(why) = remote(&pr, &mut row) { row.head = None; row.items.clear(); row.gaps.push(why); }
+                            if let Err(why) = remote(&pr, &mut row) { row.head = None; row.title = None; row.items.clear(); row.gaps.push(why); }
                         }
                     }
                     Err(_) => row.gaps.push("Couldn't read GitHub. Check gh authentication/access, then press r; result revision unknown.".into()),
@@ -520,6 +531,7 @@ mod tests {
             slug: "TEST-result".into(),
             goal: Goal::Unknown,
             url: Some("https://github.com/TEST/example/pull/1".into()),
+            title: None,
             head: Some("a".repeat(40)),
             merged: false,
             preview: Err("No preview declared".into()),
@@ -528,6 +540,7 @@ mod tests {
             receipts_missing: false,
             gates: vec![],
             gaps: vec![],
+            labelled: None,
         }
     }
 
@@ -570,13 +583,18 @@ mod tests {
                 None,
                 96,
                 crate::Palette::new(color),
-                false,
+                true,
             )
             .iter()
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-            assert_eq!(detail.matches(MISSING_RECEIPTS).count(), 3, "{detail}");
+            let (owed_and_checks, _) = detail.split_once("\nGoal\n").unwrap();
+            assert_eq!(
+                owed_and_checks.matches(MISSING_RECEIPTS).count(),
+                3,
+                "{detail}"
+            );
             assert!(!detail.contains("waiting") && !detail.contains("No source gate owed"));
         }
         for action in ['a', 'c'] {

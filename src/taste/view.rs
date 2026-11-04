@@ -1,5 +1,6 @@
-//! Taste's visual hierarchy: compact result counts, exact source words in headed detail,
-//! and separately requested evidence. Presentation never changes source facts or copy payloads.
+//! Taste's visual hierarchy: compact result counts, a review that shows what was built and asks
+//! one question, and details on request that keep every source word. Presentation never changes
+//! source facts or copy payloads.
 
 use super::{
     goal,
@@ -12,7 +13,7 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -153,7 +154,13 @@ pub(super) fn list(
             counts.push(Span::styled("? goal unknown  ", p.muted));
         }
         if !row.gates.is_empty() {
-            counts.push(Span::styled(format!("You owe {}", row.gates.len()), p.jade));
+            counts.push(Span::styled(
+                format!("You owe {}  ", row.gates.len()),
+                p.jade,
+            ));
+        }
+        if row.labelled == Some(false) {
+            counts.push(Span::styled("waiting for your label", p.jade));
         }
         lines.push(Line::from(counts));
         lines.push(Line::default());
@@ -261,56 +268,85 @@ pub(super) fn running_preview(
     lines
 }
 
-/// All source wording remains reachable; evidence is a separate deliberate view, never a read.
+/// A snapshot this old may no longer match GitHub or the checkout.
+const STALE: Duration = Duration::from_secs(10 * 60);
+
+/// What was built: the PR title, or its link while the title is unknown.
+fn built(row: &ResultRow) -> String {
+    safe(
+        row.title
+            .as_deref()
+            .or(row.url.as_deref())
+            .unwrap_or("Result unknown: no recorded PR"),
+    )
+}
+
+/// The review asks one question. It shows what was built, the goal's first line and the label
+/// key; identity is checked silently and surfaces only as a mismatch. Everything else is details.
 pub(super) fn detail(
     row: &ResultRow,
     pause: Option<&Pause>,
     at: Option<Instant>,
     width: u16,
     p: Palette,
-    evidence: bool,
+    details: bool,
 ) -> Vec<Line<'static>> {
+    if details {
+        return everything(row, at, width, p);
+    }
     let mut lines = Vec::new();
-    if evidence {
-        heading(&mut lines, "Evidence", p.ink);
-        for item in &row.items {
-            lines.push(Line::default());
-            check(&mut lines, item, width, p);
+    block(
+        &mut lines,
+        Span::raw(""),
+        &built(row),
+        width,
+        p.ink.add_modifier(Modifier::BOLD),
+    );
+    if row.merged {
+        lines.push(Line::styled("merged", p.muted));
+    }
+    match &row.preview {
+        Ok(spec) => block(&mut lines, Span::raw(""), &spec.offer(), width, p.muted),
+        Err(why) => block(&mut lines, Span::raw(""), why, width, p.muted),
+    }
+    heading(&mut lines, "Your goal", p.ink);
+    block(
+        &mut lines,
+        Span::raw("  "),
+        goal(&row.goal).split('\n').next().unwrap_or(""),
+        width,
+        p.ink,
+    );
+    if !row.gaps.is_empty() || (row.url.is_some() && row.head.is_none()) {
+        lines.push(Line::default());
+        for gap in &row.gaps {
+            block(&mut lines, Span::styled("! ", p.rust), gap, width, p.rust);
+        }
+        if row.gaps.is_empty() {
             block(
                 &mut lines,
-                Span::raw("  "),
-                &format!("Source: {}\nReported state: {}", item.kind, item.state),
+                Span::styled("! ", p.rust),
+                "Result revision unknown; press r.",
                 width,
-                p.muted,
+                p.rust,
             );
-            let receipt = if item.kind == "automated" {
-                item.evidence
-                    .replace("; argv:", ";\nargv:")
-                    .replace("; cwd:", ";\ncwd:")
-                    .replace("; receipt log SHA-256:", ";\nreceipt log SHA-256:")
-            } else {
-                item.evidence.clone()
-            };
-            block(&mut lines, Span::raw("  "), &receipt, width, p.ink);
         }
-        if !row.gaps.is_empty() {
-            heading(&mut lines, "Source notes", p.ink);
-            for gap in &row.gaps {
-                lines.push(Line::default());
-                block(&mut lines, Span::raw("  "), gap, width, p.ink);
-            }
-        }
-        return lines;
     }
-    if let Ok(spec) = &row.preview {
-        block(
-            &mut lines,
-            Span::raw(""),
-            &spec.disclosure(row.head.as_deref().unwrap_or("unknown")),
-            width,
+    if let Some(age) = at.map(|at| at.elapsed()).filter(|age| *age >= STALE) {
+        lines.push(Line::default());
+        lines.push(Line::styled(
+            format!(
+                "Read {} min ago; may be out of date, press r.",
+                age.as_secs() / 60
+            ),
             p.muted,
-        );
+        ));
     }
+    heading(&mut lines, "Is this good?", p.jade);
+    lines.push(Line::styled(
+        "  w  answer pass or fail, in your own words",
+        p.jade,
+    ));
     if let Some(pause) = pause {
         heading(&mut lines, "Next", p.ink);
         let guess = p.ink.add_modifier(Modifier::ITALIC);
@@ -322,6 +358,13 @@ pub(super) fn detail(
             guess,
         );
     }
+    lines
+}
+
+/// Details on request: owed gates, every check in its source words, the whole goal, the evidence
+/// behind each check, then result identity last. Nothing is shortened or dropped.
+fn everything(row: &ResultRow, at: Option<Instant>, width: u16, p: Palette) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
     heading(&mut lines, "You owe", p.jade);
     if row.receipts_missing {
         block(
@@ -343,13 +386,42 @@ pub(super) fn detail(
     }
     heading(&mut lines, "Goal", p.ink);
     block(&mut lines, Span::raw("  "), goal(&row.goal), width, p.ink);
-    heading(&mut lines, "Details", p.ink);
-    let mut details = vec![
+    heading(&mut lines, "Evidence", p.ink);
+    for item in &row.items {
+        lines.push(Line::default());
+        check(&mut lines, item, width, p);
+        block(
+            &mut lines,
+            Span::raw("  "),
+            &format!("Source: {}\nReported state: {}", item.kind, item.state),
+            width,
+            p.muted,
+        );
+        let receipt = if item.kind == "automated" {
+            item.evidence
+                .replace("; argv:", ";\nargv:")
+                .replace("; cwd:", ";\ncwd:")
+                .replace("; receipt log SHA-256:", ";\nreceipt log SHA-256:")
+        } else {
+            item.evidence.clone()
+        };
+        block(&mut lines, Span::raw("  "), &receipt, width, p.ink);
+    }
+    if !row.gaps.is_empty() {
+        heading(&mut lines, "Source notes", p.ink);
+        for gap in &row.gaps {
+            lines.push(Line::default());
+            block(&mut lines, Span::raw("  "), gap, width, p.ink);
+        }
+    }
+    heading(&mut lines, "Result", p.ink);
+    let mut result = vec![
         format!(
             "PR: {}{}",
             row.url.as_deref().unwrap_or("unknown"),
             if row.merged { " · merged" } else { "" }
         ),
+        format!("Commit: {}", row.head.as_deref().unwrap_or("unknown")),
         format!("Run ID: {}", row.id),
         format!("Run: {}", row.slug),
         format!("Seed digest: {}", row.seed),
@@ -358,72 +430,62 @@ pub(super) fn detail(
             at.map_or(0, |at| at.elapsed().as_secs() / 60)
         ),
     ];
-    if row.preview.is_err() {
-        details.insert(
-            1,
-            format!("Commit: {}", row.head.as_deref().unwrap_or("unknown")),
-        );
+    match &row.preview {
+        Ok(spec) => result.push(spec.offer()),
+        Err(why) => result.push(why.clone()),
     }
-    for text in details {
+    for text in result {
         block(&mut lines, Span::raw("  "), &text, width, p.muted);
-    }
-    if let Err(why) = &row.preview {
-        block(&mut lines, Span::raw("  "), why, width, p.muted);
-    }
-    if !row.gaps.is_empty() {
-        lines.push(Line::styled(
-            format!("  {} source notes · e evidence", row.gaps.len()),
-            p.muted,
-        ));
     }
     lines
 }
 
-/// The unsent label: the run, the four kinds with the chosen one marked, and the words as typed.
+/// The unsent label: what was built, pass or fail with when to pick each, the words as typed,
+/// and the name it will be signed with.
 pub(super) fn label_form(
     row: &ResultRow,
     form: &super::label::Form,
+    signer: Option<&Result<String, String>>,
     note: &str,
     width: u16,
     p: Palette,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    heading(&mut lines, "Label this run", p.ink);
-    block(
-        &mut lines,
-        Span::raw("  "),
-        &format!("Run: {}", safe(&row.slug)),
-        width,
-        p.muted,
-    );
+    heading(&mut lines, "Is this good?", p.ink);
+    block(&mut lines, Span::raw("  "), &built(row), width, p.muted);
     // tink-sdlc's answer sits above the form so a refusal is never scrolled out of sight.
     if !note.is_empty() {
         lines.push(Line::default());
         block(&mut lines, Span::raw("  "), &safe(note), width, p.ink);
     }
-    heading(&mut lines, "Kind", p.ink);
+    lines.push(Line::default());
     for (number, kind) in super::label::Kind::ALL.iter().enumerate() {
         let chosen = form.kind == Some(*kind);
-        lines.push(Line::styled(
-            format!(
-                "{} {} {}",
-                if chosen { "  ›" } else { "   " },
-                number + 1,
-                kind.word()
-            ),
-            if chosen { p.jade } else { p.ink },
-        ));
-    }
-    heading(&mut lines, "Your words", p.ink);
-    if form.kind.is_none() {
         block(
             &mut lines,
-            Span::raw("  "),
-            "Choose a kind first.",
+            Span::styled(
+                format!(
+                    "{} {} {:<6}",
+                    if chosen { "  ›" } else { "   " },
+                    number + 1,
+                    kind.name()
+                ),
+                if chosen { p.jade } else { p.ink },
+            ),
+            kind.when(),
             width,
-            p.muted,
+            if chosen { p.jade } else { p.muted },
         );
-    } else {
+    }
+    heading(&mut lines, "Your words", p.ink);
+    block(
+        &mut lines,
+        Span::raw("  "),
+        "What makes it good, or what is wrong with it?",
+        width,
+        p.muted,
+    );
+    if form.kind.is_some() {
         block(
             &mut lines,
             Span::raw("  "),
@@ -433,10 +495,17 @@ pub(super) fn label_form(
         );
     }
     lines.push(Line::default());
+    let signed = match signer {
+        None => "Checking who signs this label…".to_owned(),
+        Some(Ok(name)) => format!("Signed as {}.", safe(name)),
+        Some(Err(why)) => safe(why),
+    };
     block(
         &mut lines,
         Span::raw("  "),
-        "F2 saves it with tink-sdlc, signed with this checkout's git user.name. A label records what you said; it approves and merges nothing.",
+        &format!(
+            "{signed} Your label is your verdict on this result; it approves and merges nothing."
+        ),
         width,
         p.muted,
     );
@@ -453,8 +522,8 @@ mod tests {
         ResultRow {
             id: "TEST-run-id".into(), slug: "TEST-run".into(),
             goal: Goal::Matched(format!("{}\nWhy: TEST reason.\nDone when: TEST result.", "TEST café 👩‍💻 goal ".repeat(12))),
-            url: Some("https://github.com/TEST/example/pull/1".into()), head: Some("a".repeat(40)),
-            merged: true, preview: Err("No preview declared".into()), receipts_missing: false, seed: "TEST-seed".into(), gates: vec![human.into()], gaps: vec![],
+            url: Some("https://github.com/TEST/example/pull/1".into()), title: None, head: Some("a".repeat(40)),
+            merged: true, preview: Err("No preview declared".into()), receipts_missing: false, seed: "TEST-seed".into(), gates: vec![human.into()], gaps: vec![], labelled: None,
             items: vec![
                 Item { label: "Every original check word stays intact while this long sentence wraps with a hanging indent and no abbreviation.".into(),
                     state: Check::Fail, kind: "automated".into(), evidence: "/TEST/log; argv: [TEST]".into() },
@@ -515,15 +584,16 @@ mod tests {
         let row = row();
         for mono in [false, true] {
             let p = Palette::new(mono);
-            let lines = detail(&row, None, None, 96, p, false);
-            let text = lines
+            let lines = detail(&row, None, None, 96, p, true);
+            let full = lines
                 .iter()
                 .map(Line::to_string)
                 .collect::<Vec<_>>()
                 .join("\n");
-            assert!(text.find("You owe").unwrap() < text.find("Checks").unwrap());
-            assert!(text.find("Checks").unwrap() < text.find("Goal").unwrap());
-            assert!(text.find("Goal").unwrap() < text.find("Details").unwrap());
+            let order = ["You owe", "Checks", "\nGoal", "\nEvidence", "\nResult"]
+                .map(|heading| full.find(heading).unwrap());
+            assert!(order.is_sorted(), "{full}");
+            let text = &full[..order[3]];
             assert_eq!(text.matches("Confirm the synthetic").count(), 1);
             assert!(
                 !text.contains("(automated)")
@@ -591,6 +661,94 @@ mod tests {
                     && evidence.contains("human attestation")
             );
         }
+    }
+
+    #[test]
+    fn review_shows_what_was_built_the_goal_line_and_one_question_in_order() {
+        let mut row = row();
+        row.title = Some("TEST clinic comparison".into());
+        for width in [76, 96] {
+            let text = detail(&row, None, None, width, Palette::new(true), false)
+                .iter()
+                .map(Line::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            let order = [
+                "TEST clinic comparison",
+                "No preview declared",
+                "Your goal",
+                "Is this good?",
+            ]
+            .map(|part| text.find(part).unwrap());
+            assert!(order.is_sorted(), "{text}");
+            assert!(text.lines().count() <= 20, "fits the first screen: {text}");
+            for hidden in [
+                "Why: TEST reason",
+                "Done when",
+                "Every original check",
+                "TEST-run-id",
+                "TEST-seed",
+                "https://",
+            ] {
+                assert!(!text.contains(hidden), "{hidden}: {text}");
+            }
+        }
+        let old = Instant::now().checked_sub(STALE).unwrap();
+        let stale = detail(&row, None, Some(old), 96, Palette::new(true), false)
+            .iter()
+            .map(Line::to_string)
+            .collect::<String>();
+        assert!(stale.contains("may be out of date, press r."), "{stale}");
+        let fresh = detail(
+            &row,
+            None,
+            Some(Instant::now()),
+            96,
+            Palette::new(true),
+            false,
+        )
+        .iter()
+        .map(Line::to_string)
+        .collect::<String>();
+        assert!(!fresh.contains("min ago"), "{fresh}");
+        row.title = None;
+        let untitled = detail(&row, None, None, 96, Palette::new(true), false)[0].to_string();
+        assert_eq!(untitled, "https://github.com/TEST/example/pull/1");
+        row.head = None;
+        let unknown = detail(&row, None, None, 96, Palette::new(true), false)
+            .iter()
+            .map(Line::to_string)
+            .collect::<String>();
+        assert!(
+            unknown.contains("! Result revision unknown; press r."),
+            "{unknown}"
+        );
+    }
+
+    #[test]
+    fn label_form_explains_pass_and_fail_and_names_the_signer() {
+        let row = row();
+        let mut form = super::super::label::Form::default();
+        let text = |form: &super::super::label::Form, signer| {
+            label_form(&row, form, signer, "", 76, Palette::new(true))
+                .iter()
+                .map(Line::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let checking = text(&form, None);
+        for visible in [
+            "1 pass  It does what you asked, and you'd keep it.",
+            "2 fail  Something is wrong or missing.",
+            "What makes it good, or what is wrong with it?",
+            "Checking who signs this label…",
+        ] {
+            assert!(checking.contains(visible), "{visible}: {checking}");
+        }
+        assert!(!checking.contains("tink-sdlc") && !checking.contains("correction"));
+        form.kind = Some(super::super::label::Kind::Fail);
+        let signed = text(&form, Some(&Ok("TEST operator".into())));
+        assert!(signed.contains("› 2 fail") && signed.contains("Signed as TEST operator."));
     }
 
     #[test]

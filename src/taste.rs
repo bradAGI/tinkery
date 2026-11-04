@@ -1,7 +1,8 @@
-//! Taste reviews one exact result against its unchanged saved goal. Explicit refresh reads
-//! checkout status and GitHub metadata; o opens a PR and v runs a declared exact-head preview. Copying hands
-//! review back externally without recording a verdict, posting, merging, signing gates or agents.
-//! Its one write is the operator's label (w, then F2), through tink-sdlc; agent launches can't.
+//! Taste shows one exact result beside its unchanged saved goal and asks "Is this good?". Explicit
+//! refresh reads checkout status and GitHub metadata; o opens a PR and v runs a declared exact-head
+//! preview. Its one write is the operator's label, their verdict on the result (w, then F2),
+//! through tink-sdlc; agent launches can't. Copying hands review back externally. Nothing here
+//! posts, merges, signs gates or launches agents.
 
 mod evidence;
 mod label;
@@ -33,6 +34,9 @@ pub(crate) struct Taste {
     /// Launched with `--operator agent`: labels are the operator's, so `w` refuses.
     agent: bool,
     label: Option<label::Form>,
+    /// The name the open form will sign with, as read when it opened or on a retry.
+    signer: Option<Result<String, String>>,
+    signing: Option<Read<String>>,
     labelling: Option<Read<String>>,
     reading: Option<Read<Vec<ResultRow>>>,
     opening: Option<Read<()>>,
@@ -58,6 +62,8 @@ impl Taste {
             root,
             agent,
             label: None,
+            signer: None,
+            signing: None,
             labelling: None,
             reading: None,
             opening: None,
@@ -131,12 +137,19 @@ impl Taste {
                 }
             }
         }
+        if let Some(result) = self.signing.as_ref().and_then(Read::poll) {
+            self.signing = None;
+            self.signer = Some(result);
+        }
         if let Some(result) = self.labelling.as_ref().and_then(Read::poll) {
             self.labelling = None;
             match result {
-                Ok(answer) => {
+                Ok(_) => {
                     self.label = None;
-                    self.notice = answer;
+                    self.notice = "Saved your label.".into();
+                    if let Some(row) = self.rows.get_mut(self.selected) {
+                        row.labelled = Some(true);
+                    }
                 }
                 Err(why) => self.notice = format!("Not recorded. {why}"),
             }
@@ -210,11 +223,8 @@ impl Taste {
                             self.notice.clear();
                             self.scroll = 0;
                         }
-                        (Err(_), _, _) => {
-                            self.detail = true;
-                            self.evidence = false;
-                            self.scroll = usize::MAX;
-                            self.notice.clear();
+                        (Err(why), _, _) => {
+                            self.notice = format!("{why} ? says how to add one.");
                         }
                         _ => self.notice = "Result identity unknown; press r.".into(),
                     }
@@ -292,8 +302,10 @@ impl Taste {
                 if self.agent {
                     self.notice =
                         "Labels are the operator's; an agent launch can't record one.".into();
-                } else {
+                } else if let Some(root) = self.root.clone() {
                     self.label = Some(label::Form::default());
+                    self.signer = None;
+                    self.signing = Some(Read::task(move |stop| label::signer(&root, stop)));
                     self.pause = None;
                     self.draft = None;
                     self.evidence = false;
@@ -343,19 +355,35 @@ impl Taste {
             label::Action::Stay => {}
             label::Action::Discard => {
                 self.label = None;
+                self.signer = None;
+                self.signing = None;
                 self.notice = "Label discarded; nothing recorded.".into();
             }
-            label::Action::Save => match (form.ready(), &self.root, self.rows.get(self.selected)) {
-                (Ok((kind, words)), Some(root), Some(row)) => {
-                    let (root, slug) = (root.clone(), row.slug.clone());
-                    self.notice = "Saving your label…".into();
-                    self.labelling = Some(Read::task(move |stop| {
-                        label::write(&root, &slug, kind, &words, stop)
-                    }));
+            label::Action::Save => {
+                let (Some(root), Some(row)) = (self.root.clone(), self.rows.get(self.selected))
+                else {
+                    return self.notice = "Select a result first.".into();
+                };
+                match (form.ready(), &self.signer) {
+                    (Err(why), _) => self.notice = why.into(),
+                    // Only the name the form showed signs; a missing one is read again, never guessed.
+                    (Ok(_), None) => {
+                        self.notice = "Still checking who signs; press F2 again.".into()
+                    }
+                    (Ok(_), Some(Err(_))) => {
+                        self.signer = None;
+                        self.signing = Some(Read::task(move |stop| label::signer(&root, stop)));
+                        self.notice = "Checking your name again; press F2 once it shows.".into();
+                    }
+                    (Ok((kind, words)), Some(Ok(name))) => {
+                        let (slug, name) = (row.slug.clone(), name.clone());
+                        self.notice = "Saving your label…".into();
+                        self.labelling = Some(Read::task(move |stop| {
+                            label::write(&root, &slug, kind, &words, &name, stop)
+                        }));
+                    }
                 }
-                (Err(why), _, _) => self.notice = why.into(),
-                _ => self.notice = "Select a result first.".into(),
-            },
+            }
         }
     }
 
@@ -422,28 +450,23 @@ impl Taste {
             return format!(
                 "Right now\nq goes back to the menu · ? / Esc close help\n\
                  t edits the unsent draft in Think; only F2 sends.\n\
-                 e opens evidence after closing help; check words stay intact.\n\n{}",
+                 e opens details after closing help; check words stay intact.\n\n{}",
                 pause.lines.join("\n")
             );
         }
         concat!(
             "Right now\nq goes back to the menu · F10 Home · ? / Esc close help\n",
-            "Enter reviews · e opens evidence · n/p result\n",
-            "o opens PR · v runs declared preview at the exact commit; Esc stops/reaps\n",
-            "a/c copy accept/correct requests, never decisions\n",
-            "w labels the run in your words; only F2 saves it\n\n",
-            "What Taste reads\nOnly r reads the named checkout's API 1 status and each run's\n",
-            "recorded PR with gh, using your login. A run without a recorded PR\n",
-            "stays unknown; prose supplies none. Reading writes nothing and launches no agents.\n",
-            "r also reads tinkery.preview from the result repo at its exact commit.\n",
-            "Passes need current, exact-head evidence; review is separate.\n",
-            "External handoffs must recheck head, inputs, receipts and owed gates;\n",
-            "copying cannot enforce that binding, record verdicts or merge.\n\n",
-            "After external acceptance\nl reports you accepted this result externally (not verified).\n",
-            "One deterministic guess follows; t opens an unsent Think draft.\n",
-            "Only F2 sends. Copying or green checks never imply acceptance.\n",
-            "Esc, correction, selection and rereading discard the guess.\n",
-            "No verdict, gate or permission is recorded; you merge externally."
+            "Enter opens a result · w answers \"Is this good?\"; only F2 saves\n",
+            "o opens the PR · e details: checks, goal, IDs, evidence · n/p result\n",
+            "v runs the project's preview at its exact commit; Esc stops it\n",
+            "a/c copy accept/correct requests · l you accepted it elsewhere\n\n",
+            "Your label\nYour verdict, pass or fail in your words, signed with your git name.\n\n",
+            "What Taste reads\nOnly r reads the checkout's run status, each run's recorded PR and\n",
+            "its preview file, with gh and your login. Nothing is written or launched.\n",
+            "Add a preview: commit tinkery.preview at the project root, one line:\n",
+            "{\"command\":\"npm run dev -- --host 127.0.0.1\",\"url\":\"http://127.0.0.1:5173/\"}\n\n",
+            "After external acceptance\nl reports you accepted it elsewhere (not verified); t drafts the guess.\n",
+            "Copying or green checks never imply acceptance; you merge externally."
         ).into()
     }
 
@@ -458,7 +481,7 @@ impl Taste {
         let actions = if self.labelling.is_some() {
             "Saving your label with tink-sdlc…\n? help"
         } else if self.label.is_some() {
-            "1 correction  2 none  3 accepted  4 rejected, then type your words\nF2 save label  Esc discard"
+            "1 pass  2 fail, then type your words\nF2 save  Esc cancel"
         } else if self.preview.is_some() {
             "Preview · Esc stops and returns · F10 Home\narrows/PgUp/PgDn scroll  ? help"
         } else if self.rows.get(self.selected).is_none() {
@@ -468,13 +491,13 @@ impl Taste {
                 "? help  Esc back"
             }
         } else if self.evidence {
-            "e review  a/c copy  arrows/PgUp/PgDn scroll\nHome/End  ? help  Esc back"
+            "e back to the result  arrows/PgUp/PgDn scroll\n? more keys  Esc back"
         } else if self.detail && self.pause.is_some() {
-            "t edit in Think (unsent)  e evidence  a/c copy\narrows/PgUp/PgDn scroll  ? help  Esc list"
+            "t edit in Think (unsent)  w is this good?  o open PR  Esc list\ne details  ? more keys"
         } else if self.detail {
-            "v run preview  l accepted externally  w label  e evidence  a/c copy  o open PR\narrows/PgUp/PgDn scroll  n/p result  r reread  ? help  Esc list"
+            "w is this good?  o open PR  Esc list\ne details  ? more keys"
         } else {
-            "arrows move  enter/v open result  l accepted externally\na/c copy  o open PR  r reread  ? help  Esc back"
+            "arrows move  Enter open result  r reread\n? more keys  Esc back"
         };
         frame.render_widget(Paragraph::new(actions).style(palette.muted), footer);
         let body = Rect::new(area.x, area.y, area.width, area.height.saturating_sub(3));
@@ -494,7 +517,14 @@ impl Taste {
                 Line::raw("Reads each run's recorded PR with gh using your login."),
             ]
         } else if let (Some(form), Some(row)) = (&self.label, self.rows.get(self.selected)) {
-            view::label_form(row, form, &self.notice, body.width, palette)
+            view::label_form(
+                row,
+                form,
+                self.signer.as_ref(),
+                &self.notice,
+                body.width,
+                palette,
+            )
         } else if let Some(preview) = &self.preview {
             let row = &self.rows[self.selected];
             view::running_preview(row, &preview.status(), body.width, palette)

@@ -16,7 +16,7 @@ without losing your words or your control. Nothing runs without you: one next st
 | **Shape** | Investigate and turn the goal into a confirmed seed. |
 | **Approve** | Understand the decision and exactly what you're authorizing. |
 | **Watch** | See progress, blockers and decisions needing your attention. |
-| **Taste** | Compare the result with your original goal; accept or correct it. |
+| **Taste** | See the result beside your original goal and say whether it is good. |
 | **Measure** | Judge accepted, checked results against your effort. |
 
 This is the product flow, not all shipped behavior. Originals remain verbatim;
@@ -73,13 +73,14 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   status commands and changes no records.
 - **Taste:** menu place 6 uses `--sdlc-root PATH`. `r` explicitly reads runs and the PR
   each run recorded with `sdlc.py pr`; handoff prose supplies no links.
-  Review the unchanged goal, exact commit, matching
-  check states and plain owed gates. `o` opens the PR; `a`/`c` copy external review
-  handoffs, recording no verdict and merging nothing. After accepting externally,
-  `l` reports that decision for this snapshot and reveals one italic next-dump guess;
-  `t` opens it for editing in Think. Only F2 sends. `w` labels the run in your own words
-  (correction, none, accepted or rejected), saved by tink-sdlc only on F2. No unmet conditions means observe
-  the accepted behavior, not invent another feature. See [Taste](docs/design/taste.md).
+  Each result shows what was built, your goal and one question: "Is this good?" `w`
+  answers pass or fail in your own words, signed with the checkout's git name and saved
+  by tink-sdlc only on F2; it approves and merges nothing. `o` opens the PR; `e` shows
+  checks, owed gates, the whole goal, IDs and evidence. `a`/`c` copy external review
+  handoffs. After accepting externally, `l` reports that decision for this snapshot and
+  reveals one italic next-dump guess; `t` opens it for editing in Think. Only F2 sends.
+  No unmet conditions means observe the accepted behavior, not invent another feature.
+  See [Taste](docs/design/taste.md).
 - **Measure:** `r` explicitly reads this repo's PRs updated in the last 30 days from
   GitHub through `gh`. Lists all states; Enter shows dates, author, URL and reported
   PR-head checks. No metrics or acceptance claims. See [Measure](docs/design/menu.md#measure).

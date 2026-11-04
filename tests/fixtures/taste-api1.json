@@ -78,6 +78,7 @@
   },
   "pr": {
     "url": "https://github.com/TEST/clinic-tycoon/pull/1",
+    "title": "TEST clinic allocation comparison",
     "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "state": "OPEN",
     "statusCheckRollup": [
