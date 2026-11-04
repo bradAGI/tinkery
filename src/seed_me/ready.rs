@@ -446,10 +446,15 @@ mod tests {
         assert_eq!(slug(&"a".repeat(200)).unwrap().len(), 40);
         assert_eq!(slug(&format!("{} next", "a".repeat(39))).unwrap().len(), 39);
         assert_eq!(
-            slug("Encounter an explicit unknown route state on unsupported paths rather than the app"),
+            slug(
+                "Encounter an explicit unknown route state on unsupported paths rather than the app"
+            ),
             Some("encounter-an-explicit-unknown-route".into())
         );
-        assert_eq!(slug("Fix the Safari export"), Some("fix-the-safari-export".into()));
+        assert_eq!(
+            slug("Fix the Safari export"),
+            Some("fix-the-safari-export".into())
+        );
         let (_root, session) = fixture(true);
         assert!(read(&session, None).unwrap().unwrap().commands.is_none());
     }
