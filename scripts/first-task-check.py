@@ -7,18 +7,34 @@ four are. Reads local files and runs only `tinkery --snapshot` (in a throwaway H
 and tink-sdlc's read-only `capabilities`.
 Refuses to claim more than it read: "set up" never means a model answered. The first real
 send proves drafting; the first launch proves the worker.
+Finds a Pi or Node that cloud-setup left off PATH and says how to add it; never adds it.
+With `--operator agent`, drafting needs no saved setup: agents name their model at launch.
 """
 import argparse
 import importlib.machinery
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 GUIDE = 'docs/first-task.md'
+SETUP_BIN = Path(__file__).resolve().parents[1] / '.cloud-tools/node/bin'
+AGENT_DRAFTING = 'agents name the model at launch: --shape-pi --model MODEL --shape-budget CALLS'
+
+
+def install_pi(pi, step=''):
+    """What to do when `pi` is not on PATH: use setup's copy when it has one, else install."""
+    if pi == 'pi' and str(SETUP_BIN) not in os.environ.get('PATH', '').split(os.pathsep):
+        line = f'export PATH={shlex.quote(str(SETUP_BIN))}:"$PATH"'
+        if (SETUP_BIN / 'pi').is_file():
+            return f'Pi is installed but not on PATH; run: {line}'
+        if (SETUP_BIN / 'node').is_file():
+            return f'Put the setup Node on PATH ({line}), then install Pi and log in{step}.'
+    return f'Install Pi and log in, so `{pi}` is on PATH{step}.'
 
 
 def tinkery_runs(tinkery):
@@ -48,7 +64,7 @@ def launcher(root):
 def pi_ready(pi, pin, root):
     """Pi is installed, and the pin's model is in its catalog with a stored login (offline)."""
     if not shutil.which(pi):
-        return False, f'Install Pi and log in, so `{pi}` is on PATH.'
+        return False, install_pi(pi)
     if root is None:
         return True, None
     adapter = launcher(root)
@@ -78,18 +94,27 @@ def pi_logged_in(root):
     return isinstance(store, dict) and any(stored(provider) for provider in store)
 
 
-def drafting(root):
+def without_setup(root, agent):
+    """Drafting with no saved setup: ready only for an agent, which names its model at launch."""
+    if not shutil.which('pi'):
+        return False, install_pi('pi', f' ({GUIDE}, step 3)')
+    if root is not None and not pi_logged_in(root):
+        return False, f'Log in to Pi: run `pi`, then /login ({GUIDE}, step 3).'
+    if agent:
+        return True, f'Pi has a login; {AGENT_DRAFTING}'
+    return False, (f'Press m on the menu, choose a model and calls, then s to save ({GUIDE}, step 3). '
+                   'An agent never uses a saved setup: the operator launches it with '
+                   '--shape-pi --model MODEL --shape-budget CALLS.')
+
+
+def drafting(root, agent):
+    if agent:
+        return without_setup(root, agent)
     path = Path.home() / '.config/tinkery/model.json'
     try:
         setup = json.loads(path.read_text())
     except FileNotFoundError:
-        if not shutil.which('pi'):
-            return False, f'Install Pi and log in, so `pi` is on PATH ({GUIDE}, step 3).'
-        if root is not None and not pi_logged_in(root):
-            return False, f'Log in to Pi: run `pi`, then /login ({GUIDE}, step 3).'
-        return False, (f'Press m on the menu, choose a model and calls, then s to save ({GUIDE}, step 3). '
-                       'An agent never uses a saved setup: the operator launches it with '
-                       '--shape-pi --model MODEL --shape-budget CALLS.')
+        return without_setup(root, agent)
     except (OSError, ValueError) as error:
         return False, f'{path} is unreadable: {error}'
     if not setup.get('model') or not setup.get('calls'):
@@ -151,12 +176,15 @@ def main():
     parser.add_argument('--tinkery', default=shutil.which('tinkery'), help='Tinkery executable (default: on PATH)')
     parser.add_argument('--sdlc-root', type=Path, help='your project, with tink-sdlc installed')
     parser.add_argument('--worker-model', help='build pin: provider/model-id:thinking')
+    parser.add_argument('--operator', choices=('human', 'agent'), default='human',
+                        help='agent: drafting needs no saved setup')
     args = parser.parse_args()
     root = args.sdlc_root.resolve() if args.sdlc_root else None
     connected = workflow(root)
     lines = [('Tinkery runs', tinkery_runs(args.tinkery)),
              ('The workflow is connected', connected),
-             ('Drafting is set up; the first real send proves it', drafting(root if connected[0] else None)),
+             ('Drafting is set up; the first real send proves it', drafting(root if connected[0] else None,
+                                                                                args.operator == 'agent')),
              ('A worker can launch; the first launch proves it', worker(root if connected[0] else None,
                                                                        args.worker_model))]
     for label, (ok, detail) in lines:
