@@ -313,3 +313,23 @@ fn unreadable_runs_refuse_all_start_classification() {
         }
     }
 }
+
+#[test]
+fn generated_rules_are_dropped_only_from_well_formed_blocks() {
+    let authored = b"TEST authored\n".as_slice();
+    let rules = b"TEST authored\n\n<!-- tink:rules begin skillset=TEST-skillset -->\nTEST rules\n<!-- tink:rules end -->\n";
+    assert_eq!(without_generated_rules(rules), authored);
+    let trailing = b"TEST authored\n\n<!-- tink:rules begin -->\nTEST rules\n<!-- tink:rules end -->\nTEST after\n";
+    assert_eq!(
+        without_generated_rules(trailing),
+        b"TEST authored\nTEST after\n"
+    );
+    for unbalanced in [
+        b"TEST\n<!-- tink:rules begin -->\nTEST rules\n".as_slice(),
+        b"TEST\n<!-- tink:rules end -->\n",
+        b"<!-- tink:rules begin -->\n<!-- tink:rules begin -->\n<!-- tink:rules end -->\n",
+    ] {
+        assert_eq!(without_generated_rules(unbalanced), unbalanced);
+    }
+    assert_eq!(without_generated_rules(authored), authored);
+}

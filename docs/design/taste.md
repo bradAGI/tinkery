@@ -169,6 +169,8 @@ current passed verification and an exact candidate commit. The source-owned
 `run.checkout`, or the named root when omitted, must be a Git root. Source files
 must match that commit and there must be no untracked source files; run evidence
 under `runs/` and Git-ignored files such as dependencies/build output are excluded.
+A root AGENTS.md matches when it differs only by tink-sdlc's generated `tink:rules` block,
+which the worker launcher writes and tink-sdlc excludes from the candidate; any other edit refuses.
 Ignored inputs are not covered by this source comparison; the declared setup must
 produce everything the preview needs in its temporary checkout.
 This extra comparison prevents a passed uncommitted tree from presenting an older
@@ -379,8 +381,9 @@ dogfood or improved attention; #109's comparison method remains separate.
 [Local preview journeys](../../tests/taste_local_preview_terminal.py) exercise the public
 terminal with actual temporary Git checkouts, fake API 1, a local HTTP server and
 a stub browser opener. They cover both sizes and colour modes, named and forwarded
-checkouts, benign run evidence, exact-commit serving, dirty/untracked source,
+checkouts, benign run evidence, a launcher-written rules block, exact-commit serving, dirty/untracked source
+(including authored AGENTS.md edits beside a rules block),
 missing/stale/failed receipts, malformed PRs, changed identity/candidate/declaration
 between read and execution, port collisions, and process/checkout cleanup. No
 provider or GitHub calls occur. Reversion probes must detect removing the source
-comparison and the launch-time reread; restored protections must pass again.
+comparison, the launch-time reread and the rules-block-only AGENTS.md rule; restored protections must pass again.
