@@ -1,6 +1,7 @@
 """A hidden F2 cannot send typed or dictated words; PTYs, TEST roots and fake hosts."""
 import ast
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -58,6 +59,10 @@ def journey(width, height, voice):
             assert requests[0]['sources'][0]['text'] == DRAFT + ('spoken words' if voice else '')
             assert requests[1]['kind'] == 'decision-review'
             assert not (root / 'TEST-records').exists()
+            terminal.send(b'\x1b', 'Back to menu and lose this draft? y / n')
+            os.write(terminal.master, b'y')
+            terminal.process.wait(timeout=5)
+            assert terminal.process.returncode == 0
             print(f'hidden send {width}×{height}, voice={voice}: no hidden send; '
                   'fresh visible F2 sends exact words once')
         finally:
