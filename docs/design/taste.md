@@ -234,8 +234,11 @@ it will sign with, read from the checkout's `git config user.name` when it opens
 no Tinkery setting. Only that shown name signs: with none, F2 reads it again and the form
 shows the result before another F2 can save. Esc cancels and leaves the run waiting for its
 label; leaving discards, but F10 waits while a save runs. Only a pressed F2 saves, by
-running the checkout's own `sdlc.py label <slug> --kind … --words … --reviewer <shown name>
---source taste`. Words pass through unchanged. Success says “Saved your label.”; a refusal
+running the checkout's own `sdlc.py label <slug> --expected-run-id <reviewed ID> --kind …
+--words … --reviewer <shown name> --source taste`. tink-sdlc checks that identity while
+holding its write locks, so reusing a run name cannot redirect the verdict. This needs
+tink-sdlc 1.53.0 or later; older checkouts refuse and keep the words, with no unchecked retry.
+Words pass through unchanged. Success says “Saved your label.”; a refusal
 from tink-sdlc (closed run, run building elsewhere, agent reviewer) shows word for word in
 the form, which keeps the words. An `--operator agent` launch refuses `w`: labels are the
 operator's. The label lives in `runs/<slug>/labels.jsonl`, owned by tink-sdlc and

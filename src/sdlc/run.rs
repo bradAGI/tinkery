@@ -180,10 +180,15 @@ pub(crate) fn execute(
         .ok()
         .and_then(|value| value["error"]["message"].as_str().map(str::to_owned))
         .or_else(|| {
-            String::from_utf8_lossy(&err)
-                .lines()
-                .rev()
-                .find(|line| !line.trim().is_empty())
+            let stderr = String::from_utf8_lossy(&err);
+            subcommand
+                .as_ref()
+                .and_then(|_| {
+                    stderr
+                        .lines()
+                        .find(|line| line.starts_with("sdlc.py: error:"))
+                })
+                .or_else(|| stderr.lines().rev().find(|line| !line.trim().is_empty()))
                 .map(|line| line.trim().to_owned())
         })
         .unwrap_or_else(|| "no details".into());
