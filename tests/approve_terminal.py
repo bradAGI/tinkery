@@ -52,6 +52,8 @@ def journey(width, height, case, no_color):
         elif case == 'unreadable':
             sessions.write_text('TEST not a directory')
         checkout = root / "TEST checkout's folder"
+        if case == 'target-twin-checkouts':
+            checkout = root / r'TEST\tparent' / checkout.name
         configured = case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'different-repo')
         if configured:
             script = checkout / '_system/scripts/sdlc.py'
@@ -69,9 +71,11 @@ def journey(width, height, case, no_color):
                 moved = sessions / 'TEST moved session'
                 expected[0].rename(moved)
                 expected[0] = moved
-        if case in ('different-repo', 'target-different-repo'):
+        if case in ('different-repo', 'target-twin-checkouts'):
             (checkout / '.git').mkdir()
             other = root / 'TEST-other-repo'
+            if case == 'target-twin-checkouts':
+                other = root / 'TEST\tparent' / checkout.name
             (other / '.git').mkdir(parents=True)
             records = root / 'TEST-records'
             records.mkdir()
@@ -100,10 +104,11 @@ def journey(width, height, case, no_color):
             env['NO_COLOR'] = '1'
         else:
             env.pop('NO_COLOR', None)
+        named_checkout = checkout.relative_to(root) if case == 'target-twin-checkouts' else checkout
         proc = subprocess.Popen([str(REPO / 'target/debug/tinkery'), '--operator', 'agent', '--home',
             '--seed-session-root', str(sessions),
             '--record-root', str(root / 'TEST-records'), '--link-root', str(root / 'TEST-links'),
-            *(['--sdlc-root', str(checkout)] if configured else [])], stdin=slave, stdout=slave, stderr=slave, cwd=root, env=subprocess.environment(env, home=(env)['HOME']))
+            *(['--sdlc-root', str(named_checkout)] if configured else [])], stdin=slave, stdout=slave, stderr=slave, cwd=root, env=subprocess.environment(env, home=(env)['HOME']))
         screen = Screen(width, height)
         output = bytearray()
 
@@ -166,7 +171,7 @@ def journey(width, height, case, no_color):
                     record = json.loads(recordpath.read_text());record['seed_sha256'] = hashlib.sha256(seedpath.read_bytes()).hexdigest()
                     recordpath.write_text(json.dumps(record))
                 before = files(root)  # Only the authored TEST mutation above is allowed.
-                success = case in ('target-ready', 'target-different-repo')
+                success = case in ('target-ready', 'target-twin-checkouts')
                 send(b'1', 'Seed 1 of 1' if success else 'Ready seeds unavailable.')
                 assert 'TEST oldest café' not in flat(), 'targeted visit substituted an unrelated seed'
                 send(b'\x1bOP', 'Esc returns to Shape.')
@@ -174,10 +179,17 @@ def journey(width, height, case, no_color):
                 send(b'\x1b', 'Seed 1 of 1' if success else 'Ready seeds unavailable.')
                 if success:
                     assert 'TEST newest' in flat() and 'TEST original goal.' in flat()
-                    if case == 'target-different-repo':
-                        send(b'\x1b[F', 'Made in TEST-other-repo,')
-                        assert 'c copy command' not in flat()
-                        os.write(master,b'c');time.sleep(.1);assert not copies()
+                    if case == 'target-twin-checkouts':
+                        send(b'\x1b[F', '--sdlc-root')
+                        # One parent contains a literal backslash followed by t, the other a tab.
+                        named = json.dumps(str(checkout), ensure_ascii=False)
+                        origin = json.dumps(str(other), ensure_ascii=False)
+                        expected_note = (f'You named {named}. Reopen Tinkery with --sdlc-root naming '
+                                         f'{origin}, where this seed was made.')
+                        # The terminal can wrap paths in the middle of a word.
+                        assert ''.join(expected_note.split()) in ''.join(flat().split()), screen.text()
+                        assert 'c copy command' not in flat() and 'python3' not in flat()
+                        os.write(master, b'c')
                     else:
                         send(b'c', 'Copied. Run it in a terminal; after it succeeds, open Watch.')
                         wait(lambda: len(copies()) == 1)
@@ -189,6 +201,8 @@ def journey(width, height, case, no_color):
                     if case in ('target-version','target-recreated','target-hash'):assert 'changed since Shape read it' in flat(), screen.text()
                     os.write(master,b'cnp');time.sleep(.1);assert not copies()
                 send(b'\x1b', 'tinkery › shape')
+                if case == 'target-twin-checkouts':
+                    assert not copies(), 'same-named checkout mismatch offered a copy'
                 wait(lambda: 'TEST newest' in flat())
                 if case in ('target-stale','target-missing'):assert 'Seed ready:' not in flat(), screen.text()
                 else:wait(lambda: 'Seed ready:' in flat())
@@ -297,7 +311,7 @@ if __name__ == '__main__':
         for no_color in [False, True]:
             for case in ['ready', 'empty', 'incomplete', 'unreadable', 'started', 'edited', 'moved', 'runs-unreadable', 'no-checkout', 'different-repo']:
                 journey(*size, case, no_color)
-            for case in ['target-ready','target-stale','target-missing','target-started','target-different-repo']:
+            for case in ['target-ready','target-stale','target-missing','target-started','target-twin-checkouts']:
                 journey(*size,case,no_color)
 
     for case in ['target-version','target-recreated','target-hash']:

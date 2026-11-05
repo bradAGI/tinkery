@@ -72,8 +72,9 @@ Copying runs nothing and grants no approval. Missing checkout, an empty slug or
 unsafe paths leave the verified seed readable with a reason and no copy action.
 A known different repository does the same: a plain reason names both repository
 folders and asks the operator to reopen with `--sdlc-root` naming the seed's origin.
-It offers no command, and `c` does nothing. Names explain the refusal; only root paths
-establish identity. Matching origins keep the existing copy action.
+If the folder names look the same, the message shows both full paths. It offers
+no command, and `c` does nothing. Only root paths establish identity. Matching
+origins keep the existing copy action.
 Older records, missing or unreadable Think records, and an unresolvable checkout
 leave the origin unknown; a muted note says so without adding a copy refusal.
 A known origin outside any repository likewise keeps copy with a muted note.
