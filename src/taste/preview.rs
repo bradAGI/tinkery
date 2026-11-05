@@ -263,10 +263,7 @@ fn run(
     opener.arg(&spec.url);
     sdlc::execute(root, opener, stop, DEADLINE)
         .map_err(|_| "Couldn't open browser; check the default opener.".to_owned())?;
-    *progress.lock().unwrap() = format!(
-        "Local URL answered; sent {} to browser. Esc stops and reaps.",
-        spec.url
-    );
+    *progress.lock().unwrap() = format!("Local URL answered; sent {} to browser.", spec.url);
     while !stop.load(Ordering::SeqCst) {
         if let Some(status) = process.0.try_wait().map_err(|e| e.to_string())? {
             return Err(format!("Declared command exited ({status})."));

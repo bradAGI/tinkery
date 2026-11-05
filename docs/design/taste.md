@@ -188,7 +188,7 @@ not an acceptance record or implementation permission.
   `e` or Esc there returns to the review. Arrows, PgUp/PgDn and Home/End scroll each
   complete document. `n`/`p` or Right/Left change result, clamped. Esc from detail
   returns to the list and discards the ephemeral report, without rereading.
-- `v` on the review runs the explicitly declared local preview above; Esc stops and reaps it.
+- `v` on the review runs the explicitly declared local preview above; Esc stops it and returns to the review.
 - `o` alone uses `gh pr view <recorded URL> --web` to open the PR. Navigation records
   nothing and rereads no checks. Browser failure names the retry. Repeated or modified
   action keys never open, reread or copy.

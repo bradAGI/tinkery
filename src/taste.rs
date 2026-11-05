@@ -206,7 +206,7 @@ impl Taste {
         match key.code {
             KeyCode::Esc if self.preview.is_some() => {
                 self.preview = None;
-                self.notice = "Preview stopped and reaped.".into();
+                self.notice = "Preview stopped.".into();
             }
             KeyCode::Char('v') if !self.detail || self.evidence => {
                 self.detail = true;

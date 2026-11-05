@@ -263,7 +263,7 @@ os.execv({git!r}, [{git!r}, *args])
             if wrong_head:
                 wait(lambda: 'Checkout commit disagrees' in screen.text())
                 assert not started.exists() and not opened.exists(), 'wrong commit executed'
-                send(b'\x1b', 'Preview stopped and reaped')
+                send(b'\x1b', 'Preview stopped.')
             else:
                 wait(started.exists)
                 record = json.loads(started.read_text())
@@ -273,7 +273,8 @@ os.execv({git!r}, [{git!r}, *args])
                 assert not opened.exists(), 'opened browser before URL answered'
                 wait(lambda: opened.exists() and 'sent http' in screen.text(), seconds=35)  # 30 s readiness + opener/paint slack
                 assert opened.read_text() == spec['url']
-                send(b'\x1b', 'Preview stopped and reaped')
+                assert 'Esc stops and returns' in screen.text() and 'reap' not in screen.text(), screen.text()
+                send(b'\x1b', 'Preview stopped.')
                 stopped(record)
                 started.unlink()
                 opened.unlink()
