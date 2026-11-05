@@ -462,11 +462,15 @@ impl Taste {
                 pause.lines.join("\n")
             );
         }
+        let open_result = if !self.detail && self.rows.get(self.selected).is_some() {
+            "Enter opens a result\n"
+        } else {
+            ""
+        };
         format!(
             concat!(
                 "Right now\nq goes back to the menu · F10 Home · ? / Esc close help\n",
-                "Enter opens a result\n",
-                "o opens the PR · e details: checks, goal, IDs, evidence · n/p result\n",
+                "{}o opens the PR · e details: checks, goal, IDs, evidence · n/p result\n",
                 "v runs the project's preview at its exact commit; Esc stops it\n",
                 "a/c copy accept/correct requests · l report a person's prior acceptance\n\n",
                 "Verdict\n{}\n\n",
@@ -478,7 +482,7 @@ impl Taste {
                 "This unverified report stays in this view and saves no verdict.\n",
                 "t drafts Next. Copying and green checks never imply acceptance or a merge."
             ),
-            verdict
+            open_result, verdict
         )
     }
 

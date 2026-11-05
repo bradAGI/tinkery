@@ -196,6 +196,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 return
             assert not calls(), 'opening Taste must disclose reads, not perform them'
             send(b'?', 'What Taste reads')
+            assert 'Enter opens a result' not in screen.text(), screen.text()
             assert "l report a person's prior acceptance" in screen.text(), screen.text()
             assert 'a person already accepted this result elsewhere' in screen.text(), screen.text()
             assert 'unverified' in screen.text() and 'saves no verdict' in screen.text(), screen.text()

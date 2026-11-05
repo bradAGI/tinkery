@@ -238,7 +238,9 @@ os.execv({git!r}, [{git!r}, *args])
             assert not started.exists() and not opened.exists()
             send(b'r', '› TEST clinic allocation comparison')
             assert 'Enter open result' in screen.text(), screen.text()
-            send(b'v', 'e details')
+            send(b'?', 'Enter opens a result')
+            send(b'\x1b', 'Enter open result')
+            send(b'\r' if wrong_head else b'v', 'e details')
             review = screen.text()
             assert criterion.split('?')[0] in review and 'What to judge' in review, review
             assert 'v runs' in review and 'Human verdict only' in review, review
@@ -250,6 +252,8 @@ os.execv({git!r}, [{git!r}, *args])
             send(b'e', 'What to judge')
             assert not started.exists() and not opened.exists(), 'read/navigation executed command'
             send(b'?', 'What Taste reads')
+            assert 'Enter opens a result' not in screen.text(), screen.text()
+            assert "v runs the project's preview" in screen.text(), screen.text()
             os.write(master, b'v')
             time.sleep(.1)
             assert not started.exists(), 'help leaked preview execution'
