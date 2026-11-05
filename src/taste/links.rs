@@ -33,7 +33,7 @@ pub(super) fn recorded(run: &Value) -> Result<String, PrGap> {
     if !canonical_pr_url(url) {
         return Err(PrGap {
             title: "Result unknown: invalid PR URL",
-            next: "Correct the recorded GitHub PR URL with tink-sdlc, then press r.",
+            next: "Inspect this run's PR record outside Tinkery. After repair, press r.",
         });
     }
     Ok(url.into())

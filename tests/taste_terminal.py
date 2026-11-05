@@ -106,7 +106,8 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
         if mapping_case == 'missing':  # not recorded, or a tink-sdlc older than 1.50.0
             state['detail']['run']['pr'] = None
         elif mapping_case == 'malformed':
-            state['detail']['run']['pr']['url'] = 'TEST/clinic-tycoon#1'
+            # Real tink-sdlc can report this URL and refuses to replace a run's recorded PR.
+            state['detail']['run']['pr']['url'] = 'https://github.com/TEST/../pull/1'
         elif mapping_case == 'moved':  # GitHub answers for a different PR than the record
             state['pr']['url'] = 'https://github.com/TEST/other-repo/pull/1'
         elif mapping_case == 'case':  # owner/repo case differs only; the record still holds
@@ -233,7 +234,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                         advice = 'When this run has a PR, record it with tink-sdlc, then press r.'
                     else:
                         title = 'Result unknown: invalid PR URL'
-                        advice = 'Correct the recorded GitHub PR URL with tink-sdlc, then press r.'
+                        advice = "Inspect this run's PR record outside Tinkery. After repair, press r."
                         assert 'no recorded PR' not in review, review
                     assert title in review and advice in review, review
                     assert 'o open PR' not in review and 'Preview identity unknown' not in review, review

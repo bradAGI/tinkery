@@ -25,9 +25,9 @@ handoff prose is not a machine interface, and neither a slug, branch, title nor 
 file can supply it. Taste reads `pr` only from the per-run status whose run ID matches
 the list. A run without a recorded PR keeps an unknown-result row. Its review, help and
 direct open or preview keys say to record the PR with tink-sdlc once available, then
-press `r`. A malformed record calls for correcting the URL. Neither offers an open
-or preview action. tink-sdlc reports a malformed record as an invalid run, and
-Taste also refuses any URL that is not a full `https://github.com/OWNER/REPO/pull/NUMBER`.
+press `r`. If status reports an invalid PR URL, Taste asks the operator to inspect the
+run's PR record outside Tinkery and reread after repair. Neither offers an open
+or preview action. Taste accepts only a full `https://github.com/OWNER/REPO/pull/NUMBER`.
 If GitHub names a different PR (owner and repo compare case-insensitively), the row
 stays unknown. Tinkery stores no mapping and launches take no PR input.
 
