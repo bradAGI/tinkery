@@ -59,6 +59,7 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
         (repo / 'tinkery.preview').write_text(json.dumps(spec) + '\n')
         (repo / 'preview.py').write_text(SERVER)
         (repo / 'marker').write_text('exact checked result')
+        (repo / 'AGENTS.md').write_text('TEST authored instructions\n')
         git('add', '.')
         git('commit', '-qm', 'TEST checked source')
         head = git('rev-parse', 'HEAD')
@@ -83,6 +84,12 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
                 run['verification'] = None
         elif case == 'dirty':
             (repo / 'marker').write_text('TEST checked but not committed')
+        elif case in ('generated-rules', 'agents-edit', 'agents-edit-with-rules'):
+            # The worker launcher writes tink-sdlc's rules block; tink-sdlc excludes it from the candidate.
+            authored = 'TEST edited instructions\n' if case != 'generated-rules' else 'TEST authored instructions\n'
+            rules = '' if case == 'agents-edit' else ('\n<!-- tink:rules begin skillset=TEST-skillset -->\n'
+                                                      'TEST generated rules\n<!-- tink:rules end -->\n')
+            (repo / 'AGENTS.md').write_text(authored + rules)
         elif case == 'untracked':
             (repo / 'new-source.js').write_text('TEST uncommitted source')
         elif case == 'malformed-pr':
@@ -121,6 +128,7 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
             refusals = {
                 'missing': 'current passed verification', 'failed': 'current passed verification',
                 'stale': 'current passed verification', 'dirty': 'source differs',
+                'agents-edit': 'source differs', 'agents-edit-with-rules': 'source differs',
                 'untracked': 'source has uncommitted files', 'malformed-pr': 'invalid PR URL',
                 'missing-head': 'commit is unknown',
             }
@@ -208,7 +216,8 @@ if __name__ == '__main__':
         for mono in [False, True]:
             journey(width, height, mono, forwarded=mono)
     for case in ['missing', 'failed', 'stale', 'dirty', 'untracked', 'malformed-pr', 'missing-head',
+                 'generated-rules', 'agents-edit', 'agents-edit-with-rules',
                  'changed-run', 'changed-candidate', 'changed-declaration', 'changed-source',
                  'stale-before-v', 'occupied-port']:
         journey(case=case)
-    print('PASS 17 local-preview journeys; no provider or GitHub calls')
+    print('PASS 20 local-preview journeys; no provider or GitHub calls')

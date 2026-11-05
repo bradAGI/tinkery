@@ -75,7 +75,7 @@ impl Local {
             );
         }
         let paths = [".", ":(exclude)runs"];
-        let mut diff = vec![
+        let diff = [
             "diff",
             "--quiet",
             "--no-ext-diff",
@@ -83,10 +83,26 @@ impl Local {
             head,
             "--",
         ];
-        diff.extend(paths);
-        git(&checkout, &diff, false, stop).map_err(
-            |_| "Local source differs from the checked commit. Commit and verify, then press r.",
-        )?;
+        let differs =
+            "Local source differs from the checked commit. Commit and verify, then press r.";
+        git(
+            &checkout,
+            &[&diff[..], &paths, &[":(exclude)AGENTS.md"]].concat(),
+            false,
+            stop,
+        )
+        .map_err(|_| differs)?;
+        if git(
+            &checkout,
+            &[&diff[..], &["AGENTS.md"]].concat(),
+            false,
+            stop,
+        )
+        .is_err()
+            && !generated_rules_only(&checkout, head, stop)
+        {
+            return Err(differs.into());
+        }
         let mut untracked = vec!["ls-files", "--others", "--exclude-standard", "-z", "--"];
         untracked.extend(paths);
         if !git(&checkout, &untracked, false, stop)?.is_empty() {
@@ -163,6 +179,23 @@ impl Local {
         }
         Ok(())
     }
+}
+
+/// AGENTS.md differs from the checked commit only by tink-sdlc's generated rules block, which the
+/// worker launcher writes and tink-sdlc excludes from the verified candidate.
+fn generated_rules_only(checkout: &Path, head: &str, stop: &AtomicBool) -> bool {
+    let (Ok(committed), Ok(current)) = (
+        git(
+            checkout,
+            &["show", &format!("{head}:AGENTS.md")],
+            false,
+            stop,
+        ),
+        std::fs::read(checkout.join("AGENTS.md")),
+    ) else {
+        return false;
+    };
+    sdlc::without_generated_rules(committed.as_bytes()) == sdlc::without_generated_rules(&current)
 }
 
 /// An explicit PR result or a current checked local result; never a guessed repository.

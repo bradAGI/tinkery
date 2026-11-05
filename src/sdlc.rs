@@ -161,3 +161,40 @@ pub(crate) fn started(seeds: &[Seed], path: &Path) -> Result<bool, String> {
         Ok(false)
     }
 }
+
+/// AGENTS.md as tink-sdlc compares it: each well-formed generated `tink:rules` block and the
+/// blank line before it are dropped, so text the launcher writes is not an authored change.
+/// Unbalanced markers leave the bytes unchanged, never guessing where a block ends.
+pub(crate) fn without_generated_rules(data: &[u8]) -> Vec<u8> {
+    use regex::bytes::Regex;
+    use std::sync::LazyLock;
+    static BEGIN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"<!--\s*tink:rules begin\b.*?-->").unwrap());
+    static END: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"<!--\s*tink:rules end\s*-->").unwrap());
+    let lines: Vec<&[u8]> = data.split_inclusive(|&b| b == b'\n').collect();
+    let (mut blocks, mut open) = (Vec::new(), None);
+    for (number, line) in lines.iter().enumerate() {
+        if BEGIN.is_match(line) {
+            if open.replace(number).is_some() {
+                return data.to_vec();
+            }
+        } else if END.is_match(line) {
+            let Some(begin) = open.take() else {
+                return data.to_vec();
+            };
+            blocks.push((begin, number));
+        }
+    }
+    if open.is_some() || blocks.is_empty() {
+        return data.to_vec();
+    }
+    let (mut out, mut cursor) = (Vec::with_capacity(data.len()), 0);
+    for (begin, end) in blocks {
+        let separator = begin > cursor && lines[begin - 1].trim_ascii().is_empty();
+        out.extend(lines[cursor..begin - usize::from(separator)].concat());
+        cursor = end + 1;
+    }
+    out.extend(lines[cursor..].concat());
+    out
+}
