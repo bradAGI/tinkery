@@ -95,6 +95,9 @@ spelling stays unchanged; proper nouns are never lowercased to make a join.
 marks and review all read it and never compose again. `goal::confirmed::goal_block` and the shared
 saved-goal renderer preserve line breaks across reading, review, receipt and tend
 detail. Confirmation freezes the **whole displayed block**, not just its headline.
+Review, the saved receipt and Tend detail show Unicode direction controls by code
+point, as Tend history does (for example, `\u{202e}`). The Think record and
+ledger keep the original characters.
 
 ## Seed Me mapping
 

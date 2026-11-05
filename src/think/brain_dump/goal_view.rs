@@ -540,7 +540,8 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
     frame.render_widget(p.scroll((review.scroll, 0)), rows[0]);
     // Only the goal's visible rows count; attribution and confirmation instructions do not.
     let goal_start = 1usize;
-    let goal_end = goal_start + line_count(&review.affirmation.goal);
+    let goal_end = goal_start
+        + goal_block(Note::display(&review.affirmation.goal), palette).line_count(rows[0].width);
     let start = goal_start.max(usize::from(review.scroll));
     let end = goal_end.min(usize::from(review.scroll) + usize::from(rows[0].height));
     if end > start {

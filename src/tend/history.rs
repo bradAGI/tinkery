@@ -10,6 +10,7 @@ use std::{
 
 use crate::{
     Palette,
+    goal::confirmed::is_direction_control,
     think_record::{self, Event, History, MadeIn, Unavailable},
 };
 use crossterm::event::KeyCode;
@@ -321,11 +322,15 @@ enum Tone {
 
 // Keep stored words unchanged. Escape terminal controls only in the display copy.
 fn display(text: &str) -> String {
-    text.chars().flat_map(|c| {
-        if (c.is_control() && c != '\n') || matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
-            c.escape_default().collect::<Vec<_>>()
-        } else { vec![c] }
-    }).collect()
+    text.chars()
+        .flat_map(|c| {
+            if (c.is_control() && c != '\n') || is_direction_control(c) {
+                c.escape_default().collect::<Vec<_>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect()
 }
 
 /// Wrapped rows use usize, and only the visible rows reach the terminal renderer.
