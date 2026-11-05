@@ -609,6 +609,31 @@ fn voice_help_keeps_the_alias_and_local_label_visible_and_escape_cancellation() 
 }
 
 #[test]
+fn typing_and_reading_show_the_missing_node_remedy_only_after_the_voice_key() {
+    let fake = Rc::new(RefCell::new(Fake::default()));
+    let mut app = BrainDump::default().with_voice(Box::new(fake.clone()));
+    let remedy = "Voice needs Node 22 or later. Set TINKERY_NODE to its executable.";
+    event(&mut app, &fake, Failure::new("no-node", remedy).event());
+
+    let quiet_screen = |app: &mut BrainDump, expected: &str| {
+        let view = snapshot(100, 30, app, true).unwrap();
+        assert!(view.contains(expected) && view.contains(" speak"), "{view}");
+        assert!(!view.contains(remedy), "{view}");
+    };
+    quiet_screen(&mut app, "What's on your mind?");
+    app.paste("Keep these typed words.");
+    quiet_screen(&mut app, "Keep these typed words.");
+    key(&mut app, KeyCode::F(2));
+    super::tests::settle(&mut app);
+    quiet_screen(&mut app, "which part matters most to you?");
+
+    key(&mut app, KeyCode::F(6));
+    let view = snapshot(100, 30, &mut app, true).unwrap();
+    assert!(view.contains(remedy), "{view}");
+    assert_eq!(fake.borrow().restarted, 1);
+    assert!(fake.borrow().commands.is_empty());
+}
+#[test]
 fn conditional_help_and_key_bar_and_no_voice_in_library_snapshots() {
     let mut a = BrainDump::default();
     assert!(!layout::help_text(&a).contains("speak"));

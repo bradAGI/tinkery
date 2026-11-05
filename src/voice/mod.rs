@@ -134,8 +134,12 @@ impl Voice {
     pub fn partial(&self) -> &str {
         &self.partial
     }
-    /// The one line to show about voice now, or empty.
+    /// The one line to show about voice now. Missing Node is mentioned only on request.
     pub fn notice(&self) -> &str {
+        let voice_requested = self.setup.requested || self.next_take > 0;
+        if !voice_requested && self.failure().is_some_and(|error| error.kind == "no-node") {
+            return "";
+        }
         &self.notice
     }
     /// The last failure, kept until voice next works.
