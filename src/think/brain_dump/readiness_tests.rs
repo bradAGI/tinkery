@@ -69,6 +69,7 @@ fn review_row_tracks_public_edit_reading_held_reply_and_retry_transitions() {
             let mut app = BrainDump::with_host(host.clone())
                 .with_sessions(Some(root.path().join("TEST-sessions")));
             let words = "My exact original repair-log words.";
+            snapshot(w, h, &mut app, mono).unwrap();
             app.paste(words);
             key(&mut app, KeyCode::F(2));
             finish(&mut app);

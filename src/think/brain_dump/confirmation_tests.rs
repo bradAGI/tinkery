@@ -25,6 +25,7 @@ fn first_review_frame_names_the_current_read_requirement() {
                 let root = tempfile::tempdir().unwrap();
                 let mut app = BrainDump::with_host(Arc::new(Host(long)))
                     .with_sessions(Some(root.path().join("TEST-sessions")));
+                snapshot(width, height, &mut app, mono).unwrap();
                 app.paste("These exact TEST words stay mine.");
                 app.handle_key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE));
                 let deadline = Instant::now() + Duration::from_secs(5);
