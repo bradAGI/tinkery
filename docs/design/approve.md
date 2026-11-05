@@ -1,8 +1,9 @@
 # Approve
 
-Approve prepares the manual start of a shaped goal in tink-sdlc. It creates no run,
-records no approval and starts no agent. Seed confirmation, definition approval and
-implementation permission remain separate.
+Approve reads a shaped goal and offers a manual handoff or a worker-start review.
+Reading, navigation and copying create no run and start no agent. Only the separate
+worker screen's F2 authorizes implementation; seed confirmation and definition
+approval remain separate.
 
 ## Source and verification
 
@@ -96,6 +97,7 @@ agent attribution still refuses verification.
 | `n` / `p`, Right / Left | Next / previous seed, clamped. |
 | Up / Down, `k` / `j`, PgUp / PgDn, Home / End | Read wrapped content. |
 | `c` | Copy the combined command, only when available. |
+| `b` | Review the selected worker start; execute nothing. |
 | F1 / `?` | Help and bounded unreadable-session details; no underlying actions. |
 | Esc | Close help, or return to the originating Shape session for a targeted visit; otherwise return to the menu. |
 | F10 | Return to the menu. |
@@ -110,6 +112,48 @@ if the runs cannot be read, say `Can't tell which seeds have started; none are h
 and how to check. Opening reads only that checkout's status; it discovers no checkout.
 Help retains the bounded reasons. Unknown start classification never conceals a
 verified seed or justifies a complete empty-waiting claim.
+
+## Start a worker
+
+`b` opens a review of the selected seed and canonical checkout. It needs a verified
+seed, a usable checkout and a successful start-status read; uncertainty offers no
+start shortcut. The review reads nothing and runs nothing. It shows the exact goal,
+provider/model/thinking pin, response cap, checkout, provider data and effects before
+F2. Read the whole disclosure first. `--worker-model provider/model:thinking` and
+`--worker-responses N` supply a separate allowance for this launch; its default is
+zero and drafting calls never supply it. One response may already be in flight at
+the cap. Configuration is not permission to start on navigation.
+
+F2 requests one bounded transaction through the installed SDLC runtime: recheck the
+selected seed and origin, require committed project source, create the run, import
+the seed, open stage 3 in its own
+worktree, prepare a pinned Pi build step and launch it. The existing SDLC commands
+own definition gates, worktree creation, model resolution, launcher hashing,
+session identity and cumulative cap. No copied shell text is executed and no
+approval or worker report is invented. A refusal stops the sequence; there is no
+automatic retry. Partial progress retains the source-owned run for inspection.
+
+The menu retains this finite request across navigation. Exiting during a request
+waits for it to settle, rather than interrupting admission between records. SDLC
+owns the detached worker, which can outlive Tinkery. Home's `b` reopens the current
+worker screen; Watch's `b` opens the selected existing run, resolving a build
+checkout only from SDLC's explicit report and matching run ID.
+
+On that screen, `r` reads status, `l` launches an inspected prepared step, `u` resumes
+an ended turn, `f` records a normally
+ended worker, `v` verifies, `s` stops it, and `c` records a cap stop. These are separate
+explicit actions. Verify before finishing: `f` refuses without current passing
+verification, so a failed check leaves the ended worker resumable. Resume discloses and rechecks the original model, session and cap;
+it cannot silently use changed settings or add allowance. Unknown admission never
+becomes a successful launch or an automatic retry. The preflight identity read is
+not an atomic lock against concurrent external record edits; SDLC rechecks its own
+contracts when executing each action.
+
+`w` opens Watch and `t` opens Taste; neither navigation starts a preview. Completion,
+current verification and human acceptance remain separate. The shared `worker`
+module owns transactions; the menu owns their screen and lifetime. No second
+workflow ledger is created. Dirty project source refuses before intake; ignored
+dependencies and `runs/` evidence do not require a source commit.
 
 ## Verification
 
@@ -126,3 +170,8 @@ Reversion probes remove the mismatch refusal and block unknown-origin copying;
 both must fail the corresponding public-interface regressions. The
 [real handoff journey](../../tests/shape_sdlc_handoff.py) proves the move to Watch.
 These prove mechanics, not operator acceptance or real-work benefit.
+
+[Worker terminal journeys](../../tests/worker_terminal.py) cover explicit admission,
+separate allowance, source changes, retained requests and truthful completion states
+with temporary TEST storage and fake providers. Architecture diagnostics 2, 3, 6 and
+7 apply: the screen requests typed actions while SDLC owns durable work records.

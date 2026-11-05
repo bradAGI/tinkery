@@ -91,7 +91,29 @@ appears, read it to `End of seed` (PgDn, or Down while typing), type `confirm`, 
 To change the draft instead, F1 Revise the draft sends your words back for a new one.
 Saved: the confirmed seed. Allowed: nothing to build yet. Running: nothing.
 
-## 6. Approve: create the run
+## 6. Approve: start the worker in Tinkery
+
+For the bounded interface path, reopen Tinkery with `--home --sdlc-root "$project"`,
+`--worker-model provider/model-id:low` and `--worker-responses N`, using the exact
+model and cap you authorize. These options grant no drafting calls. From the ready
+seed, F1 then `1` opens Approve. Press `b`, read the start disclosure, then F2.
+Tinkery creates and imports the run, prepares an isolated worktree, and launches
+one capped Pi step through SDLC. Any missing setup or changed definition refuses
+with its source error; it does not start a substitute worker.
+
+On the worker screen, `r` reads progress. An ended turn can be resumed with `u`
+within its existing cap. Run `v` to verify before `f` records completion; failed
+checks keep the worker resumable.
+`s` stops a worker and `c` records a cap stop. Home `b` returns to the screen;
+Watch `b` selects an existing run. When verified, `t` opens Taste. Read with `r`
+and use `v` on the review to open a committed [local preview](design/taste.md#local-preview).
+The worker must commit its code and a `tinkery.preview` declaration. A preview is
+for your judgment, not an acceptance record.
+
+The terminal commands below are an alternative for inspecting each SDLC step
+separately. They are not required for the interface path above.
+
+### Manual intake
 
 From the ready seed, F1 then `1` opens it in Approve. `c` copies one command; paste it in
 a terminal. It creates a run in `$project` and imports the seed and its checks:
@@ -120,8 +142,9 @@ Saved: the stage. Allowed: a build on this run. Running: nothing.
 
 ## 8. Start the worker
 
-This is the step that spends model calls on building. Tinkery doesn't count or cap the
-worker's model responses. Set `worker_model` to a model that
+This manual alternative spends model calls on building. Its command below leaves
+the cap unset; add `--max-responses N` to prepare for a bounded step. The Tinkery
+interface always requires a cap. Set `worker_model` to a model that
 `pi --list-models --offline` shows, with a thinking level (`worker_model=provider/model-id:low`).
 Check the pin first, then prepare and launch one pinned build step:
 

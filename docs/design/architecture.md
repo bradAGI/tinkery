@@ -48,7 +48,7 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `model_setup.rs`, `model_setup/panel.rs` | The saved model setup's one parser (file and flags), atomic save, header label and Model panel; the terminal loop owns when it shows (shared). |
 | `pi.rs` | The one place a model host starts, Pi or Claude Code: which models and levels each accepts, a bounded, cancellable request with or without read-only tools held inside one folder ([`pi/folder.mjs`](../../pi/folder.mjs) for Pi, `dontAsk` for Claude Code), the call budget and prompt-file assembly (shared). |
 | `repo.rs` | Finding the Git repository Tinkery was started in, by looking for `.git` only (shared). |
-| `menu.rs` | The seven places and navigation, including Esc from Shape back to its original Tend view. |
+| `menu.rs`, `menu/worker.rs` | The seven places and navigation, plus the explicit worker-action screen and its retained finite request. |
 | `measure.rs` | Recent PR list, details and evidence limits; explicit reads only, no writes or providers. |
 | `measure/read.rs` | Bounded, cancellable `gh` reads scoped to the launch repo; no shell or retries. |
 | `tend/mod.rs` | The saved-goal garden's discovery states, selection and detail, with navigation to Shape and saved Think history. |
@@ -61,8 +61,9 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `seed_me/` | Session formats, goal saving and the one-time root migration; `answering.rs` adapts Shape actions, typed facts and operator review reasons to the shared ledger without duplicating its fact rules. Goal initialization uses the Rust ledger; exit receipts retain data until printing, when the shared verifier supplies the current next step. Contract guidance is bundled, and copied intake commands name this Tinkery executable (shared). |
 | `seed_me/ledger` | Validation, transitions, explicit answer actions and cascading reopen, confirmation risks and completion-review coverage, byte-bound teach-back records, seed decisions and checks, confirmation receipts, verification and ending; shared writer lock and atomic saves. No phase policy, viewer or network connection. |
 | `seed_me/shaping.rs` | Classifying ledger-owned status and review flags for display, with optional Tinkery-executable intake text; no subprocess or mutation. |
-| `approve.rs` | One verified seed at a time, read-only commands and a retained verifier; no approval or launch. |
-| `seed_me/ready.rs` | Consistent verified goal/acceptance snapshots and the one intake command; no mutation. |
+| `approve.rs` | One verified seed at a time, read-only commands, a retained verifier and navigation to worker-start review; no execution on navigation or copying. |
+| `seed_me/ready.rs` | Consistent verified goal/acceptance snapshots and typed intake shared by copying and explicit execution; no mutation. |
+| `worker.rs` | Finite explicitly requested intake, stage and worker transactions through SDLC, with source identity and separate allowance checks; no provider adapter, approval or workflow store. |
 | `shape.rs` | Goals awaiting seeds; each session's confirmed goal, stage, folder, words, draft reading and next step. Reads and steps stay off the paint path. |
 | `shape/forms.rs` | Unsaved deferral and replacement-answer fields, navigation and cancellation; no validation or publication policy. |
 | `shape/words.rs` | Shape's in-memory textarea adapter: editing, selection, cursor-following and original line-ending provenance; no save or agent policy. |

@@ -106,6 +106,8 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
         if mapping_case in ('missing', 'abandoned'):
             state['detail']['run'].update(pr=None, closure=None, labels={
                 'count': 0, 'kinds': {'accepted': 0, 'rejected': 0}})
+            if mapping_case == 'missing':
+                state['detail']['run'].update(verification=None, verification_status='not-run')
             if mapping_case == 'abandoned':
                 state['detail']['run']['closure'] = {'outcome': 'abandoned', 'time_ns': 1}
                 state['detail']['run']['labels']['count'] = 1
@@ -209,10 +211,8 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             assert not calls(), 'opening Taste must disclose reads, not perform them'
             send(b'?', 'What Taste reads')
             assert 'Enter opens a result' not in screen.text(), screen.text()
-            assert "l report a person's prior acceptance" in screen.text(), screen.text()
-            assert 'a person already accepted this result elsewhere' in screen.text(), screen.text()
-            assert 'unverified' in screen.text() and 'saves no verdict' in screen.text(), screen.text()
-            assert 'never imply acceptance or a merge.' in screen.text(), screen.text()
+            assert "l report a person's prior acceptance" not in screen.text(), screen.text()
+            assert 'a/c copy' not in screen.text() and 'o opens the PR' not in screen.text(), screen.text()
             os.write(master, b'oacr')
             time.sleep(.1)
             assert not calls(), 'help leaked actions'
@@ -242,7 +242,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 else:
                     if mapping_case in ('missing', 'abandoned'):
                         title = 'Result unknown: no recorded PR'
-                        advice = 'When this run has a PR, record it with tink-sdlc, then press r.'
+                        advice = 'Local preview needs a current passed verification. Commit and verify, then press r.'
                         if mapping_case == 'abandoned':
                             advice = 'This run closed without a PR.'
                             assert 'record it with tink-sdlc' not in review, review
@@ -254,22 +254,24 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                         title = 'Result unknown: invalid PR URL'
                         advice = "Inspect this run's PR record outside Tinkery. After repair, press r."
                         assert 'no recorded PR' not in review, review
-                    assert title in review and advice in review, review
+                    assert title in review and advice in ' '.join(review.split()), review
                     assert 'o open PR' not in review and 'Preview identity unknown' not in review, review
                     assert ('w write verdict' in review) == (operator == 'human'), review
                     send(b'?', 'What Taste reads')
-                    assert advice in screen.text(), screen.text()
+                    assert advice in ' '.join(screen.text().split()), screen.text()
                     if mapping_case == 'abandoned':
                         assert 'record it with tink-sdlc' not in screen.text(), screen.text()
                     for offer in ('o opens the PR', "v runs the project's preview", 'Preview format:'):
                         assert offer not in screen.text(), screen.text()
                     send(b'\x1b', 'Your goal')
                     for action in (b'o', b'v'):
+                        expected = ('When this run has a PR, record it with tink-sdlc, then press r.'
+                                    if mapping_case == 'missing' and action == b'o' else advice)
                         os.write(master, action)
-                        wait(lambda: advice in screen.text().splitlines()[-4])
-                        assert screen.text().splitlines()[-4].strip() == advice, screen.text()
+                        wait(lambda: expected[:55] in screen.text().splitlines()[-4])
+                        assert screen.text().splitlines()[-4].strip().startswith(expected[:55]), screen.text()
                         reread()  # Clears the key feedback before checking the other refusal.
-                        assert advice in screen.text() and 'o open PR' not in screen.text(), screen.text()
+                        assert advice in ' '.join(screen.text().split()) and 'o open PR' not in screen.text(), screen.text()
                     assert len(calls()) == 6, calls()  # Three explicit list/run status reads.
                 assert not Path(str(log) + '.preview').exists(), 'unknown head fetched the preview declaration'
                 assert not preview_git.exists(), 'unknown head launched a preview checkout'

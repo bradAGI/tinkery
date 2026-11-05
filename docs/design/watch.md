@@ -24,6 +24,11 @@ shows, with how long ago it was read, to the minute. Watch never runs `verify`, 
 `stage` or any other command, and never polls, refreshes by itself, notifies or badges anything:
 unchanged state makes no new demand on the operator's attention.
 
+`b` carries only the selected run ID and named checkout to the menu's separate
+[worker controls](approve.md#start-a-worker). That screen reads the current source
+and discloses its explicit actions. Watch itself still performs no worker action;
+opening the controls is not permission to resume or verify.
+
 ## Reading
 
 Each read runs off the paint path with a 30-second deadline, at most 4 MiB of output and its
