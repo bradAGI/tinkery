@@ -27,7 +27,7 @@ pub(super) enum Check {
     Pending,
     NotSuccessful,
     /// An active human check reported pending for a known result.
-    AwaitingHumanCheck,
+    AwaitingHuman,
     MatchingEvidenceMissing,
     AttestationEvidenceMissing,
     InspectExternally,
@@ -49,7 +49,7 @@ impl Check {
             Self::Stale => "stale",
             Self::Pending => "pending",
             Self::NotSuccessful => "pending (not a successful check)",
-            Self::AwaitingHumanCheck | Self::MatchingEvidenceMissing => {
+            Self::AwaitingHuman | Self::MatchingEvidenceMissing => {
                 "pending (matching evidence missing)"
             }
             Self::AttestationEvidenceMissing => "pending (attestation evidence missing)",
@@ -243,7 +243,7 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
             "passed" => Check::Pass,
             "failed" if exact => Check::Fail,
             "failed" => Check::FailureRevisionDiffers,
-            "pending" if !automatic => Check::AwaitingHumanCheck,
+            "pending" if !automatic => Check::AwaitingHuman,
             "pending" | "unknown" => Check::MatchingEvidenceMissing,
             _ => return Err("Unknown completion condition status.".into()),
         };
@@ -504,7 +504,7 @@ mod tests {
             (Stale, "stale"),
             (Pending, "pending"),
             (NotSuccessful, "pending (not a successful check)"),
-            (AwaitingHumanCheck, "pending (matching evidence missing)"),
+            (AwaitingHuman, "pending (matching evidence missing)"),
             (
                 MatchingEvidenceMissing,
                 "pending (matching evidence missing)",

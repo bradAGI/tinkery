@@ -34,7 +34,7 @@ fn state(item: &Item) -> State {
         Check::NoneReported | Check::ReceiptsMissing => State::Unknown,
         Check::Pending
         | Check::NotSuccessful
-        | Check::AwaitingHumanCheck
+        | Check::AwaitingHuman
         | Check::MatchingEvidenceMissing
         | Check::AttestationEvidenceMissing
         | Check::InspectExternally
@@ -64,7 +64,7 @@ fn status(item: &Item) -> String {
         waiting => format!(
             "… waiting: {}",
             match waiting {
-                Check::AwaitingHumanCheck
+                Check::AwaitingHuman
                 | Check::MatchingEvidenceMissing
                 | Check::AttestationEvidenceMissing => {
                     "no record found"
@@ -323,7 +323,7 @@ pub(super) fn review(
     let mut pending = row
         .items
         .iter()
-        .filter(|item| item.state == Check::AwaitingHumanCheck && !item.label.trim().is_empty());
+        .filter(|item| item.state == Check::AwaitingHuman && !item.label.trim().is_empty());
     if let Some(first) = pending.next() {
         heading(&mut lines, "What to judge", p.jade);
         block(&mut lines, Span::raw("  "), &first.label, width, p.ink);
@@ -552,7 +552,7 @@ mod tests {
             items: vec![
                 Item { label: "Every original check word stays intact while this long sentence wraps with a hanging indent and no abbreviation.".into(),
                     state: Check::Fail, kind: "automated".into(), evidence: "/TEST/log; argv: [TEST]".into() },
-                Item { label: human.into(), state: Check::AwaitingHumanCheck,
+                Item { label: human.into(), state: Check::AwaitingHuman,
                     kind: "human attestation".into(), evidence: "No operator evidence recorded".into() },
             ],
         }
