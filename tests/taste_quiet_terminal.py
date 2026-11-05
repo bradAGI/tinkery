@@ -107,6 +107,7 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
             assert hidden not in text, (hidden, text)
         for label in LONG_CHECKS if long_checks else []:
             assert label[:45] not in text, text
+        assert '› TEST clinic allocation comparison' in text, text
         assert 'You owe 2' in text and 'passed' in text and 'waiting' in text, text
         if long_checks:
             assert '… · open' in text and '? 1 unknown' in text, text
