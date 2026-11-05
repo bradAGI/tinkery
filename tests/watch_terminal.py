@@ -194,6 +194,7 @@ def journey(width, height, no_color, configured=True):
                     send(b'\x1b', 'Needs you')
                 # Reader-sized payloads can still exceed the renderer's scroll range.
                 for large in ('60000 source bytes', 'short evidence lines', 'empty evidence lines', 'appended error labels'):
+                    slug = 'TEST-big-' + large.replace(' ', '-')
                     oversized = json.loads(json.dumps(DETAIL))
                     if large == 'appended error labels':
                         oversized['run']['errors'] = [''] * 21000
@@ -202,9 +203,9 @@ def journey(width, height, no_color, configured=True):
                     else:
                         oversized['run']['checklist'][0]['mark'] = {
                             'evidence': ('x\n' if large == 'short evidence lines' else '\n') * 70000 + 'TEST-UNREACHABLE-TAIL'}
-                    set_state(list=envelope(runs=[run('TEST-big', 'blocked'), run('TEST-readable', 'current')]),
-                              details={'TEST-big': oversized})
-                    send(b'r', 'TEST-big')
+                    set_state(list=envelope(runs=[run(slug, 'blocked'), run('TEST-readable', 'current')]),
+                              details={slug: oversized})
+                    send(b'r', slug)
                     send(b'\r', 'Detail is too long to show completely.')
                     assert 'status <slug> --json' in screen.text(), screen.text()
                     assert 'TEST-UNREACHABLE-TAIL' not in screen.text()
