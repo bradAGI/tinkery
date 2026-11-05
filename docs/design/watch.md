@@ -9,6 +9,7 @@ The operator names the checkout with `--sdlc-root PATH`. Watch never discovers o
 checkouts: tink-sdlc's guide says opening a checkout trusts its executable code, so only an
 explicitly named one is read. Without a root, Watch says how to name one and runs nothing. A
 root without `_system/scripts/sdlc.py` is refused by a file check, without running anything.
+An empty `--sdlc-root` is refused before startup; use `.` to explicitly choose the current folder.
 
 Watch reads with that checkout's own `python3 _system/scripts/sdlc.py status --json`, from the
 checkout's folder, when Watch opens and when the operator presses `r`. It then reads each valid
