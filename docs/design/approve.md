@@ -10,9 +10,10 @@ The menu supplies its existing session discovery result, without Tend's reposito
 filter. Approve reads across that configured session root, oldest update first.
 The menu also supplies its Think record root. Once per visit, Approve's worker reads
 origins through `think_record::read_origins`, using the existing live identity and
-exact-goal checks. It compares recorded repository roots with `Repo::enclosing` of
-the canonicalized named checkout; `.git` contents are never read. Relative segments
-and symlink aliases resolve for comparison only, not as a new handoff destination.
+exact-goal checks. Each visit resolves the named checkout once. Approve uses that path
+to find its enclosing repository, read run status and prepare the copied command.
+Reopening Approve reads the current destination of a checkout symlink. Repository
+comparison uses `Repo::enclosing` and never reads `.git` contents.
 Different worktrees count as different repositories, even with the same folder name.
 No skill or model configuration is needed. Only Tinkery-verified ready seeds not already started appear, including
 completed sessions whose seed remains verified. Drafts, stopped sessions and unverifiable confirmations do not.
