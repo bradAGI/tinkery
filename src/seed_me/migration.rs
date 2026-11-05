@@ -1,4 +1,4 @@
-//! One-time session-root rename; session bytes and Think records are never rewritten.
+//! Session-root migration and retired-storage refusal; preserves session bytes and Think records.
 
 use std::{
     ffi::OsStr,
@@ -48,7 +48,8 @@ pub fn migrate(home: Option<&OsStr>, allow_move: bool) -> Result<Option<String>,
     ))
 }
 
-/// Refuse explicit attempts to read the retired default location, without inspecting its files.
+/// Refuse reads and creation in retired storage, including aliases and new child destinations.
+/// Resolve links in filesystem order; unreadable links and loops refuse.
 pub(crate) fn refuse_old_root(path: &Path) -> Result<(), String> {
     if let Some(home) = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -61,27 +62,47 @@ pub(crate) fn refuse_old_root(path: &Path) -> Result<(), String> {
                 .map_err(|_| "Cannot resolve the session path.")?
                 .join(path)
         };
-        let mut clean = PathBuf::new();
-        for component in absolute.components() {
-            match component {
-                std::path::Component::CurDir => {}
-                std::path::Component::ParentDir => {
-                    clean.pop();
-                }
-                component => clean.push(component),
-            }
-        }
-        let canonical_old = home
-            .canonicalize()
-            .unwrap_or_else(|_| home.clone())
-            .join(".local/share/seed-me/sessions");
-        if clean.starts_with(home.join(".local/share/seed-me/sessions"))
-            || clean
-                .canonicalize()
-                .is_ok_and(|path| path.starts_with(canonical_old))
+        let resolved = resolve_existing(&absolute, 40)?;
+        if resolve_existing(&home.join(".local/share/seed-me/sessions"), 40)
+            .is_ok_and(|retired| resolved.starts_with(retired))
         {
             return Err("The old sessions root is retired. Open the session under ~/.local/share/tinkery/sessions instead.".into());
         }
     }
     Ok(())
+}
+
+// Missing ordinary components may become new folders. Resolve each existing prefix before `..`.
+fn resolve_existing(path: &Path, links_left: usize) -> Result<PathBuf, String> {
+    let mut resolved = PathBuf::new();
+    for component in path.components() {
+        if component == std::path::Component::ParentDir {
+            resolved.pop();
+            continue;
+        }
+        resolved.push(component);
+        match fs::symlink_metadata(&resolved) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                if links_left == 0 {
+                    return Err("Cannot resolve the session path: too many symbolic links.".into());
+                }
+                let target = fs::read_link(&resolved)
+                    .map_err(|_| "Cannot read the session path's symbolic link.")?;
+                resolved.pop();
+                resolved = resolve_existing(&resolved.join(target), links_left - 1)?;
+            }
+            Ok(_) => {
+                resolved = resolved.canonicalize().map_err(
+                    |_| "Cannot resolve the session path. Check its links and permissions.",
+                )?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {
+                return Err(
+                    "Cannot resolve the session path. Check its links and permissions.".into(),
+                );
+            }
+        }
+    }
+    Ok(resolved)
 }

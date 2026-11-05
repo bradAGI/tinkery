@@ -104,8 +104,11 @@ def main():
             'tinkery_src', 'project', 'notes'], names
         assert '`worker_model=provider/model-id:low`' in GUIDE  # a placeholder, not a real model id
         prelude = f"tinkery_src={REPO}\nproject=~/dev/my-project\nnotes=~/dev/run-notes\nworker_model={PIN}\n"
-        subprocess.run(['cargo', '+stable', 'build', '--locked'], cwd=REPO, env=env, check=True,
-                       stdout=subprocess.DEVNULL)
+        # The parallel runner already built both executables; rebuilding can replace
+        # the binary while another journey is using it.
+        if env.get('TINKERY_TEST_SEED_FIXTURE') != str(helper.BINARY):
+            subprocess.run(['cargo', '+stable', 'build', '--locked'], cwd=REPO, env=env, check=True,
+                           stdout=subprocess.DEVNULL)
         env = isolated_tools(home / 'bin', env)
         score = []
 

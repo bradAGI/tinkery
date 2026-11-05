@@ -274,6 +274,10 @@ how to migrate with an ordinary launch before retrying. New-only or absent-root 
 render normally. If both roots exist, refuse rather than merge or read the old root.
 Explicit roots never trigger the move. Startup chooses whether a move is allowed; migration
 retains its root checks (architecture diagnostic 6).
+The shared path guard resolves existing symbolic links before `..`, including for new
+destinations beneath existing folders. Retired storage reached through an alias is refused.
+Session creation repeats that check before writing, so a destination redirected after
+Think opened is refused before a ledger is created. Unresolvable links report a path error.
 The migration renames only the sessions folder, never parses its ledgers and never reads or
 writes Think records. Old-format session folders move byte-for-byte too. History uses the
 identity rule above; no old-root session reader remains.

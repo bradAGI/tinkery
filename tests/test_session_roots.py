@@ -142,6 +142,112 @@ class SessionRootTests(unittest.TestCase):
         self.assertTrue(old.is_symlink())
         self.assertEqual(sentinel.read_bytes(), before)
 
+    def test_retired_root_aliases_and_their_parents_are_refused(self):
+        home = self.root / 'TEST-home'
+        old = home / '.local/share/seed-me/sessions'
+        self.ledger(old, 'TEST-goal')
+        (old / 'TEST-child').mkdir()
+        (self.cwd / 'TEST-direct').symlink_to(old, target_is_directory=True)
+        (self.cwd / 'TEST-alias').symlink_to(old / 'TEST-child', target_is_directory=True)
+        before = self.tree(home)
+        for selected in (Path('TEST-direct'), Path('TEST-alias/..'),
+                         Path('TEST-missing/../TEST-alias/..')):
+            commands = [
+                ['seed', 'status', '--json', selected / 'TEST-goal'],
+                ['seed', 'checks', selected / 'TEST-goal'],
+                ['--home', '--snapshot', '--seed-session-root', selected],
+                ['--home', '--snapshot', '--seed-session-root', selected / 'TEST-new/TEST-root'],
+            ]
+            for args in commands:
+                with self.subTest(args=args):
+                    result = self.run_cli(['--operator', 'agent', *args], str(home))
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn('old sessions root is retired', result.stderr)
+                    self.assertEqual(self.tree(home), before)
+        self.assertFalse(self.called.exists())
+
+    def test_linked_retired_storage_refuses_other_aliases_to_its_target(self):
+        for linked_path, suffix in (('.local/share', 'seed-me/sessions'),
+                                    ('.local/share/seed-me/sessions', '.')):
+            home = self.root / ('TEST-home-' + linked_path.replace('/', '-'))
+            target = self.root / (home.name + '-target')
+            old = target / suffix
+            self.ledger(old)
+            link = home / linked_path
+            link.parent.mkdir(parents=True)
+            link.symlink_to(target, target_is_directory=True)
+            alias = self.cwd / (home.name + '-alias')
+            alias.symlink_to(old, target_is_directory=True)
+            before = self.tree(self.root)
+            for args in (['seed', 'status', '--json', alias / 'TEST-session'],
+                         ['--home', '--snapshot', '--seed-session-root', alias / 'TEST-new']):
+                with self.subTest(linked_path=linked_path, args=args):
+                    result = self.run_cli(['--operator', 'agent', *args], str(home))
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn('old sessions root is retired', result.stderr)
+                    self.assertEqual(self.tree(self.root), before)
+        self.assertFalse(self.called.exists())
+
+    def test_ordinary_root_aliases_preserve_parent_and_missing_path_semantics(self):
+        home = self.root / 'TEST-home'
+        home.mkdir()
+        selected = self.root / 'TEST-selected'
+        self.ledger(selected)
+        (selected / 'TEST-child').mkdir()
+        (self.cwd / 'TEST-direct').symlink_to(selected, target_is_directory=True)
+        (self.cwd / 'TEST-alias').symlink_to(selected / 'TEST-child', target_is_directory=True)
+        before = self.tree(self.root)
+        for alias in (Path('TEST-direct'), Path('TEST-alias/..')):
+            for destination, count in ((alias, 1), (alias / 'TEST-new/TEST-root', 0)):
+                with self.subTest(destination=destination):
+                    result = self.run_cli(['--operator', 'agent', '--home', '--snapshot',
+                                           '--seed-session-root', destination], str(home))
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(self.has_count(result.stdout, 1), count == 1, result.stdout)
+                    self.assertEqual(self.tree(self.root), before)
+        self.assertFalse(self.called.exists())
+
+    def test_dangling_retired_root_does_not_block_a_safe_explicit_destination(self):
+        home = self.root / 'TEST-home'
+        old = home / '.local/share/seed-me/sessions'
+        old.parent.mkdir(parents=True)
+        old.symlink_to(self.root / 'TEST-absent', target_is_directory=True)
+        selected = self.root / 'TEST-selected'
+        self.ledger(selected)
+        result = self.run_cli(['--operator', 'agent', '--home', '--snapshot',
+                               '--seed-session-root', selected], str(home))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.has_count(result.stdout, 1), result.stdout)
+        for destination in (old, self.root / 'TEST-absent'):
+            result = self.run_cli(['--operator', 'agent', '--home', '--snapshot',
+                                   '--seed-session-root', destination], str(home))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('old sessions root is retired', result.stderr)
+        self.assertFalse((self.root / 'TEST-absent').exists())
+        old.unlink()
+        old.symlink_to(old, target_is_directory=True)
+        result = self.run_cli(['--operator', 'agent', '--home', '--snapshot',
+                               '--seed-session-root', selected], str(home))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.run_cli(['--operator', 'agent', '--home', '--snapshot',
+                               '--seed-session-root', old], str(home))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('too many symbolic links', result.stderr)
+
+    def test_case_alias_of_existing_retired_storage_is_refused(self):
+        home = self.root / 'TEST-home'
+        old = home / '.local/share/seed-me/sessions'
+        self.ledger(old)
+        alias = home / '.LOCAL/share/seed-me/sessions'
+        if not alias.exists():
+            self.skipTest('Filesystem distinguishes these letter cases')
+        before = self.tree(home)
+        result = self.run_cli(['--operator', 'agent', '--home', '--snapshot',
+                               '--seed-session-root', alias], str(home))
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('old sessions root is retired', result.stderr)
+        self.assertEqual(self.tree(home), before)
+
     def test_sessions_move_never_reads_or_rewrites_think_records(self):
         home = self.root / 'TEST-home'
         old = home / '.local/share/seed-me/sessions'

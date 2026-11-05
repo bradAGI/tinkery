@@ -168,7 +168,7 @@ def files(root):
 
 
 class Run:
-    def __init__(self, cwd, width, height, budget, replies=(), situation=None, agent=False, sdlc_root=None, why=None, shape_setup=True):
+    def __init__(self, cwd, width, height, budget, replies=(), situation=None, agent=False, sdlc_root=None, why=None, shape_setup=True, home=None):
         self.cwd, self.width = cwd, width
         self.sessions = cwd / 'TEST-sessions'
         self.records = cwd / 'TEST-records'
@@ -196,7 +196,7 @@ class Run:
         if why is not None:
             env['TINKERY_TEST_WHY'] = why
         self.process = subprocess.Popen(args, stdin=self.slave, stdout=self.slave, stderr=self.slave,
-                                        cwd=cwd, env=subprocess.environment(env))
+                                        cwd=cwd, env=subprocess.environment(env, home=home))
 
     def flat(self):
         return ' '.join(self.screen.text().split())
