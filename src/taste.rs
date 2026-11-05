@@ -1,4 +1,4 @@
-//! Taste shows one exact result beside its unchanged saved goal and asks "Is this good?". Explicit
+//! Taste shows one exact result beside its unchanged saved goal and what needs judgment. Explicit
 //! refresh reads checkout status and GitHub metadata; o opens a PR and v runs a declared exact-head
 //! preview. Its one write is the operator's label, their verdict on the result (w, then F2),
 //! through tink-sdlc; agent launches can't. Copying hands review back externally. Nothing here
@@ -27,6 +27,8 @@ use ratatui::{
 };
 use read::ResultRow;
 use std::{path::PathBuf, process::Command, time::Instant};
+
+const HUMAN_VERDICT: &str = "Only a human can record the verdict.";
 
 /// One result visit; snapshots, copy requests and any explicit preview die on leaving.
 pub(crate) struct Taste {
@@ -446,28 +448,37 @@ impl Taste {
 
     /// Source and authority explanation; the menu blocks all actions under help.
     pub(crate) fn help_text(&self) -> String {
+        let verdict = if self.agent {
+            HUMAN_VERDICT
+        } else {
+            "w opens the form. Only F2 saves pass or fail with your words and git name."
+        };
         if let Some(pause) = &self.pause {
             return format!(
                 "Right now\nq goes back to the menu · ? / Esc close help\n\
+                 {verdict}\n\
                  t edits the unsent draft in Think; only F2 sends.\n\
                  e opens details after closing help; check words stay intact.\n\n{}",
                 pause.lines.join("\n")
             );
         }
-        concat!(
-            "Right now\nq goes back to the menu · F10 Home · ? / Esc close help\n",
-            "Enter opens a result · w answers \"Is this good?\"; only F2 saves\n",
-            "o opens the PR · e details: checks, goal, IDs, evidence · n/p result\n",
-            "v runs the project's preview at its exact commit; Esc stops it\n",
-            "a/c copy accept/correct requests · l you accepted it elsewhere\n\n",
-            "Your label\nYour verdict, pass or fail in your words, signed with your git name.\n\n",
-            "What Taste reads\nOnly r reads the checkout's run status, each run's recorded PR and\n",
-            "its preview file, with gh and your login. Nothing is written or launched.\n",
-            "Add a preview: commit tinkery.preview at the project root, one line:\n",
-            "{\"command\":\"npm run dev -- --host 127.0.0.1\",\"url\":\"http://127.0.0.1:5173/\"}\n\n",
-            "After external acceptance\nl reports you accepted it elsewhere (not verified); t drafts the guess.\n",
-            "Copying or green checks never imply acceptance; you merge externally."
-        ).into()
+        format!(
+            concat!(
+                "Right now\nq goes back to the menu · F10 Home · ? / Esc close help\n",
+                "Enter opens a result\n",
+                "o opens the PR · e details: checks, goal, IDs, evidence · n/p result\n",
+                "v runs the project's preview at its exact commit; Esc stops it\n",
+                "a/c copy accept/correct requests · l you accepted it elsewhere\n\n",
+                "Verdict\n{}\n\n",
+                "What Taste reads\nOnly r reads the checkout's run status, each run's recorded PR and\n",
+                "its preview file, with gh and your login. Nothing is written or launched.\n",
+                "Add a preview: commit tinkery.preview at the project root, one line:\n",
+                "{{\"command\":\"npm run dev -- --host 127.0.0.1\",\"url\":\"http://127.0.0.1:5173/\"}}\n\n",
+                "After external acceptance\nl reports you accepted it elsewhere (not verified); t drafts the guess.\n",
+                "Copying or green checks never imply acceptance; you merge externally."
+            ),
+            verdict
+        )
     }
 
     /// Paint only the in-memory list, headed detail, or deliberately opened evidence.
@@ -478,6 +489,7 @@ impl Taste {
             area.width,
             2,
         );
+        let review_actions;
         let actions = if self.labelling.is_some() {
             "Saving your label with tink-sdlc…\n? help"
         } else if self.label.is_some() {
@@ -492,10 +504,20 @@ impl Taste {
             }
         } else if self.evidence {
             "e back to the result  arrows/PgUp/PgDn scroll\n? more keys  Esc back"
-        } else if self.detail && self.pause.is_some() {
-            "t edit in Think (unsent)  w is this good?  o open PR  Esc list\ne details  ? more keys"
         } else if self.detail {
-            "w is this good?  o open PR  Esc list\ne details  ? more keys"
+            let next = if self.pause.is_some() {
+                "t edit in Think (unsent)  "
+            } else {
+                ""
+            };
+            let verdict = if self.agent {
+                "Human verdict only"
+            } else {
+                "w write verdict"
+            };
+            review_actions =
+                format!("{next}{verdict}  o open PR  Esc list\ne details  ? more keys");
+            &review_actions
         } else {
             "arrows move  Enter open result  r reread\n? more keys  Esc back"
         };
@@ -530,13 +552,16 @@ impl Taste {
             view::running_preview(row, &preview.status(), body.width, palette)
         } else if self.detail {
             self.rows.get(self.selected).map_or_else(Vec::new, |row| {
-                view::detail(
+                if self.evidence {
+                    return view::details(row, self.at, body.width, palette);
+                }
+                view::review(
                     row,
                     self.pause.as_ref(),
                     self.at,
                     body.width,
                     palette,
-                    self.evidence,
+                    self.agent,
                 )
             })
         } else if self.at.is_some() && self.rows.is_empty() {
@@ -605,16 +630,9 @@ fn safe(text: &str) -> String {
 
 #[cfg(test)]
 fn result_lines(row: &ResultRow) -> Vec<String> {
-    view::detail(row, None, None, u16::MAX, Palette::new(true), false)
+    view::review(row, None, None, u16::MAX, Palette::new(true), false)
         .into_iter()
-        .chain(view::detail(
-            row,
-            None,
-            None,
-            u16::MAX,
-            Palette::new(true),
-            true,
-        ))
+        .chain(view::details(row, None, u16::MAX, Palette::new(true)))
         .map(|line| line.to_string())
         .collect()
 }

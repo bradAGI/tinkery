@@ -164,6 +164,11 @@ def journey(width, height, mono, wrong_head=False, response_delay=0):
         seed = confirmed_seed(base)
         state = fixture({'source': str(seed), 'path': 'runs/TEST-result/seed-contract.md',
                          'sha256': hashlib.sha256(seed.read_bytes()).hexdigest()})
+        criterion = 'Can I compare two allocations without changing the assumptions?'
+        # A long criterion stays scrollable; it cannot push the command offscreen before v runs it.
+        if wrong_head:
+            criterion += ' Check the previously entered staffing and budget values.' * 32
+        state['detail']['run']['checklist'][1]['verify'] = criterion
         state['pr']['headRefOid'] = head
         statefile = base / 'state.json'
         statefile.write_text(json.dumps(state))
@@ -233,13 +238,16 @@ os.execv({git!r}, [{git!r}, *args])
             assert not started.exists() and not opened.exists()
             send(b'r', '›  TEST café')
             assert 'Enter open result' in screen.text(), screen.text()
-            send(b'v', 'Is this good?')
+            send(b'v', 'e details')
+            review = screen.text()
+            assert criterion.split('?')[0] in review and 'What to judge' in review, review
+            assert 'v runs' in review and 'Human verdict only' in review, review
             text = screen.text().replace('\n', '').replace(' ', '')
             assert f'vruns"{spec["command"]}",thenopens{spec["url"]}'.replace(' ', '') in text, screen.text()
             assert head not in text, 'the commit is checked at launch and shown in details'
             send(b'e', 'You owe')
             send(b'\x1b[F', head)
-            send(b'e', 'Is this good?')
+            send(b'e', 'What to judge')
             assert not started.exists() and not opened.exists(), 'read/navigation executed command'
             send(b'?', 'What Taste reads')
             os.write(master, b'v')
@@ -281,7 +289,7 @@ os.execv({git!r}, [{git!r}, *args])
                 assert '"command"' in screen.text(), screen.text()
                 # The suggested declaration binds the probed address, not localhost (often ::1 only).
                 assert '--host 127.0.0.1' in ' '.join(screen.text().split()), screen.text()
-                send(b'\x1b', 'Is this good?')
+                send(b'\x1b', 'What to judge')
                 assert not opened.exists(), 'undeclared preview opened a browser'
             assert tree(checkout) == original and tree(repo) == repo_original
             events = base / 'http-events'

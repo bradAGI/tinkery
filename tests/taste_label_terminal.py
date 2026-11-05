@@ -50,7 +50,7 @@ def journey(width, height, no_color, operator):
         (tools / 'gh').chmod(0o755)
         env = {**os.environ, 'HOME': str(base / 'HOME'), 'PATH': f'{tools}:{os.environ["PATH"]}',
                'TERM': 'xterm-256color', 'TINKERY_NODE': '/tinkery-TEST-no-node',
-               'GIT_CONFIG_NOSYSTEM': '1'}
+               'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': str(base / 'TEST-global.gitconfig')}
         (base / 'HOME').mkdir()
         env.pop('NO_COLOR', None)
         if no_color:
@@ -83,16 +83,23 @@ def journey(width, height, no_color, operator):
             wait('1  think')
             send(b'6', 'Press r to read results')
             send(b'r', 'No confirmed seed')
-            assert 'waiting for your label' in screen.text(), screen.text()
+            assert 'awaiting human verdict' in screen.text(), screen.text()
             send(b'\r', 'Is this good?')
-            assert 'w is this good?' in screen.text() and 'Run ID' not in screen.text(), screen.text()
+            assert 'Run ID' not in screen.text(), screen.text()
             if operator == 'agent':
+                assert 'Only a human can record the verdict.' in screen.text(), screen.text()
+                assert 'w is this good?' not in screen.text() and 'w  answer' not in screen.text(), screen.text()
+                send(b'?', 'What Taste reads')
+                assert 'Only a human can record the verdict.' in screen.text(), screen.text()
+                assert 'w opens' not in screen.text() and 'w answers' not in screen.text(), screen.text()
+                send(ESC, 'e details')
                 send(b'w', "Labels are the operator's")
                 assert 'Signed as' not in screen.text()
                 assert labels(root) == []
                 print(json.dumps(dict(journey='Taste label refused for agent', width=width, height=height,
                                       no_color=no_color, labels=0, provider_calls=0)))
                 return
+            assert 'w write verdict' in screen.text() and 'w  answer pass or fail' in screen.text(), screen.text()
             # Esc discards: nothing reaches tink-sdlc.
             send(b'w', 'Your words')
             for line in ('1 pass', 'you\'d keep it', '2 fail', 'wrong or missing',

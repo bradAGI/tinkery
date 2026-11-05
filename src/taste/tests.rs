@@ -234,7 +234,13 @@ fn list_uses_counts_and_detail_keeps_every_source_word_with_evidence_behind_e() 
             assert!(!list.contains(hidden), "{hidden}: {list}");
             assert!(full.contains(hidden), "{hidden}: {full}");
         }
-        assert!(list.contains("waiting for your label"), "{list}");
+        assert!(
+            list.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .contains("awaiting human verdict"),
+            "{list}"
+        );
         taste.key(KeyEvent::from(KeyCode::Enter));
         assert!(taste.detail && !taste.evidence);
         let review = screen(&mut taste, w, h);
@@ -245,7 +251,7 @@ fn list_uses_counts_and_detail_keeps_every_source_word_with_evidence_behind_e() 
             "Is this good?",
             "w  answer pass or fail",
             "! TEST gap /TEST/source",
-            "w is this good?",
+            "w write verdict",
         ] {
             assert!(review.contains(visible), "{visible}: {review}");
         }
@@ -261,18 +267,11 @@ fn list_uses_counts_and_detail_keeps_every_source_word_with_evidence_behind_e() 
         ] {
             assert!(!review.contains(hidden), "{hidden}: {review}");
         }
-        let document = view::detail(
-            &taste.rows[0],
-            None,
-            taste.at,
-            u16::MAX,
-            Palette::new(true),
-            true,
-        )
-        .into_iter()
-        .map(|line| line.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
+        let document = view::details(&taste.rows[0], taste.at, u16::MAX, Palette::new(true))
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
         for heading in ["You owe", "Checks", "Goal", "Result", "Evidence"] {
             assert!(document.contains(heading));
         }
@@ -573,7 +572,7 @@ fn hanging_check_words_and_final_metadata_remain_reachable_past_u16_rows() {
     taste.evidence = true;
     taste.rows[0].items[0].state = Check::FailureRevisionDiffers;
     taste.rows[0].items[0].label = format!("{}TEST-LAST-CHECK-WORD", "word ".repeat(500_000));
-    let rows = view::detail(&taste.rows[0], None, taste.at, 80, Palette::new(true), true);
+    let rows = view::details(&taste.rows[0], taste.at, 80, Palette::new(true));
     assert!(rows.len() > u16::MAX as usize);
     let metadata = rows
         .iter()

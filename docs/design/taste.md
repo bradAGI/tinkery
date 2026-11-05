@@ -1,7 +1,7 @@
 # Taste
 
-Taste shows one exact result beside its unchanged saved goal and asks one question: "Is this
-good?" Its one write is the operator's [label](#labels): pass or fail in their own words,
+Taste shows one exact result beside its unchanged saved goal. Its one write is the human
+operator's [label](#labels), pass or fail in their own words,
 saved by tink-sdlc only on F2. The label is the operator's verdict on the result; it still
 approves, merges and signs nothing. Taste never posts a review, merges, signs a gate or
 launches an agent. Merging remains a deliberate external decision, not an interpretation of
@@ -50,16 +50,22 @@ with a reason. No complete empty claim survives a failed read.
 The list gives each result a compact two-line block: a one-row goal preview with
 an explicit ellipsis when needed and muted open/merged/unknown context, then glyphs
 and counts for passed, waiting, stale, failed and unknown observations, plus
-“You owe N” when gates are owed and “waiting for your label” when the run has none. No check sentences, PR URLs, paths, hashes, run IDs
+“You owe N” when gates are owed and “awaiting human verdict” when the run has none. No check sentences, PR URLs, paths, hashes, run IDs
 or commands appear in the list. Jade marks selection; the goal remains ink.
 Counts are observations, never an aggregate done/approved verdict.
 
-Enter opens the review, which fits the first screen at 80×24: what was built (the PR
-title, plus “merged” when it is), the preview offer or “No preview for this project.”,
-**Your goal** as its first line, then **Is this good?** with `w` in jade as the one next
-step. **Next** follows only after `l`. Identity is checked silently: a source gap or
-unknown revision shows as a rust `!` line, and a read older than ten minutes says
-“may be out of date, press r”. Nothing else appears.
+Enter opens the review. The PR title, merge state and preview offer come first so the
+command and URL stay visible before `v`. **What to judge** shows the first active human
+check the run reports as pending for the known result. It uses the source's exact
+wording. If several are pending, the review gives the total and `e` shows them all.
+With no such check, the review asks **Is this good?** A missing receipt set, an
+unknown revision, or a previous human mark of unknown, failed or passed with a
+recheck does not supply a pending criterion.
+
+A human sees `w` to write a verdict. An agent sees who can record it. **Your goal**
+shows the goal's first line. Source gaps and unknown revisions carry a rust `!`.
+A read older than ten minutes says “may be out of date, press r”. The review scrolls
+when source text needs more room. Only `l` reveals **Next**.
 
 `e` opens details, one scrollable document in this order: **You owe**, **Checks**,
 **Goal** (whole), **Evidence**, **Source notes**, **Result**. Blank space separates
@@ -184,11 +190,11 @@ not an acceptance record or implementation permission.
   transport, not executable approval commands. Copy feedback claims transport only.
   Each request retains the exact goal, run ID, seed digest, PR and full commit,
   condition evidence, gaps and owed gates. Unknown goal/result identity refuses copy.
-- `w` on the review opens the [label](#labels) form. While it is open every key is its own:
+- For a human, `w` on the review opens the [label](#labels) form. While it is open every key is its own:
   1 or 2 chooses, then all characters, `?` and `q` included, are the words.
 - `?`/F1 help blocks underlying actions. Esc closes help, then details, then the review,
-  then returns Home from the list; F10 returns Home. The review's footer names only `w`,
-  `o`, Esc, details and `?`; help lists every other key. Help fits 80×24 without scrolling.
+  then returns Home from the list. F10 returns Home. The review footer offers `w` only
+  to a human. Help fits 80×24 without scrolling.
 
 The copied request asks the external process to recheck current head, inputs and
 receipts, resolve gates, inspect that exact result, and add the operator's requested
@@ -261,7 +267,7 @@ gate or authorization. The operator still merges externally.
 
 `src/taste/tests.rs` and the reader's unit tests cover exact goal preservation,
 unknown identity, missing/unsafe evidence, strict run-ID/URL inputs, statuses, source staleness,
-compact count summaries, a review holding only the title, goal line and question,
+compact count summaries, one source-pending human check on the review,
 complete source words and evidence in details behind `e`, label form keys (pass or fail,
 verbatim words, held F2, Esc, control chords), the form's kind lines, hint and signer,
 selection identity, clipboard requests, key repeats/modifiers and small-size scrolling.
@@ -281,7 +287,8 @@ The [label journey](../../tests/taste_label_terminal.py) uses a real tink-sdlc c
 label, the review asks the question, the form shows pass/fail lines and the hint, Esc writes
 nothing, a missing name refuses before tink-sdlc and signs nothing until the form shows the
 new name, F2 writes Unicode and quotes byte-identical as `accepted` or `rejected`, a closed
-run's refusal shows word for word, and an agent launch can't open the form.
+run's refusal shows word for word, and an agent sees the human-only verdict in the
+review and help. Pressing `w` as an agent refuses and writes nothing.
 Next-dump journeys additionally report acceptance, edit and send only with F2,
 correct without acceptance, and handle nothing unmet, at both sizes with and without
 NO_COLOR. Unit regressions distinguish copying from the explicit report, prioritize

@@ -26,6 +26,8 @@ pub(super) enum Check {
     /// A GitHub check that hasn't finished.
     Pending,
     NotSuccessful,
+    /// An active human check reported pending for a known result.
+    AwaitingHumanCheck,
     MatchingEvidenceMissing,
     AttestationEvidenceMissing,
     InspectExternally,
@@ -47,7 +49,9 @@ impl Check {
             Self::Stale => "stale",
             Self::Pending => "pending",
             Self::NotSuccessful => "pending (not a successful check)",
-            Self::MatchingEvidenceMissing => "pending (matching evidence missing)",
+            Self::AwaitingHumanCheck | Self::MatchingEvidenceMissing => {
+                "pending (matching evidence missing)"
+            }
             Self::AttestationEvidenceMissing => "pending (attestation evidence missing)",
             Self::InspectExternally => "pending (inspect externally)",
             Self::NotActivated => "pending (not activated)",
@@ -239,6 +243,7 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
             "passed" => Check::Pass,
             "failed" if exact => Check::Fail,
             "failed" => Check::FailureRevisionDiffers,
+            "pending" if !automatic => Check::AwaitingHumanCheck,
             "pending" | "unknown" => Check::MatchingEvidenceMissing,
             _ => return Err("Unknown completion condition status.".into()),
         };
@@ -499,6 +504,7 @@ mod tests {
             (Stale, "stale"),
             (Pending, "pending"),
             (NotSuccessful, "pending (not a successful check)"),
+            (AwaitingHumanCheck, "pending (matching evidence missing)"),
             (
                 MatchingEvidenceMissing,
                 "pending (matching evidence missing)",
@@ -577,18 +583,11 @@ mod tests {
                 .all(|item| item.state == Check::ReceiptsMissing)
         );
         for color in [false, true] {
-            let detail = super::super::view::detail(
-                &target,
-                None,
-                None,
-                96,
-                crate::Palette::new(color),
-                true,
-            )
-            .iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
+            let detail = super::super::view::details(&target, None, 96, crate::Palette::new(color))
+                .iter()
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
             let (owed_and_checks, _) = detail.split_once("\nGoal\n").unwrap();
             assert_eq!(
                 owed_and_checks.matches(MISSING_RECEIPTS).count(),
