@@ -105,8 +105,9 @@ impl Reader {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let resolved_root = root.as_deref().and_then(|root| root.canonicalize().ok());
-            let repo = resolved_root.as_deref().and_then(Repo::enclosing);
-            let origins = root.as_ref().and_then(|_| {
+            let checkout = resolved_root.as_deref();
+            let repo = checkout.and_then(Repo::enclosing);
+            let origins = checkout.and_then(|_| {
                 let selected: Vec<_> = sessions
                     .iter()
                     .map(|session| (session.path.as_path(), session.goal.as_str()))
@@ -116,10 +117,11 @@ impl Reader {
                     .and_then(|root| think_record::read_origins(&root, &selected).ok())
             });
             let origins = origins.unwrap_or_else(|| vec![MadeIn::Unknown; sessions.len()]);
-            let runs = root
-                .as_deref()
-                .ok_or("Start Tinkery with --sdlc-root PATH to check.".into())
-                .and_then(|root| sdlc::seeds(root, &cancelled));
+            let runs = match checkout {
+                Some(path) => sdlc::seeds(path, &cancelled),
+                None if root.is_some() => Err("The named checkout could not be resolved.".into()),
+                None => Err("Start Tinkery with --sdlc-root PATH to check.".into()),
+            };
             if let Err(reason) = &runs {
                 found.start_unknown = Some(reason.clone());
             }
@@ -161,18 +163,13 @@ impl Reader {
                         }
                     }
                 }
-                match ready::read(&session.path, root.as_deref()) {
+                match ready::read(&session.path, checkout) {
                     Ok(Some(mut seed)) => {
                         if target.as_ref().is_some_and(|target| seed.target.as_ref() != Some(target)) {
                             target_failure = "This seed changed since Shape read it. Return to Shape to read it again.".into();
                             continue;
                         }
                         let origin_note = root.as_deref().and_then(|root| {
-                            let origin = if resolved_root.is_some() {
-                                origin
-                            } else {
-                                MadeIn::Unknown
-                            };
                             origin_note(&mut seed, origin, repo.as_ref(), root)
                         });
                         found.seeds.push(Reading { seed, origin_note });

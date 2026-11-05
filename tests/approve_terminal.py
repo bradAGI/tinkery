@@ -26,7 +26,8 @@ def journey(width, height, case, no_color):
         root = Path(directory).resolve()
         sessions = root / "TEST sessions' folder"
         expected = []
-        if case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'no-checkout', 'different-repo'):
+        retarget = case == 'retarget-checkout'
+        if retarget or case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'no-checkout', 'different-repo'):
             for name, date in [('TEST oldest café', '2026-01-01T00:00:00Z'),
                                ('TEST newest', '2026-02-01T00:00:00Z')]:
                 # #434: a ready goal tall enough to push the command below the fold at both sizes.
@@ -54,7 +55,7 @@ def journey(width, height, case, no_color):
         checkout = root / "TEST checkout's folder"
         if case == 'target-twin-checkouts':
             checkout = root / r'TEST\tparent' / checkout.name
-        configured = case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'different-repo')
+        configured = retarget or case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'different-repo')
         if configured:
             script = checkout / '_system/scripts/sdlc.py'
             script.parent.mkdir(parents=True)
@@ -71,12 +72,27 @@ def journey(width, height, case, no_color):
                 moved = sessions / 'TEST moved session'
                 expected[0].rename(moved)
                 expected[0] = moved
-        if case in ('different-repo', 'target-twin-checkouts'):
+        named_checkout = checkout.relative_to(root) if case == 'target-twin-checkouts' else checkout
+        if retarget or case in ('different-repo', 'target-twin-checkouts'):
             (checkout / '.git').mkdir()
             other = root / 'TEST-other-repo'
             if case == 'target-twin-checkouts':
                 other = root / 'TEST\tparent' / checkout.name
             (other / '.git').mkdir(parents=True)
+            if retarget:
+                named_checkout = root / 'current'
+                named_checkout.symlink_to(checkout)
+                # Only A reports the older seed started. Switch the alias inside A's second
+                # status read, after its cwd is set and before it returns the run report.
+                script.write_text(
+                    'from pathlib import Path\nimport sys\n'
+                    f'assert Path.cwd() == Path({str(checkout)!r}) and sys.argv[1:] == ["status", "--json"]\n'
+                    'next_checkout = Path("../next-checkout")\n'
+                    'if next_checkout.exists(): next_checkout.replace("../current")\n'
+                    + script.read_text())
+                other_script = other / '_system/scripts/sdlc.py'
+                other_script.parent.mkdir(parents=True)
+                other_script.write_text('print(\'{"protocol":"tink-sdlc","api_version":1,"runs":[]}\')\n')
             records = root / 'TEST-records'
             records.mkdir()
             for index, session in enumerate(expected):
@@ -84,7 +100,7 @@ def journey(width, height, case, no_color):
                 record = dict(schema=3, tinkery='TEST', origin='simulated',
                     started='2026-01-01T00:00:00Z', confirmed='2026-01-01T00:00:00Z',
                     seed_me_session=session.name, seed_me_session_path=str(session),
-                    seed_me_session_id=ledger['session_id'], repo=str(other),
+                    seed_me_session_id=ledger['session_id'], repo=str(checkout if retarget else other),
                     turns=[], checks=[], goal=ledger['goal'])
                 (records / f'TEST-{index}.json').write_text(json.dumps(record))
         if case.startswith('target-'):
@@ -104,7 +120,6 @@ def journey(width, height, case, no_color):
             env['NO_COLOR'] = '1'
         else:
             env.pop('NO_COLOR', None)
-        named_checkout = checkout.relative_to(root) if case == 'target-twin-checkouts' else checkout
         proc = subprocess.Popen([str(REPO / 'target/debug/tinkery'), '--operator', 'agent', '--home',
             '--seed-session-root', str(sessions),
             '--record-root', str(root / 'TEST-records'), '--link-root', str(root / 'TEST-links'),
@@ -222,7 +237,28 @@ def journey(width, height, case, no_color):
                 print(json.dumps(dict(width=width,height=height,no_color=no_color,journey='approve/'+case,provider_calls=0,session_writes=0,copy_actions=int(case=='target-ready'))))
                 return
             os.write(master, b'4')
-            if case in ('started', 'edited'):
+            if retarget:
+                for visit in (1, 2):
+                    wait(lambda: 'Seed 1 of 1' in flat())
+                    assert 'TEST newest' in flat() and "Can't tell which seeds have started" not in flat()
+                    assert named_checkout.resolve() == (checkout if visit == 1 else other)
+                    send(b'c', 'Copied. Run it in a terminal; after it succeeds, open Watch.')
+                    wait(lambda: len(copies()) == visit)
+                    command = shlex.split(copies()[-1])
+                    assert command[:2] == ['cd', str(checkout)], command
+                    assert command[command.index('--seed-contract') + 1] == str(expected[1] / 'seed-contract.md')
+                    send(b'\x1b', '4 approve')
+                    if visit == 1:
+                        (root / 'next-checkout').symlink_to(other)
+                        os.write(master, b'4')
+                send(b'4', 'Seed 1 of 2')
+                assert 'TEST oldest café' in flat() and "Can't tell which seeds have started" not in flat()
+                send(b'\x1b[F', 'Made in ' + checkout.name)
+                assert 'c copy command' not in flat(), screen.text()
+                os.write(master, b'c')
+                send(b'\x1b', '4 approve')
+                assert len(copies()) == 2, 'stable mismatched checkout offered a copy'
+            elif case in ('started', 'edited'):
                 wait(lambda: 'Seed 1 of 1' in flat())
                 assert 'TEST newest' in flat() and 'TEST oldest café' not in flat(), screen.text()
                 if case == 'edited':
@@ -316,3 +352,4 @@ if __name__ == '__main__':
 
     for case in ['target-version','target-recreated','target-hash']:
         journey(80,24,case,True)
+    journey(100, 30, 'retarget-checkout', True)
