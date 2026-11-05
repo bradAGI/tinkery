@@ -16,6 +16,8 @@ voice config, or the newest matching Parakeet Q8 GGUF snapshot in the shared
 Hugging Face cache. Config defaults are system microphone and English. A missing
 engine or model gets one quiet consent line with download size; nothing downloads
 silently. Declining suppresses further prompting for that visit/session lifecycle.
+Below 80×24, a hidden setup prompt ignores yes. Resizing
+restores the pending prompt for a fresh confirmation. No and Escape still decline.
 The speak key remains discoverable before setup. If Node is missing, pressing it
 shows how to point Tinkery to Node. Cloud setup installs **none** of these native
 engine/model packages.
