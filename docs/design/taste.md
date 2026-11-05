@@ -182,8 +182,9 @@ not an acceptance record or implementation permission.
 
 ## Keys and handoff
 
-- List arrows choose; Enter opens the review. `l` from the list opens the review with the
-  explicitly reported acceptance's Next block. On the review, `e` opens details;
+- List arrows choose. Help shows Enter to open the review when the list has a selection.
+  `l` from the list opens the review with the explicitly reported acceptance's Next block.
+  On the review, `e` opens details;
   `e` or Esc there returns to the review. Arrows, PgUp/PgDn and Home/End scroll each
   complete document. `n`/`p` or Right/Left change result, clamped. Esc from detail
   returns to the list and discards the ephemeral report, without rereading.
