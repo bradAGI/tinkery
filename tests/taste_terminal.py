@@ -104,7 +104,8 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             for item in state['detail']['run']['checklist']:
                 item.update(status='pending', mark=None)
         if mapping_case in ('missing', 'abandoned'):
-            state['detail']['run'].update(pr=None, closure=None, labels={'count': 0})
+            state['detail']['run'].update(pr=None, closure=None, labels={
+                'count': 0, 'kinds': {'accepted': 0, 'rejected': 0}})
             if mapping_case == 'abandoned':
                 state['detail']['run']['closure'] = {'outcome': 'abandoned', 'time_ns': 1}
                 state['detail']['run']['labels']['count'] = 1

@@ -112,7 +112,7 @@ pub(super) struct ResultRow {
     pub(super) gates: Vec<String>,
     /// Unresolved source problems, not concealed by other successes.
     pub(super) gaps: Vec<String>,
-    /// Whether tink-sdlc reports any operator label; absent when the checkout doesn't say.
+    /// Whether tink-sdlc reports an accepted or rejected verdict, when both counts are known.
     pub(super) labelled: Option<bool>,
 }
 
@@ -480,7 +480,11 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
             return Err("Unknown run verification state.".into());
         }
         row.goal = sdlc::goal(run);
-        row.labelled = run["labels"]["count"].as_u64().map(|n| n > 0);
+        let kinds = &run["labels"]["kinds"];
+        row.labelled = kinds["accepted"]
+            .as_u64()
+            .zip(kinds["rejected"].as_u64())
+            .map(|(accepted, rejected)| accepted > 0 || rejected > 0);
         row.seed = run["seed_contract"]["sha256"]
             .as_str()
             .unwrap_or("unknown seed")
