@@ -93,7 +93,7 @@ pub(super) struct ResultRow {
     /// Exact saved goal, only from the shared seed join.
     pub(super) goal: Goal,
     /// Canonical explicit PR URL; never inferred from a branch.
-    pub(super) url: Option<String>,
+    pub(super) url: Result<String, links::PrGap>,
     /// The PR's title from GitHub, shown as what was built; absent means unknown.
     pub(super) title: Option<String>,
     /// Current PR head from GitHub; absent means unknown.
@@ -101,7 +101,7 @@ pub(super) struct ResultRow {
     /// GitHub explicitly reported a merged PR; never an acceptance claim.
     pub(super) merged: bool,
     /// Exact-head declaration, or an honest absence/read refusal.
-    pub(super) preview: Result<super::preview::Spec, String>,
+    pub(super) preview: Result<Option<super::preview::Spec>, String>,
     /// Snapshot identity of the imported seed, not approval.
     pub(super) seed: String,
     /// Imported conditions and source observations, separately labelled.
@@ -114,6 +114,17 @@ pub(super) struct ResultRow {
     pub(super) gaps: Vec<String>,
     /// Whether tink-sdlc reports any operator label; absent when the checkout doesn't say.
     pub(super) labelled: Option<bool>,
+}
+
+impl ResultRow {
+    /// A preview requires a usable recorded PR before its declaration can be read.
+    pub(super) fn preview(&self) -> Result<Option<&super::preview::Spec>, &str> {
+        self.url.as_ref().map_err(|gap| gap.next)?;
+        self.preview
+            .as_ref()
+            .map(Option::as_ref)
+            .map_err(String::as_str)
+    }
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
@@ -308,7 +319,7 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
 
 /// GitHub owner and repo names are case-insensitive; anything else must match the record exactly.
 fn same_pr(pr: &Value, row: &ResultRow) -> bool {
-    matches!((pr["url"].as_str(), row.url.as_deref()), (Some(a), Some(b)) if a.eq_ignore_ascii_case(b))
+    matches!((pr["url"].as_str(), row.url.as_deref()), (Some(a), Ok(b)) if a.eq_ignore_ascii_case(b))
 }
 
 fn remote(pr: &Value, row: &mut ResultRow) -> Result<(), String> {
@@ -435,7 +446,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
             id: summary["run_id"].as_str().unwrap_or("").into(),
             slug: slug.into(),
             goal: Goal::Unknown,
-            url: None,
+            url: Err(links::UNKNOWN_RUN),
             title: None,
             head: None,
             merged: false,
@@ -448,8 +459,6 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
             labelled: None,
         };
         if summary["verification_status"] == "invalid" || !canonical_run_id(&row.id) {
-            row.gaps
-                .push("Run identity unavailable; repair the run externally, then press r.".into());
             rows.push(row);
             continue;
         }
@@ -476,24 +485,29 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
             .as_str()
             .unwrap_or("unknown seed")
             .into();
-        match links::recorded(run) {
-            Err(why) => row.gaps.push(why),
-            Ok(url) => {
-                row.url = Some(url.clone());
-                match gh(&root, &url, stop) {
-                    Ok(pr) => {
-                        if !same_pr(&pr, &row) {
-                            row.gaps.push("GitHub names a different PR than the run recorded (renamed or moved?); result revision unknown.".into());
-                        } else {
-                            if !listed(&pr, &mut row)? { continue; }
-                            if let Err(why) = remote(&pr, &mut row) { row.head = None; row.title = None; row.items.clear(); row.gaps.push(why); }
-                        }
+        row.url = links::recorded(run);
+        if let Ok(url) = &row.url {
+            match gh(&root, url, stop) {
+                Ok(pr) if same_pr(&pr, &row) => {
+                    if !listed(&pr, &mut row)? {
+                        continue;
                     }
-                    Err(_) => row.gaps.push("Couldn't read GitHub. Check gh authentication/access, then press r; result revision unknown.".into()),
+                    if let Err(why) = remote(&pr, &mut row) {
+                        row.head = None;
+                        row.title = None;
+                        row.items.clear();
+                        row.gaps.push(why);
+                    }
                 }
+                Ok(_) => row.gaps.push(
+                    "GitHub names a different PR than the run recorded (renamed or moved?); result revision unknown.".into(),
+                ),
+                Err(_) => row.gaps.push(
+                    "Couldn't read GitHub. Check gh authentication/access, then press r; result revision unknown.".into(),
+                ),
             }
         }
-        if let (Some(url), Some(head)) = (&row.url, &row.head) {
+        if let (Ok(url), Some(head)) = (&row.url, &row.head) {
             row.preview = super::preview::declaration(&root, url, head, stop);
         }
         let supporting_checks = std::mem::take(&mut row.items);
@@ -551,7 +565,7 @@ mod tests {
             id: "00000000-0000-4000-8000-000000000114".into(),
             slug: "TEST-result".into(),
             goal: Goal::Unknown,
-            url: Some("https://github.com/TEST/example/pull/1".into()),
+            url: Ok("https://github.com/TEST/example/pull/1".into()),
             title: None,
             head: Some("a".repeat(40)),
             merged: false,
@@ -860,7 +874,7 @@ mod tests {
     #[test]
     fn remote_checks_are_separate_and_neutral_is_not_pass() {
         let mut row = row();
-        let pr = json!({"url":row.url,"headRefOid":"a".repeat(40),"statusCheckRollup":[
+        let pr = json!({"url":row.url.as_ref().unwrap(),"headRefOid":"a".repeat(40),"statusCheckRollup":[
             {"__typename":"CheckRun","name":"TEST CI","status":"COMPLETED","conclusion":"NEUTRAL"}]});
         remote(&pr, &mut row).unwrap();
         assert!(row.items[0].state.word().starts_with("pending"));

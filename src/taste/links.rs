@@ -4,21 +4,49 @@
 
 use serde_json::Value;
 
+/// Why the checkout cannot supply a PR and what the operator can do about it.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PrGap {
+    /// True only when the source explicitly reports that the run has no PR.
+    pub(super) known_absent: bool,
+    /// What the source establishes about the result.
+    pub(super) title: &'static str,
+    /// The prerequisite for opening the PR or reading an exact-head preview.
+    pub(super) next: &'static str,
+}
+
+/// The list could not identify a valid run whose own PR record we can read.
+pub(super) const UNKNOWN_RUN: PrGap = PrGap {
+    known_absent: false,
+    title: "Result unknown: run identity unavailable",
+    next: "Repair the run externally, then press r.",
+};
+
 /// The PR the run recorded for itself, or why it is unknown. Never reads files or contacts GitHub.
-pub(super) fn recorded(run: &Value) -> Result<String, String> {
-    let url = match &run["pr"] {
-        Value::Null => {
-            return Err(
-                "Result unknown: no PR recorded for this run; its status says how to record one."
-                    .into(),
-            );
+pub(super) fn recorded(run: &Value) -> Result<String, PrGap> {
+    let url = match run.get("pr") {
+        None => {
+            return Err(PrGap {
+                known_absent: false,
+                title: "Result unknown: run status omitted the PR field",
+                next: "Use --sdlc-root to choose a checkout that reports this run's PR.",
+            });
         }
-        pr => pr["url"].as_str().unwrap_or(""),
+        Some(Value::Null) => {
+            return Err(PrGap {
+                known_absent: true,
+                title: "Result unknown: no recorded PR",
+                next: "When this run has a PR, record it with tink-sdlc, then press r.",
+            });
+        }
+        Some(pr) => pr["url"].as_str().unwrap_or(""),
     };
     if !canonical_pr_url(url) {
-        return Err(
-            "The run's recorded PR is not a full GitHub PR URL; Taste won't read it.".into(),
-        );
+        return Err(PrGap {
+            known_absent: false,
+            title: "Result unknown: invalid PR URL",
+            next: "Inspect this run's PR record outside Tinkery. After repair, press r.",
+        });
     }
     Ok(url.into())
 }
@@ -57,7 +85,7 @@ mod tests {
             URL
         );
         let missing = recorded(&json!({"slug": "TEST-result", "pr": null})).unwrap_err();
-        assert!(missing.contains("no PR recorded"), "{missing}");
+        assert_eq!(missing.title, "Result unknown: no recorded PR");
         assert!(
             recorded(&json!({"slug": "TEST-result"})).is_err(),
             "older tink-sdlc has no pr field"
@@ -78,7 +106,7 @@ mod tests {
             "https://github.com/TEST/clinic-tycoon/pull/1\n",
         ] {
             let error = recorded(&json!({"slug": "TEST-result", "pr": {"url": url}})).unwrap_err();
-            assert!(error.contains("not a full GitHub PR URL"), "{url}");
+            assert_eq!(error.title, "Result unknown: invalid PR URL", "{url}");
         }
     }
 
