@@ -29,6 +29,7 @@ impl BrainDump {
             && self.voice.as_ref().is_some_and(Voice::setup_prompt)
         {
             match key.code {
+                KeyCode::Char('y' | 'Y') if self.below_minimum() => return true,
                 KeyCode::Char('y' | 'Y' | 'n' | 'N') | KeyCode::Esc => {
                     self.voice
                         .as_mut()
@@ -148,10 +149,7 @@ pub(super) fn input_text(
 }
 
 pub(super) fn render_notice(frame: &mut Frame, app: &BrainDump, palette: Palette) {
-    if !app.voice_allowed()
-        || app.screen.area.width < MIN_WIDTH
-        || app.screen.area.height < MIN_HEIGHT
-    {
+    if !app.voice_allowed() || app.below_minimum() {
         return;
     }
     if let Some(voice) = &app.voice {
