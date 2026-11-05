@@ -17,19 +17,19 @@ owns bounded execution, cancellation and the exact saved-goal join used by Watch
 Unsupported interfaces or states refuse the reading. No source writes or polling.
 Without a current result, the footer keeps help and exit, plus `r read results` only
 when the named checkout is available and no read/open helper is running. Result
-actions follow the selected result's recorded PR and exact-head preview declaration.
+actions follow the selected result's recorded PR or checked local commit and its preview declaration.
 
 Each run records its own PR with tink-sdlc's `sdlc.py pr` (1.50.0 and later), and
 API 1 per-run `status --json` reports it as `pr.url`. That record is the only link:
 handoff prose is not a machine interface, and neither a slug, branch, title nor handoff
 file can supply it. Taste reads `pr` only from the per-run status whose run ID matches
-the list. When status reports `pr: null` and an abandoned closure, review, help and
-direct open or preview keys say that the run closed without a PR. For an open run,
-they say to record the PR with tink-sdlc once available, then press `r`. If status omits
-the field, they direct the operator to a checkout that reports this run's PR.
+the list. When status reports `pr: null`, an open run can supply a
+[checked local result](#local-preview). An abandoned run instead says that it closed
+without a PR. If status omits the field, Taste directs the operator to a checkout
+that reports this run's PR.
 If status reports an invalid PR URL, Taste asks the operator to inspect the
-run's PR record outside Tinkery and reread after repair. These gaps offer no open
-or preview action. Taste accepts only a full `https://github.com/OWNER/REPO/pull/NUMBER`.
+run's PR record outside Tinkery and reread after repair. Malformed or missing PR fields offer no open
+or preview action and never fall back to a local result. Taste accepts only a full `https://github.com/OWNER/REPO/pull/NUMBER`.
 If GitHub names a different PR (owner and repo compare case-insensitively), the row
 stays unknown. Tinkery stores no mapping and launches take no PR input.
 
@@ -55,8 +55,8 @@ with a reason. No complete empty claim survives a failed read.
 ## One result
 
 The list identifies each result by its recorded PR title and an excerpt from the
-saved goal, followed by its open, merged or unknown state. An explicit empty PR record
-shows “no recorded PR”. Other unresolved results show “result unknown”. Without a
+saved goal, followed by its open, merged, local or unknown state. An empty PR record
+without a checked local result shows “no recorded PR”. Other unresolved results show “result unknown”. Without a
 title the goal uses the whole available space. Both excerpts share one line and use an ellipsis
 when shortened. The next line shows counts for passed, waiting, stale, failed and
 unknown observations, plus
@@ -64,7 +64,7 @@ unknown observations, plus
 or commands appear in the list. Jade marks selection; the goal remains ink.
 Counts are observations, never an aggregate done/approved verdict.
 
-Enter opens the review. The PR title, merge state and preview offer come first so the
+Enter opens the review. The PR title or “Local checked result”, merge state and preview offer come first so the
 command and URL stay visible before `v`. **What to judge** shows the first active human
 check the run reports as pending for the known result. It uses the source's exact
 wording. Only an explicit `operator_attestation: true` identifies a human check in
@@ -123,8 +123,8 @@ distinguish a never-verified run from receipts left in another checkout. The lis
 counts these checks as unknown, not as obligations; details and both copied requests
 retain the unknown gate state. Raw source defaults remain in Evidence, not claims
 that the operator owes another signature. No other checkout is searched. Relaunch
-with `--sdlc-root` naming the receipt-holding checkout and read again; per-run roots
-are not supported. Runs reporting receipt evidence retain normal derivation.
+with `--sdlc-root` naming the receipt-holding checkout and read again. A local preview
+uses API 1's explicit `run.checkout` when present, otherwise the named root. Runs reporting receipt evidence retain normal derivation.
 GitHub observations and independent review remain separate from these local gaps.
 
 Owed gates use plain actions: “approve the plan” or “re-approve the plan,” plus
@@ -149,7 +149,7 @@ never these receipt sources or package scripts.
 
 ## Local preview
 
-At the result's exact PR head, the repository may declare a root `tinkery.preview`
+At the result's exact commit, the repository may declare a root `tinkery.preview`
 file: one JSON object on one line, with exactly `command` and `url`:
 
 ```json
@@ -163,8 +163,27 @@ redirect following, deployment, agents or model calls. The command must listen o
 127.0.0.1: on macOS a dev server bound to `localhost` may listen only on ::1 and never
 answer. The URL restriction is not a network sandbox for arbitrary repo code.
 
-The explicit `r` read also reads that file through `gh api` at the displayed head.
-404 means “No preview for this project.”; the format above lives in help (`?`).
+For a PR, `r` reads that file through `gh api` at the displayed head.
+For an open run with `pr: null`, it reads the local result only when API 1 reports
+current passed verification and an exact candidate commit. The source-owned
+`run.checkout`, or the named root when omitted, must be a Git root. Source files
+must match that commit and there must be no untracked source files; run evidence
+under `runs/` and Git-ignored files such as dependencies/build output are excluded.
+Ignored inputs are not covered by this source comparison; the declared setup must
+produce everything the preview needs in its temporary checkout.
+This extra comparison prevents a passed uncommitted tree from presenting an older
+commit as the checked result. An evidence-only newer HEAD does not replace the
+receipt's commit. Local results require no GitHub call or provider request.
+
+Local declarations come from the commit's Git blob, never a working-tree file.
+Immediately before preparation and again before execution, `v` rereads the run and
+requires the same run ID, seed and goal, checkout, commit, current receipt and
+committed source. A change refuses execution and asks for `r`; it never starts an
+old reading. The local result offers no PR opening or PR handoff. Its details name
+the checkout and commit; passing checks remains separate from a human verdict.
+
+A missing committed file (or a GitHub 404) means “No preview for this project.”;
+the format above lives in help (`?`).
 Authentication, invalid files and other failures remain read refusals, not invented
 absence. The review shows the exact command and URL before execution; the commit it
 runs at is checked at launch and shown once in details. `v` from the list opens the
@@ -172,10 +191,12 @@ review, just like Enter; on the review it runs the disclosed command, and withou
 declaration it says where help explains adding one. Reading, navigation, help and copying never
 execute it; repeated or modified v is ignored.
 
-Execution fetches that exact head into a temporary Git checkout, checks HEAD and
-rechecks the declaration against the snapshot, then runs with temporary HOME and
+Execution fetches that exact head from the recorded GitHub repository or source-owned
+local checkout into a temporary Git checkout, checks HEAD and rechecks the declaration
+against the snapshot, then runs with temporary HOME and
 XDG roots. Private-repository fetches use gh's credential helper, without changing
-operator Git configuration. No operator working tree is used. An already-listening port refuses the
+operator Git configuration. Preview commands never run in the source checkout.
+An already-listening port refuses the
 launch. The first successful local HTTP response triggers the default browser opener;
 readiness has a 30-second deadline. Each HTTP attempt retains one connection for up
 to two seconds within that deadline, accumulating a complete status line bounded to
@@ -234,8 +255,11 @@ it will sign with, read from the checkout's `git config user.name` when it opens
 no Tinkery setting. Only that shown name signs: with none, F2 reads it again and the form
 shows the result before another F2 can save. Esc cancels and leaves the run waiting for its
 label; leaving discards, but F10 waits while a save runs. Only a pressed F2 saves, by
-running the checkout's own `sdlc.py label <slug> --kind … --words … --reviewer <shown name>
---source taste`. Words pass through unchanged. Success says “Saved your label.”; a refusal
+running the checkout's own `sdlc.py label <slug> --expected-run-id <reviewed ID> --kind …
+--words … --reviewer <shown name> --source taste`. tink-sdlc checks that identity while
+holding its write locks, so reusing a run name cannot redirect the verdict. This needs
+tink-sdlc 1.53.0 or later; older checkouts refuse and keep the words, with no unchecked retry.
+Words pass through unchanged. Success says “Saved your label.”; a refusal
 from tink-sdlc (closed run, run building elsewhere, agent reviewer) shows word for word in
 the form, which keeps the words. An `--operator agent` launch refuses `w`: labels are the
 operator's. The label lives in `runs/<slug>/labels.jsonl`, owned by tink-sdlc and
@@ -351,3 +375,12 @@ then pass after restoration. Wrong-head refusal must fail when its
 checkout identity protection is reverted, then pass after restoration.
 These prove mechanics, not operator
 dogfood or improved attention; #109's comparison method remains separate.
+
+[Local preview journeys](../../tests/taste_local_preview_terminal.py) exercise the public
+terminal with actual temporary Git checkouts, fake API 1, a local HTTP server and
+a stub browser opener. They cover both sizes and colour modes, named and forwarded
+checkouts, benign run evidence, exact-commit serving, dirty/untracked source,
+missing/stale/failed receipts, malformed PRs, changed identity/candidate/declaration
+between read and execution, port collisions, and process/checkout cleanup. No
+provider or GitHub calls occur. Reversion probes must detect removing the source
+comparison and the launch-time reread; restored protections must pass again.

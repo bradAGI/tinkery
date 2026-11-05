@@ -1,7 +1,9 @@
 //! The home menu: the operator's seven places, in pipeline order.
 //!
 //! think · tend · shape · approve · watch · taste · measure. Each place has its own boundary.
-//! Nothing here starts or steers an agent.
+//! Named worker actions use the shared SDLC boundary; navigation never starts work.
+
+mod worker;
 
 use std::{
     path::{Path, PathBuf},
@@ -71,6 +73,9 @@ pub struct Home {
     approve_origin: Option<ApproveOrigin>,
     /// `m` on the menu asked for the Model panel, which the launch owns.
     model_request: bool,
+    worker_config: Option<crate::worker::Config>,
+    worker_panel: Option<worker::Panel>,
+    quit_after_worker: bool,
 }
 
 enum View {
@@ -80,6 +85,7 @@ enum View {
     /// Shape, and the tend it was opened from, restored as it was when Shape is left.
     Shape(Box<Shape>, Option<Box<Tend>>),
     Approve(Box<approve::Approve>),
+    Worker,
     Measure(Box<measure::Measure>),
     Watch(Box<Watch>),
     Taste(Box<Taste>),
@@ -128,6 +134,9 @@ impl Home {
             approve_reader: approve::Reader::default(),
             approve_origin: None,
             model_request: false,
+            worker_config: None,
+            worker_panel: None,
+            quit_after_worker: false,
         }
     }
 
@@ -147,6 +156,19 @@ impl Home {
     pub fn with_codex_report(mut self, report: Option<crate::watch::CodexReport>) -> Self {
         self.codex_report = report;
         self
+    }
+
+    /// Set a separate, explicit worker allowance for this launch; configuration runs nothing.
+    pub fn with_worker(mut self, model: Option<String>, responses: usize) -> Result<Self, String> {
+        if model.is_some() || responses > 0 {
+            let config = crate::worker::Config {
+                model: model.unwrap_or_default(),
+                responses,
+            };
+            config.validate()?;
+            self.worker_config = Some(config);
+        }
+        Ok(self)
     }
 
     /// An agent launch without named context only reads; see [`Shape::held`].
@@ -218,6 +240,13 @@ impl Home {
 
     /// [`Home::tick`] with the clock as an input, so tests never sleep.
     fn tick_at(&mut self, now: Instant) {
+        if let Some(panel) = &mut self.worker_panel {
+            panel.poll();
+        }
+        if self.quit_after_worker && !self.worker_busy() {
+            self.quit = true;
+        }
+
         if let View::Watch(watch) = &mut self.view {
             watch.poll();
         }
@@ -524,9 +553,67 @@ impl Home {
         self.sync_approve();
     }
 
+    fn worker_busy(&self) -> bool {
+        self.worker_panel.as_ref().is_some_and(worker::Panel::busy)
+    }
+
+    fn open_worker(&mut self, seed: seed_me::ready::ReadySeed, root: PathBuf) {
+        if !self.worker_busy() {
+            self.worker_panel = Some(worker::Panel::review(
+                seed,
+                root,
+                self.record_root.clone(),
+                self.worker_config.clone(),
+            ));
+        }
+        self.approve_reader.cancel();
+        self.help = false;
+        self.view = View::Worker;
+    }
+
     /// One key press, routed to the open place or the menu. Releases are ignored.
     pub fn handle_key(&mut self, key: KeyEvent) {
         if key.kind == KeyEventKind::Release {
+            return;
+        }
+        let quitting = (key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.code == KeyCode::Char('c'))
+            || (matches!(self.view, View::Menu)
+                && matches!(key.code, KeyCode::Char('q') | KeyCode::F(10)));
+        if quitting && self.worker_busy() {
+            self.quit_after_worker = true;
+            self.view = View::Worker;
+            self.help = false;
+            return;
+        }
+        if matches!(self.view, View::Worker) {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                self.quit = true;
+            } else if let Some(destination) = self.worker_panel.as_mut().and_then(|p| p.key(key)) {
+                self.help = false;
+                self.view = match destination {
+                    worker::Destination::Home => View::Menu,
+                    worker::Destination::Watch(root) => {
+                        View::Watch(Box::new(Watch::open(Some(root))))
+                    }
+                    worker::Destination::Taste(root) => {
+                        View::Taste(Box::new(Taste::open(Some(root), self.agent)))
+                    }
+                };
+            }
+            return;
+        }
+        if !self.help
+            && key.kind == KeyEventKind::Press
+            && key.modifiers == KeyModifiers::NONE
+            && key.code == KeyCode::Char('b')
+            && let View::Watch(watch) = &self.view
+            && let Some(run) = watch.worker_run()
+        {
+            if !self.worker_busy() {
+                self.worker_panel = Some(worker::Panel::existing(run));
+            }
+            self.view = View::Worker;
             return;
         }
         if let View::Think(dump) = &mut self.view {
@@ -656,6 +743,11 @@ impl Home {
                     _ => View::Menu,
                 };
             }
+            if let View::Approve(view) = &mut self.view
+                && let Some((seed, root)) = view.take_worker_request()
+            {
+                self.open_worker(seed, root);
+            }
             return;
         }
         if matches!(self.view, View::Shape(..)) {
@@ -711,6 +803,13 @@ impl Home {
                 KeyCode::Enter => self.open(self.selected),
                 KeyCode::Char('q') => self.quit = true,
                 KeyCode::Char('m') => self.model_request = true,
+                KeyCode::Char('b')
+                    if self.worker_panel.is_some()
+                        && key.kind == KeyEventKind::Press
+                        && key.modifiers == KeyModifiers::NONE =>
+                {
+                    self.view = View::Worker;
+                }
                 _ => {}
             },
             View::Tend(tend) => match key.code {
@@ -808,7 +907,7 @@ impl Home {
                     self.view = View::Menu;
                 }
             }
-            View::Think(_) | View::Shape(..) | View::Approve(_) => {}
+            View::Think(_) | View::Shape(..) | View::Approve(_) | View::Worker => {}
         }
     }
 
@@ -972,6 +1071,7 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
         View::Tend(_) => "tinkery › tend".into(),
         View::Shape(..) => "tinkery › shape".into(),
         View::Approve(_) => "tinkery › approve".into(),
+        View::Worker => "tinkery › worker".into(),
         View::Measure(measure) => measure.title(),
         View::Watch(_) => "tinkery › watch".into(),
         View::Taste(_) => "tinkery › taste".into(),
@@ -1003,6 +1103,18 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
         && let Some(history) = &mut tend.history
     {
         history.render(frame, body, palette, home.help, tend.how);
+        return;
+    }
+    if matches!(home.view, View::Worker) {
+        if let Some(panel) = &mut home.worker_panel {
+            panel.render(frame, body, palette);
+        }
+        if home.quit_after_worker {
+            frame.render_widget(
+                Paragraph::new("Finishing the current request before exit…").style(palette.muted),
+                Rect::new(body.x, body.bottom().saturating_sub(2), body.width, 1),
+            );
+        }
         return;
     }
     if let View::Approve(view) = &mut home.view {
@@ -1100,7 +1212,12 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
                 render_menu_help(frame, palette);
             } else {
                 frame.render_widget(
-                    Paragraph::new("↑↓ move   enter open   ? help   q quit").style(palette.muted),
+                    Paragraph::new(if home.worker_panel.is_some() {
+                        "↑↓ move   enter open   b worker   ? help   q quit"
+                    } else {
+                        "↑↓ move   enter open   ? help   q quit"
+                    })
+                    .style(palette.muted),
                     Rect::new(
                         2,
                         area.height.saturating_sub(2),
@@ -1120,7 +1237,7 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
                 .style(palette.muted),
             body,
         ),
-        View::Think(_) | View::Approve(_) => {}
+        View::Think(_) | View::Approve(_) | View::Worker => {}
     }
 }
 

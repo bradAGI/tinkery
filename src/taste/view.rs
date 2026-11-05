@@ -117,6 +117,8 @@ pub(super) fn list(
     for (index, row) in rows.iter().enumerate() {
         let suffix = if row.merged {
             " · merged"
+        } else if row.local().is_some() {
+            " · local"
         } else if row.head.is_some() {
             " · open"
         } else if row.url.as_ref().is_err_and(|gap| gap.known_absent) {
@@ -287,6 +289,9 @@ const STALE: Duration = Duration::from_secs(10 * 60);
 
 /// What was built: the PR title, or its link while the title is unknown.
 fn built(row: &ResultRow) -> String {
+    if row.local().is_some() {
+        return "Local checked result".into();
+    }
     safe(
         row.title
             .as_deref()
@@ -313,7 +318,7 @@ pub(super) fn review(
     agent: bool,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let (prefix, ink) = if row.url.is_err() {
+    let (prefix, ink) = if row.url.is_err() && row.local().is_none() {
         (Span::styled("! ", p.rust), p.rust)
     } else {
         (Span::raw(""), p.ink.add_modifier(Modifier::BOLD))
@@ -461,10 +466,15 @@ pub(super) fn details(
     }
     heading(&mut lines, "Result", p.ink);
     let mut result = vec![
-        format!(
-            "PR: {}{}",
-            row.url.as_deref().unwrap_or_else(|gap| gap.title),
-            if row.merged { " · merged" } else { "" }
+        row.local().map_or_else(
+            || {
+                format!(
+                    "PR: {}{}",
+                    row.url.as_deref().unwrap_or_else(|gap| gap.title),
+                    if row.merged { " · merged" } else { "" }
+                )
+            },
+            |local| format!("Local checkout: {}", local.checkout().display()),
         ),
         format!("Commit: {}", row.head.as_deref().unwrap_or("unknown")),
         format!("Run ID: {}", row.id),
@@ -565,7 +575,7 @@ mod tests {
             id: "TEST-run-id".into(), slug: "TEST-run".into(),
             goal: Goal::Matched(format!("{}\nWhy: TEST reason.\nDone when: TEST result.", "TEST café 👩‍💻 goal ".repeat(12))),
             url: Ok("https://github.com/TEST/example/pull/1".into()), title: None, head: Some("a".repeat(40)),
-            merged: true, preview: Err("No preview declared".into()), receipts_missing: false, seed: "TEST-seed".into(), gates: vec![human.into()], gaps: vec![], labelled: None,
+            merged: true, local: Ok(None), preview: Err("No preview declared".into()), receipts_missing: false, seed: "TEST-seed".into(), gates: vec![human.into()], gaps: vec![], labelled: None,
             items: vec![
                 Item { label: "Every original check word stays intact while this long sentence wraps with a hanging indent and no abbreviation.".into(),
                     state: Check::Fail, kind: "automated".into(), evidence: "/TEST/log; argv: [TEST]".into() },

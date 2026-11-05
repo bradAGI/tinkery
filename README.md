@@ -62,6 +62,12 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   `--sdlc-root`, else where Tinkery started. A ready seed points to Approve.
 - **Approve:** menu place 4 shows verified seeds, oldest first, with their exact goal
   and acceptance checks. `c` copies run creation and intake commands; nothing runs.
+  `b` reviews an explicit bounded Pi start; after the full disclosure, F2 creates and
+  imports the run, prepares its isolated build checkout and launches the worker.
+  Supply `--worker-model provider/model:thinking --worker-responses N`; the default
+  worker allowance is zero, separate from drafting. The worker screen retains
+  requests across navigation and offers explicit refresh, resume, finish, stop and
+  verification. Home `b` reopens it; Watch `b` selects an existing run.
   Intake rechecks the seed through this executable with `--tinkery PATH`.
   A seed known to come from another repository stays readable but cannot be copied
   into the named checkout; unknown origins keep copy with a note.
@@ -73,14 +79,18 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   status commands and changes no records. An optional `--codex-report RUN_UUID:CHAT_ID:PATH`
   adds one saved Codex observation and suggested next step, with its original time and age.
   It is not a live connection. See [Watch](docs/design/watch.md#codex-observation).
-- **Taste:** menu place 6 uses `--sdlc-root PATH`. `r` explicitly reads runs and the PR
-  each run recorded with `sdlc.py pr`; handoff prose supplies no links.
+- **Taste:** menu place 6 uses `--sdlc-root PATH`. `r` explicitly reads runs and their
+  recorded PRs or current checked local commits; handoff prose supplies no links.
+  `v` runs the disclosed `tinkery.preview` command from an exact-commit temporary checkout
+  and opens its local URL when it answers. Esc stops it. Local results need no GitHub PR.
   The list pairs each available result title with a goal excerpt. Open a result to see
   what was built, your goal and the first human check reported pending.
   With no such check, it asks “Is this good?” Only a human can press `w` to write a verdict.
-  F2 saves pass or fail with their words and the checkout's git name. `o` opens the PR; `e` shows
-  checks, owed gates, the whole goal, IDs and evidence. `a`/`c` copy external review
-  handoffs. Once a person accepts the result elsewhere, `l` reports that decision for this view and
+  F2 saves pass or fail with their words and the checkout's git name. Saving requires
+  tink-sdlc 1.53.0 or later to check that the reviewed run is still the one being labelled.
+  `e` shows checks, owed gates, the whole goal, IDs and evidence. For PR results,
+  `o` opens the PR and `a`/`c` copy external review handoffs. Once a person accepts
+  the result elsewhere, `l` reports that decision for this view and
   reveals one italic next-dump guess; `t` opens it for editing in Think. Only F2 sends.
   No unmet conditions means observe the accepted behavior, not invent another feature.
   See [Taste](docs/design/taste.md).

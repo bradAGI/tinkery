@@ -96,10 +96,12 @@ pub(super) struct ResultRow {
     pub(super) url: Result<String, links::PrGap>,
     /// The PR's title from GitHub, shown as what was built; absent means unknown.
     pub(super) title: Option<String>,
-    /// Current PR head from GitHub; absent means unknown.
+    /// Current PR head or the local receipt's exact checked commit; absent means unknown.
     pub(super) head: Option<String>,
     /// GitHub explicitly reported a merged PR; never an acceptance claim.
     pub(super) merged: bool,
+    /// A checked local result, a refusal of that local claim, or a PR-only result.
+    pub(super) local: Result<Option<super::preview::Local>, String>,
     /// Exact-head declaration, or an honest absence/read refusal.
     pub(super) preview: Result<Option<super::preview::Spec>, String>,
     /// Snapshot identity of the imported seed, not approval.
@@ -117,9 +119,27 @@ pub(super) struct ResultRow {
 }
 
 impl ResultRow {
-    /// A preview requires a usable recorded PR before its declaration can be read.
+    /// A checked local result, independently of whether it declares a preview.
+    pub(super) fn local(&self) -> Option<&super::preview::Local> {
+        self.local.as_ref().ok().and_then(Option::as_ref)
+    }
+
+    /// Freeze the known source for an explicit preview; a PR gap never becomes a guessed URL.
+    pub(super) fn preview_source(&self) -> Option<super::preview::Source> {
+        if let Some(local) = self.local() {
+            return Some(super::preview::Source::Local(local.clone()));
+        }
+        Some(super::preview::Source::GitHub {
+            url: self.url.as_ref().ok()?.clone(),
+            head: self.head.clone()?,
+        })
+    }
+
+    /// Only a known PR or checked local result can supply a preview declaration.
     pub(super) fn preview(&self) -> Result<Option<&super::preview::Spec>, &str> {
-        self.url.as_ref().map_err(|gap| gap.next)?;
+        if self.local.as_ref().map_err(String::as_str)?.is_none() {
+            self.url.as_ref().map_err(|gap| gap.next)?;
+        }
         self.preview
             .as_ref()
             .map(Option::as_ref)
@@ -450,6 +470,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
             title: None,
             head: None,
             merged: false,
+            local: Ok(None),
             preview: Err("Preview identity unknown; press r.".into()),
             seed: String::new(),
             items: Vec::new(),
@@ -514,8 +535,29 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
         if let (Ok(url), Some(head)) = (&row.url, &row.head) {
             row.preview = super::preview::declaration(&root, url, head, stop);
         }
+        if run.get("pr") == Some(&Value::Null) && run["closure"].is_null() {
+            row.local = super::preview::Local::read(&root, run, stop).map(Some);
+            if let Some(local) = row.local() {
+                let head = local.head().to_owned();
+                let declaration = local.declaration(stop);
+                row.head = Some(head);
+                row.preview = declaration;
+                row.items.push(Item {
+                    label: "Independent review".into(),
+                    state: Check::InspectExternally,
+                    kind: "review, not acceptance".into(),
+                    evidence:
+                        "No revision-bound independent review receipt is supplied by the run API"
+                            .into(),
+                });
+            }
+        }
         let supporting_checks = std::mem::take(&mut row.items);
-        local(&root, run, &mut row)?;
+        let source = row
+            .local()
+            .map_or(root.as_path(), |local| local.checkout())
+            .to_path_buf();
+        local(&source, run, &mut row)?;
         row.items.extend(supporting_checks);
         if sdlc::goal(run) != row.goal {
             return Err("Original goal changed while reading; press r.".into());
@@ -573,6 +615,7 @@ mod tests {
             title: None,
             head: Some("a".repeat(40)),
             merged: false,
+            local: Ok(None),
             preview: Err("No preview declared".into()),
             seed: "TEST".into(),
             items: vec![],

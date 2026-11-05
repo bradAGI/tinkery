@@ -102,17 +102,65 @@ fn read_with(
 /// The one shell line that starts a build: change to `root`, create run `run` and import the seed
 /// through `executable`. Paths are canonical and shell-quoted; unsafe paths offer no command.
 fn intake(session: &Path, executable: &Path, run: &str, root: &Path) -> Option<String> {
-    let quote = |path: &Path| {
-        let path = path.canonicalize().ok()?;
-        let path = path.to_str()?;
-        (!path.chars().any(char::is_control)).then(|| format!("'{}'", path.replace('\'', "'\\''")))
-    };
+    let intake = Intake::new(session, executable, run, root)?;
+    let quote = |path: &Path| format!("'{}'", path.to_str().unwrap().replace('\'', "'\\''"));
     Some(format!(
         "cd {} && python3 _system/scripts/sdlc.py new {run} && python3 _system/scripts/sdlc.py stage {run} 1 --seed-contract {} --tinkery {}",
-        quote(root)?,
-        quote(&session.join("seed-contract.md"))?,
-        quote(executable)?,
+        quote(&intake.root),
+        quote(&intake.seed),
+        quote(&intake.executable),
     ))
+}
+
+/// Canonical intake arguments shared by copying and explicitly requested execution.
+/// These paths and the selected seed are rechecked before execution; this is not permission.
+#[derive(Clone, Debug)]
+pub(crate) struct Intake {
+    /// The named checkout, without a shell or unresolved aliases.
+    pub(crate) root: PathBuf,
+    /// The same title-derived run name used by the copied command.
+    pub(crate) slug: String,
+    /// The selected session's verified seed file.
+    pub(crate) seed: PathBuf,
+    /// This Tinkery executable, used by the consumer to verify confirmation.
+    pub(crate) executable: PathBuf,
+}
+
+impl Intake {
+    fn new(session: &Path, executable: &Path, run: &str, root: &Path) -> Option<Self> {
+        let canonical = |path: &Path| {
+            let path = path.canonicalize().ok()?;
+            (!path.to_str()?.chars().any(char::is_control)).then_some(path)
+        };
+        Some(Self {
+            root: canonical(root)?,
+            slug: run.into(),
+            seed: canonical(&path(session))?,
+            executable: canonical(executable)?,
+        })
+    }
+}
+
+/// Revalidate the exact selected seed and return argv data, never parsed shell text.
+/// Disk reads belong on an explicitly requested worker, not the input or paint path.
+pub(crate) fn execution(target: &SeedTarget, root: &Path) -> Result<(Intake, String), String> {
+    use sha2::{Digest, Sha256};
+    let ready = read(&target.session, Some(root))?
+        .filter(|ready| ready.target.as_ref() == Some(target))
+        .ok_or("The selected seed changed or is no longer confirmed. Reopen Approve.")?;
+    let bytes = super::read_seed(&path(&target.session)).map_err(|error| error.to_string())?;
+    if format!("{:x}", Sha256::digest(&bytes)) != target.sha256 {
+        return Err("The selected seed changed before intake. Reopen Approve.".into());
+    }
+    let text = std::str::from_utf8(&bytes).map_err(|error| error.to_string())?;
+    let title = text.lines().find_map(|line| line.strip_prefix("# "));
+    let run = title
+        .and_then(|title| slug(title.strip_prefix("Seed: ").unwrap_or(title)))
+        .ok_or("The selected seed has no usable run name.")?;
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let intake = Intake::new(&target.session, &executable, &run, root)
+        .ok_or("The checkout, seed or Tinkery executable cannot be resolved safely.")?;
+    Ok((intake, ready.goal))
 }
 
 /// Run names stay scannable: whole lowercase ASCII words joined by hyphens, at most

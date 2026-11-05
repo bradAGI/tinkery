@@ -488,6 +488,21 @@ impl Watch {
         watch
     }
 
+    /// Source-selected identity for the menu's separate worker controls; this starts nothing.
+    pub(crate) fn worker_run(&self) -> Option<crate::worker::Run> {
+        let runs = self.runs()?;
+        let run = if let Some((slug, _)) = &self.detail {
+            runs.iter().find(|run| &run.slug == slug)?
+        } else {
+            *ordered(runs).get(self.selected)?
+        };
+        Some(crate::worker::Run {
+            root: self.root.clone()?,
+            slug: run.slug.clone(),
+            id: run.id.clone()?,
+        })
+    }
+
     fn read_list(&mut self) {
         self.inspection = None;
         self.selected = 0;
@@ -666,10 +681,10 @@ impl Watch {
     /// Watch's help: what it reads, when, and what it never does.
     pub(crate) fn help_text(&self) -> &'static str {
         concat!(
-            "Right now\n↑↓ choose · Enter details · r read again · Esc back · ? help\n\n",
+            "Right now\n↑↓ choose · Enter details · r read again · b worker controls · Esc back · ? help\n\n",
             "What Watch does\nIt reads the runs in the tink-sdlc checkout you named with --sdlc-root, ",
             "by running that checkout's own `python3 _system/scripts/sdlc.py status --json` when you open ",
-            "Watch or press r. It never runs verify, mark, decide or stage, and changes nothing.\n\n",
+            "Watch or press r. Watch changes nothing. b opens the separate worker controls; only their named action keys execute work.\n\n",
             "Needs you lists decisions, owed attestations, possible attestation rechecks, workers whose turn ended, ",
             "and failed, interrupted or unreadable runs. Opening or refreshing also reads each run's status to determine attention.\n",
             "Checklist counts separate passed results from how each is checked: automated or by you. ",
@@ -683,9 +698,9 @@ impl Watch {
     /// Paint the list or the open detail into `area`.
     pub(crate) fn render(&mut self, frame: &mut Frame, area: Rect, palette: Palette) {
         let keys = if self.detail.is_some() {
-            "↑↓ PgUp/PgDn Home/End scroll   esc back   r read again   ? help"
+            "↑↓ read   r read again   b worker controls   esc back   ? help"
         } else {
-            "↑↓ choose   enter details   r read again   esc back   ? help"
+            "↑↓ choose   enter details   r read again   b worker   esc back   ? help"
         };
         let body = Rect::new(area.x, area.y, area.width, area.height.saturating_sub(2));
         frame.render_widget(

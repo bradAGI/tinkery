@@ -218,7 +218,7 @@ def main():
         (session / 'seed-contract.md').write_text(
             'status: draft\n# TEST first task\nrevision: r1\n\n## You are confirming\n' + body)
         helper.confirm_seed(session, 'r1', 'confirm')
-        [intake] = blocks('6. Approve: create the run')
+        [intake] = blocks('6. Approve: start the worker in Tinkery')
         run_vars = f"{prelude}seed={session / 'seed-contract.md'}\nrun=my-run\n"
         shell(run_vars + intake, env, root)
         score.append('6 approve')

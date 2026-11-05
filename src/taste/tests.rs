@@ -13,6 +13,7 @@ fn row() -> ResultRow {
         title: Some("TEST clinic allocation comparison".into()),
         head: Some("a".repeat(40)),
         merged: false,
+        local: Ok(None),
         preview: Err("No preview declared".into()),
         receipts_missing: false,
         seed: "TEST-digest".into(),

@@ -34,6 +34,7 @@ pub mod think;
 pub mod think_record;
 pub mod voice;
 pub mod watch;
+mod worker;
 
 /// The narrowest terminal any screen draws for. Below it, a screen says what size it needs and
 /// keeps every word; nothing is laid out half-visible.
