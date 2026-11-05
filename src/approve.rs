@@ -553,12 +553,20 @@ fn origin_note(
                     |name| name.to_string_lossy().into_owned(),
                 )
             };
-            let other = name(&other);
-            let checkout = repo.map_or_else(|| name(root), Repo::name);
-            Some(OriginNote::Different(format!(
-                "Made in {other}, not the checkout you named ({checkout}). \
-                 To start it, reopen Tinkery with --sdlc-root naming {other}."
-            )))
+            let checkout = repo.map_or(root, Repo::root);
+            let origin_name = name(&other);
+            let checkout_name = name(checkout);
+            let reason = if display(&origin_name) == display(&checkout_name) {
+                format!(
+                    "You named {checkout:?}. Reopen Tinkery with --sdlc-root naming {other:?}, where this seed was made."
+                )
+            } else {
+                format!(
+                    "Made in {origin_name}, not the checkout you named ({checkout_name}). \
+                     To start it, reopen Tinkery with --sdlc-root naming {origin_name}."
+                )
+            };
+            Some(OriginNote::Different(reason))
         }
         MadeIn::Repo(_) => None,
         MadeIn::Unknown => Some(OriginNote::Unknown),
