@@ -1,0 +1,55 @@
+{
+  "inputs": "45c3577122a80880bd1f25170c9886f3d44de7e3f9970d4e13d1178318a83ad7",
+  "decision": "approved",
+  "basis": "confirmed-seed",
+  "reviewer": "confirmed-seed binding (automatic)",
+  "source": "runs/watch-codex-progress/seed-contract.md",
+  "seed_binding": {
+    "path": "runs/watch-codex-progress/seed-contract.md",
+    "sha256": "a2297bb82f28a5e1b8d208c55ebde7bd57b699b8af1ca7086929b0bc1b1ab4d2",
+    "source": "/Users/jondev/scratch/tinkery-watch-codex/live/sessions/session-X5IxoH/seed-contract.md",
+    "definitions_sha256": "29ab8efbad6f1a574264af7210b29e320fd812ccf79651cf98b360400c8e3c08",
+    "confirmation": {
+      "schema_version": 3,
+      "checks_sha256": "5534d615d9f9d99ad81c6e214e1d5de035c061bcb898c4d91d0a5fa31187a1ff",
+      "session_id": "session-X5IxoH",
+      "operator": "agent",
+      "revision": "r3",
+      "source": "confirm",
+      "confirmed_at": "2026-11-05T04:54:39.634753+00:00",
+      "seed_sha256": "a2297bb82f28a5e1b8d208c55ebde7bd57b699b8af1ca7086929b0bc1b1ab4d2",
+      "decisions_sha256": "14a7e7efd3452780cabc0e0f2015d9b46ab7a7210f36f51292f706d3a428c0c0",
+      "actor": {
+        "action": "typed confirm at this terminal",
+        "by": "terminal",
+        "declaration": "declared: agent",
+        "identity": "declaration is not verified identity"
+      }
+    },
+    "definitions": [
+      {
+        "cmd": "python3 tests/watch_codex_terminal.py",
+        "cwd": ".",
+        "expect": "exit 0",
+        "kind": "cmd",
+        "source": "probe-pre-mortem; change-to-r1; change-to-r2; tests/watch_codex_terminal.py:22-156; build setup: AGENTS.md:77-105 as recorded in watch-seed-build-12; _system/verification.json:1-6. Proposed until seed confirmation; existing policy supplies the prerequisite build.",
+        "statement": "The public terminal regression covers refresh, binding and refusal cases, age, next steps, and preservation of SDLC attention and closure, using fake data/no provider calls.",
+        "id": "seed-1",
+        "description": "The public terminal regression covers refresh, binding and refusal cases, age, next steps, and preservation of SDLC attention and closure, using fake data/no provider calls.",
+        "origin": "agent-confirmed-seed",
+        "locked": true
+      },
+      {
+        "how_to_judge": "The operator tries the finished isolated result and alone judges it, with regression/reversion and full-suite evidence available. Inspect the last report, observation time and age, reported next step, honest saved-information labeling, and preserved SDLC authority. Automated success is not human acceptance or measured saved effort.",
+        "kind": "judge",
+        "source": "confirmed goal; probe-pre-mortem; change-to-r2",
+        "statement": "Watch shows what Codex last reported, when, and the reported next step; an isolated result is shown for the operator to try; the operator alone judges that final result.",
+        "id": "seed-2",
+        "description": "Watch shows what Codex last reported, when, and the reported next step; an isolated result is shown for the operator to try; the operator alone judges that final result.",
+        "origin": "agent-confirmed-seed",
+        "locked": true
+      }
+    ]
+  },
+  "reason": "matches confirmed seed (sha256: a2297bb82f28a5e1b8d208c55ebde7bd57b699b8af1ca7086929b0bc1b1ab4d2)"
+}

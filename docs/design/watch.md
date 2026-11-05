@@ -59,7 +59,37 @@ verified work. Its detail uses that summary, names the same gap and offers Esc, 
 requesting the unsupported per-run status or inventing gates and checklist counts.
 `r` from this detail rereads the summary and returns to the list. Other invalid reasons
 stay invalid. Watch neither migrates nor edits run files; tink-sdlc is unchanged.
-An agent saying it is done is never evidence; Watch shows only what tink-sdlc computes.
+An agent saying it is done is never verification or acceptance evidence.
+
+## Codex observation
+
+`--codex-report RUN_UUID:CHAT_ID:PATH` binds one saved observation to one run and chat for
+this launch. It requires `--home` and `--sdlc-root`; repeated bindings, empty parts and
+noncanonical UUIDs are refused. The run ID must be UUIDv4. Colons after the second delimiter
+belong to the path. There is no chat discovery, history reading or live connection.
+
+The named UTF-8 JSON file has this format. `next_step` is advice from the reporting agent,
+separate from Codex's observed status:
+
+```json
+{"schema_version":1,"run_id":"00000000-0000-4000-8000-000000000729","thread_id":"00000000-0000-7000-8000-000000000729","observed_at":"2026-11-04T12:00:00Z","status":{"type":"active","activeFlags":[]},"next_step":"Review the terminal result."}
+```
+
+Watch reads it on the existing background detail read, only for the bound run with explicit
+`closure: null`. Closed runs and unknown closure skip it, even if the file is malformed.
+The opened file must be regular and at most 8 KiB; Unix opens are nonblocking so a FIFO
+cannot stall Watch. Both identities must match. Unknown fields, versions, statuses and flags,
+invalid or future RFC3339 times, and empty advice or advice over 512 bytes are refused.
+Unsafe controls are escaped for display. These guarantees belong to `watch::codex`, keeping
+file and status rules behind one boundary, architecture diagnostics 3 and 6.
+
+Accepted statuses are `active` with `activeFlags` containing only `waitingOnApproval` or
+`waitingOnUserInput`, `idle`, `notLoaded` and `systemError`. Watch labels every observation
+`Codex last reported`, keeps its original timestamp and age across refresh, and directs the
+operator to the named chat for current status. Age alone does not invalidate an observation.
+Idle is not proof of completion. Waiting, unknown or unavailable reports lead under Needs you,
+without creating attestations or changing SDLC state. `SDLC next` stays separate from
+`Codex suggests`; SDLC gates, failures and closure retain their own meaning.
 
 ## Needs you first
 
@@ -81,8 +111,8 @@ only if the change affects it. Automatic pending checks alone do not demand a pe
 A worker whose turn ended also leads: tink-sdlc's `steps` report each pinned build step and,
 for an active one, its `turn`, and its next action says to read the report. Rows add
 `worker running`, `worker's turn ended` or `worker state unknown`; a run awaiting building
-with no active step says `no worker running`, so a run that exists is never mistaken for work
-in progress. Detail lists each step. A tink-sdlc without `steps` adds nothing; an unfamiliar
+with no active step says `no active worker step`. This says nothing about work outside those
+steps. Detail lists each step. A tink-sdlc without `steps` adds nothing; an unfamiliar
 step state or turn refuses the read.
 
 This interpretation follows API 1's `checklist_view` and `status_state` in
@@ -92,7 +122,8 @@ missing or unfamiliar fields are not quiet. Each group keeps tink-sdlc's order. 
 retain tink-sdlc's `next_action` (or the invalid run's reason). Under them, show
 only the goal's first line verbatim, or its unknown line, indented four spaces in ink.
 A known no-seed run adds nothing. Quiet runs stay exactly one clipped line, without
-a goal or seed-status sub-line. Selected-row scrolling accounts for wrapped needs-you
+a goal or seed-status sub-line, except the bound Codex row adds its SDLC next action and
+saved observation. Selected-row scrolling accounts for wrapped needs-you
 sub-lines and keeps the selected run visible.
 
 A run's detail keeps the full matched goal, wrapped and untrimmed, escaping unsafe
@@ -129,6 +160,11 @@ older runs missing canonical IDs, summary refresh and no unsupported detail call
 Unit tests cover all three goal states in list/detail, exact first-line indentation,
 full detail words, wide quiet rows and selected-row scrolling. Stubs prove
 mechanics, not operator dogfood.
+
+[The Codex terminal journey](../../tests/watch_codex_terminal.py) checks the explicit binding,
+reported states and advice, original age after refresh, invalid and unavailable files,
+closed runs and unchanged source bytes at 100x30 and 80x24 with NO_COLOR. It uses saved
+fake observations and no provider calls; it cannot establish current chat activity.
 
 The three-way goal reading and compact list/detail split improve architecture diagnostics
 2 and 6: absence cannot masquerade as a failed match, and display rules stay behind

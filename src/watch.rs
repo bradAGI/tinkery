@@ -1,11 +1,15 @@
 //! Watch: the runs in the one tink-sdlc checkout the operator named, read through its own
 //! list and per-run `status --json` (API 1) when Watch opens or the operator presses `r`. Runs waiting on a
-//! person come first; the rest get one quiet line. It never runs verify, mark, decide, stage or
+//! person come first. An optional bound Codex report adds a saved observation, never live status
+//! or completion evidence. It never runs verify, mark, decide, stage or
 //! any write, discovers no checkout, polls nothing, and refuses an interface or state it doesn't
 //! know rather than guess.
 
+mod codex;
 #[cfg(test)]
 mod tests;
+
+pub use codex::CodexReport;
 
 use std::{
     path::{Path, PathBuf},
@@ -98,6 +102,7 @@ struct Run {
     total: u64,
     attention: Option<Attention>,
     goal: Goal,
+    codex: Option<codex::Observation>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -122,7 +127,7 @@ enum Worker {
 impl Worker {
     fn words(self) -> &'static str {
         match self {
-            Self::Idle => "no worker running",
+            Self::Idle => "no active worker step",
             Self::Running => "worker running",
             Self::Ended => "worker's turn ended",
             Self::Unknown => "worker state unknown",
@@ -133,6 +138,10 @@ impl Worker {
 impl Run {
     fn needs_you(&self) -> bool {
         self.state.needs_you()
+            || self
+                .codex
+                .as_ref()
+                .is_some_and(codex::Observation::needs_you)
             || self.attention.as_ref().is_some_and(|a| {
                 a.gate || a.owed > 0 || a.recheck > 0 || a.worker == Some(Worker::Ended)
             })
@@ -160,6 +169,7 @@ struct Detail {
     /// One line per pinned build step, or None when this tink-sdlc doesn't report steps.
     steps: Option<Vec<String>>,
     errors: Vec<String>,
+    codex: Option<codex::Observation>,
 }
 
 fn state(value: &Value) -> Result<State, String> {
@@ -260,6 +270,7 @@ fn parse_list(output: &str) -> Result<Vec<Run>, String> {
                 state,
                 attention: None,
                 goal: sdlc::goal(run),
+                codex: None,
             })
         })
         .collect()
@@ -361,6 +372,7 @@ fn parse_run_detail(run: &Value) -> Result<Detail, String> {
         attention,
         checklist,
         steps: steps.map(|(lines, _)| lines),
+        codex: None,
         errors: run["errors"]
             .as_array()
             .ok_or("The run has no errors list.")?
@@ -375,7 +387,7 @@ fn parse_run_detail(run: &Value) -> Result<Detail, String> {
 }
 
 /// Read only details with the list's original slug and ID; refresh is always explicit.
-fn read_run(root: &Path, run: Run, deadline: Duration) -> Load<Detail> {
+fn read_run(root: &Path, run: Run, deadline: Duration, codex: Option<CodexReport>) -> Load<Detail> {
     let root = root.to_path_buf();
     Load::Reading(Read::task(move |cancel| {
         let output = sdlc::status(
@@ -394,7 +406,12 @@ fn read_run(root: &Path, run: Run, deadline: Duration) -> Load<Detail> {
                 "Run identity changed or is missing. Press r on the runs screen to refresh.".into(),
             );
         }
-        parse_run_detail(detail)
+        let mut parsed = parse_run_detail(detail)?;
+        // Only an explicit open run can carry chat activity. Closure and unknown closure win.
+        if detail.get("closure") == Some(&Value::Null) {
+            parsed.codex = codex.and_then(|source| source.for_run(run.id.as_deref().unwrap()));
+        }
+        Ok(parsed)
     }))
 }
 
@@ -440,12 +457,19 @@ pub(crate) struct Watch {
     scroll: u16,
     page: u16,
     deadline: Duration,
+    codex: Option<CodexReport>,
 }
 
 impl Watch {
     /// Watch over `root`, reading its runs now; without a root it only says how to name one.
     pub(crate) fn open(root: Option<PathBuf>) -> Self {
         Self::with_deadline(root, DEADLINE)
+    }
+
+    /// Add only the report explicitly bound at launch; opening Watch never discovers a chat.
+    pub(crate) fn with_codex_report(mut self, report: Option<CodexReport>) -> Self {
+        self.codex = report;
+        self
     }
 
     fn with_deadline(root: Option<PathBuf>, deadline: Duration) -> Self {
@@ -458,6 +482,7 @@ impl Watch {
             scroll: 0,
             page: 1,
             deadline,
+            codex: None,
         };
         watch.read_list();
         watch
@@ -514,6 +539,7 @@ impl Watch {
                         run.total = (detail.proven + detail.attested) as u64;
                         run.attention = Some(detail.attention);
                         run.goal = detail.goal;
+                        run.codex = detail.codex;
                     }
                 }
                 Err(why) => {
@@ -531,7 +557,10 @@ impl Watch {
             })
             && let Some(root) = &self.root
         {
-            self.inspection = Some((index, read_run(root, runs[index].clone(), self.deadline)));
+            self.inspection = Some((
+                index,
+                read_run(root, runs[index].clone(), self.deadline, self.codex.clone()),
+            ));
         }
     }
 
@@ -619,6 +648,7 @@ impl Watch {
                         checklist: Vec::new(),
                         steps: None,
                         errors: Vec::new(),
+                        codex: None,
                     }),
                     at,
                 ),
@@ -628,7 +658,7 @@ impl Watch {
                 .runs()
                 .and_then(|runs| runs.iter().find(|run| run.slug == slug))
         {
-            let read = read_run(root, run.clone(), self.deadline);
+            let read = read_run(root, run.clone(), self.deadline, self.codex.clone());
             self.detail = Some((slug, read));
         }
     }
@@ -644,6 +674,8 @@ impl Watch {
             "and failed, interrupted or unreadable runs. Opening or refreshing also reads each run's status to determine attention.\n",
             "Checklist counts separate passed results from how each is checked: automated or by you. ",
             "A proof kind does not mean the item passed.\n",
+            "A --codex-report binding adds one saved chat observation and advice. Its original time stays visible; ",
+            "check that chat for current status. Waiting, unknown or unavailable reports also need your attention.\n",
             "In details: ↑↓, PgUp/PgDn and Home/End scroll the whole evidence and errors."
         )
     }
@@ -763,7 +795,10 @@ impl Watch {
                                 palette.ink,
                             ));
                         }
-                        lines.push(Line::styled(format!("    {}", run.next), palette.muted));
+                        lines.push(Line::styled(
+                            format!("    SDLC next: {}", run.next),
+                            palette.muted,
+                        ));
                         if run.goal != Goal::NoSeed && run.state != State::Older {
                             let first = goal_text(&run.goal).split('\n').next().unwrap_or("");
                             lines.extend(goal_lines(&format!("    {first}"), palette));
@@ -785,6 +820,17 @@ impl Watch {
                         ]);
                         clip_line(&mut line, body.width as usize);
                         lines.push(line);
+                    }
+                    if let Some(report) = &run.codex {
+                        if !run.needs_you() {
+                            lines.push(Line::styled(
+                                format!("    SDLC next: {}", run.next),
+                                palette.muted,
+                            ));
+                        }
+                        for line in report.lines(false) {
+                            lines.extend(goal_lines(&format!("    {line}"), palette));
+                        }
                     }
                 }
             }
@@ -892,7 +938,7 @@ fn detail_text<'a>(slug: &str, detail: &Load<Detail>, palette: Palette) -> Text<
             lines.extend(goal_lines(goal_text(&d.goal), palette));
             lines.push(Line::default());
             lines.push(Line::styled(d.state.words(), palette.ink.bold()));
-            lines.push(Line::styled(format!("Next: {}", d.next), palette.ink));
+            lines.push(Line::styled(format!("SDLC next: {}", d.next), palette.ink));
             for step in d.steps.iter().flatten() {
                 lines.push(Line::styled(step.clone(), palette.ink));
             }
@@ -927,6 +973,12 @@ fn detail_text<'a>(slug: &str, detail: &Load<Detail>, palette: Palette) -> Text<
             }
             for error in &d.errors {
                 lines.push(Line::styled(format!("! {error}"), palette.rust));
+            }
+            if let Some(report) = &d.codex {
+                lines.push(Line::default());
+                for line in report.lines(true) {
+                    lines.extend(goal_lines(&line, palette));
+                }
             }
         }
     }

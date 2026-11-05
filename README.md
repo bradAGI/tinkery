@@ -70,7 +70,9 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
 - **Watch:** with `--sdlc-root PATH`, reads that tink-sdlc checkout's runs through its own
   `status --json` when opened or on `r`, runs waiting on you first. Matched runs show their
   exact saved goal; changed or missing originals stay unknown. It runs only read-only
-  status commands and changes no records.
+  status commands and changes no records. An optional `--codex-report RUN_UUID:CHAT_ID:PATH`
+  adds one saved Codex observation and suggested next step, with its original time and age.
+  It is not a live connection. See [Watch](docs/design/watch.md#codex-observation).
 - **Taste:** menu place 6 uses `--sdlc-root PATH`. `r` explicitly reads runs and the PR
   each run recorded with `sdlc.py pr`; handoff prose supplies no links.
   The list pairs each available result title with a goal excerpt. Open a result to see
