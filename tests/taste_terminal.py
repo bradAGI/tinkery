@@ -366,7 +366,9 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             # Among several human checks, show the first active, pending one.
             checklist = state['detail']['run']['checklist']
             automatic, human = checklist
-            checklist[:] = [automatic,
+            worker = {**human, 'id': 'TEST-worker', 'verify': 'TEST worker smoke check'}
+            del worker['operator_attestation']
+            checklist[:] = [automatic, worker,
                             {**human, 'id': 'TEST-passed', 'verify': 'TEST previous observation',
                              'status': 'passed', 'mark': {'evidence': 'TEST checked'}, 'needs_recheck': True},
                             {**human, 'id': 'TEST-inactive', 'verify': 'TEST provisional', 'pending': True},
@@ -375,10 +377,12 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                             human, {**human, 'id': 'TEST-second', 'verify': 'TEST second criterion'}]
             reread()
             assert '2 pending human checks' in screen.text() and human['verify'] in screen.text(), screen.text()
-            for hidden in ['TEST previous observation', 'TEST provisional', 'TEST marked unknown',
+            for hidden in [worker['verify'], 'TEST previous observation', 'TEST provisional', 'TEST marked unknown',
                            'TEST second criterion', 'Is this good?']:
                 assert hidden not in screen.text(), screen.text()
             send(b'e', 'TEST second criterion')
+            owed, checks = screen.text().split('Checks', 1)
+            assert worker['verify'] not in owed and worker['verify'] in checks, screen.text()
             send(b'e', 'What to judge')
             checklist[:] = [automatic, human]
             # Fully green open PRs still need external human review; never filter them away.

@@ -57,7 +57,10 @@ Counts are observations, never an aggregate done/approved verdict.
 Enter opens the review. The PR title, merge state and preview offer come first so the
 command and URL stay visible before `v`. **What to judge** shows the first active human
 check the run reports as pending for the known result. It uses the source's exact
-wording. If several are pending, the review gives the total and `e` shows them all.
+wording. Only an explicit `operator_attestation: true` identifies a human check in
+API 1. A manual check with the flag absent or false stays in Checks and Evidence,
+and can inform Next. If several human checks are pending, the review gives the total
+and `e` shows them all.
 With no such check, the review asks **Is this good?** A missing receipt set, an
 unknown revision, or a previous human mark of unknown, failed or passed with a
 recheck does not supply a pending criterion.
@@ -103,7 +106,7 @@ or unfamiliar outcomes are not passes. Independent review remains pending for
 external inspection because API 1 supplies no revision-bound independent review
 receipt. This is separate from automated proof and operator acceptance.
 
-When the run report has no verification receipt, no decisions, no human marks and
+When the run report has no verification receipt, no decisions, no checklist marks and
 only default pending gates, its local checks and gate obligations say
 **unknown: receipts not found here**, never owed, pending or waiting. This cannot
 distinguish a never-verified run from receipts left in another checkout. The list
@@ -115,7 +118,7 @@ are not supported. Runs reporting receipt evidence retain normal derivation.
 GitHub observations and independent review remain separate from these local gaps.
 
 Owed gates use plain actions: “approve the plan” or “re-approve the plan,” plus
-owed manual expectations in their source words, never checklist IDs or seed jargon.
+owed human expectations in their source words, never checklist IDs or seed jargon.
 Evidence in details gives one item per block with indentation and blank space. It retains full check wording, raw reported states, method owners, human
 marks and source diagnostics. No source fact is deleted. Evidence and the
 unchanged copied request retain each automatic item's API 1
