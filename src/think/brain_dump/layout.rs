@@ -72,7 +72,7 @@ pub(super) fn render(frame: &mut Frame, app: &mut BrainDump, palette: Palette) {
     let area = frame.area();
     app.screen.area = area;
     frame.render_widget(Block::default().style(palette.ink), area);
-    if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
+    if app.below_minimum() {
         frame.render_widget(
             Paragraph::new(if app.screen.help {
                 "Help\nF1 or Esc returns. Esc again goes back to the menu.\nResize to 80×24. Words retained."

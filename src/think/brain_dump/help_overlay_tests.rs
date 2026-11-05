@@ -96,6 +96,7 @@ fn ten_actions_keep_model_and_calls_reachable_without_spending_calls() {
             let mut app = BrainDump::with_host(host.clone())
                 .with_sessions(Some(root.path().join("TEST-sessions")));
             let words = "Keep my exact repair-log words.";
+            snapshot(width, height, &mut app, mono).unwrap();
             app.paste(words);
             key(&mut app, KeyCode::F(2));
             let deadline = Instant::now() + Duration::from_secs(5);

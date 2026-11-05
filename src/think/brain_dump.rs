@@ -840,10 +840,12 @@ impl BrainDump {
             }
         }
     }
+    fn below_minimum(&self) -> bool {
+        self.screen.area.width < MIN_WIDTH || self.screen.area.height < MIN_HEIGHT
+    }
     // A size warning hides the review: retain its words and read position until it is visible.
     fn review_below_minimum(&self) -> bool {
-        self.handoff.review().is_some()
-            && (self.screen.area.width < MIN_WIDTH || self.screen.area.height < MIN_HEIGHT)
+        self.handoff.review().is_some() && self.below_minimum()
     }
     /// Bracketed paste into whatever has focus. Never sends.
     pub fn paste(&mut self, text: &str) {
@@ -915,11 +917,15 @@ impl BrainDump {
         }
         .into();
     }
-    /// One key press. Releases are ignored; navigation and copying never send or save.
+    /// One key press. Releases and F2 below the minimum size are ignored;
+    /// navigation and copying never send or save.
     pub fn handle_key(&mut self, key: KeyEvent) {
         self.shaping.encoded_bytes = None;
         self.conversation.forget_changes();
         if key.kind == KeyEventKind::Release {
+            return;
+        }
+        if key.code == KeyCode::F(2) && self.below_minimum() {
             return;
         }
         if !self.screen.help && key.code != KeyCode::F(1) {

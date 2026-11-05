@@ -31,6 +31,7 @@ fn attach(a: BrainDump) -> (BrainDump, Rc<RefCell<Fake>>) {
         .push_back(Event::Ready { version: 1 });
     let mut a = a.with_voice(Box::new(fake.clone()));
     a.tick();
+    snapshot(100, 30, &mut a, false).unwrap();
     (a, fake)
 }
 fn key(a: &mut BrainDump, code: KeyCode) {

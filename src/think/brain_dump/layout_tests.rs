@@ -722,6 +722,7 @@ fn empty_send_is_visible_without_a_request_and_typing_clears_it() {
             let mut a = board();
             let original = serde_json::to_value(a.conversation.sources()).unwrap();
             let goal = a.conversation.board().unwrap().parts.compose();
+            snapshot(w, h, &mut a, no_color).unwrap();
             key(&mut a, KeyCode::F(2));
             assert!(right_text(&snapshot(w, h, &mut a, no_color).unwrap(), w).contains(NOTICE));
             assert_eq!(
