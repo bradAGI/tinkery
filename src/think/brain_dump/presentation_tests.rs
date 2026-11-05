@@ -125,6 +125,40 @@ fn hidden_and_unacknowledged_frames_do_not_establish_presentation() {
 }
 
 #[test]
+fn scrolled_review_counts_the_visible_spelling_of_direction_controls() {
+    struct Echo;
+    impl BoardHost for Echo {
+        fn reshape(&self, request: BoardRequest, cancelled: &AtomicBool) -> Result<Guess, String> {
+            let outcome = request.sources[0].text.clone();
+            let mut guess = Simulated.reshape(request, cancelled)?;
+            guess.parts.outcome = Some(outcome);
+            Ok(guess)
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let mut app =
+        BrainDump::with_host(Arc::new(Echo)).with_sessions(Some(root.path().join("TEST-sessions")));
+    send(
+        &mut app,
+        &format!("archive report{}cod.exe", "\u{202e}".repeat(160)),
+    );
+    app.review_goal();
+    snapshot(80, 24, &mut app, true).unwrap();
+    for _ in 0..2 {
+        app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+    }
+    let frame = snapshot(80, 24, &mut app, true).unwrap();
+    assert!(
+        frame.contains("\\u{202e}") && !frame.contains("You are confirming"),
+        "{frame}"
+    );
+    assert!(
+        app.presentation().is_some(),
+        "The scrolled goal is visible."
+    );
+}
+
+#[test]
 fn partial_readings_distinguish_deferred_content_from_a_heading_and_long_question() {
     struct Partial(bool);
     impl BoardHost for Partial {
