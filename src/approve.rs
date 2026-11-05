@@ -1,5 +1,5 @@
-//! Approve prepares manual intake from verified seeds, one at a time. It never approves,
-//! creates a run or changes a session. The menu supplies discovery; one retained worker verifies
+//! Approve reads verified seeds and offers copying or an explicit worker-start review.
+//! Opening, navigating and copying never execute work. One retained reader verifies
 //! seeds off the paint path, and abandoned visits cannot receive its results.
 
 #[cfg(test)]
@@ -45,6 +45,7 @@ struct Reading {
 
 #[derive(Default)]
 struct Found {
+    checkout: Option<PathBuf>,
     target_failure: Option<String>,
     seeds: Vec<Reading>,
     unavailable: usize,
@@ -105,6 +106,7 @@ impl Reader {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let resolved_root = root.as_deref().and_then(|root| root.canonicalize().ok());
+            found.checkout = resolved_root.clone();
             let checkout = resolved_root.as_deref();
             let repo = checkout.and_then(Repo::enclosing);
             let origins = checkout.and_then(|_| {
@@ -213,6 +215,7 @@ pub(crate) struct Approve {
     page: u16,
     help_scroll: u16,
     copy: Option<String>,
+    worker_request: Option<(ReadySeed, PathBuf)>,
     notice: &'static str,
 }
 
@@ -229,6 +232,7 @@ impl Approve {
             page: 1,
             help_scroll: 0,
             copy: None,
+            worker_request: None,
             notice: "",
         }
     }
@@ -295,6 +299,11 @@ impl Approve {
         self.copy.take()
     }
 
+    /// Take the deliberate request to review a worker start; this does not execute it.
+    pub(crate) fn take_worker_request(&mut self) -> Option<(ReadySeed, PathBuf)> {
+        self.worker_request.take()
+    }
+
     /// Show clipboard transport feedback, not a claim of host clipboard verification.
     pub(crate) fn copy_result(&mut self, sent: bool) {
         self.notice = if sent {
@@ -309,7 +318,7 @@ impl Approve {
         if key.kind == KeyEventKind::Repeat
             && matches!(
                 key.code,
-                KeyCode::Char('c' | '?' | 'n' | 'p') | KeyCode::F(1)
+                KeyCode::Char('b' | 'c' | '?' | 'n' | 'p') | KeyCode::F(1)
             )
         {
             return false;
@@ -342,6 +351,17 @@ impl Approve {
                 self.scroll = 0;
                 self.notice = "";
             }
+            KeyCode::Char('b') => {
+                if let Some(Ok(found)) = &self.found
+                    && found.start_unknown.is_none()
+                    && let Some(root) = &found.checkout
+                    && let Some(reading) = found.seeds.get(self.selected)
+                    && reading.seed.commands.is_some()
+                    && reading.seed.target.is_some()
+                {
+                    self.worker_request = Some((reading.seed.clone(), root.clone()));
+                }
+            }
             KeyCode::Char('c') => {
                 self.copy = self
                     .seeds()
@@ -365,7 +385,7 @@ impl Approve {
             keys = "↑↓ scroll   esc close help";
             lines.push(Line::styled("Right now", palette.jade));
             lines.push(Line::raw(
-                "n/p choose seed · ↑↓ or PgUp/PgDn read · c copy command",
+                "n/p choose seed · ↑↓ or PgUp/PgDn read · b review worker start · c copy command",
             ));
             lines.push(Line::raw(if self.target.is_some() {
                 "Esc returns to Shape. F10 returns to the menu even from help."
@@ -373,7 +393,7 @@ impl Approve {
                 "Esc returns to the menu. F10 returns to the menu even from help."
             }));
             lines.push(Line::default());
-            lines.push(Line::raw("Copying starts nothing and grants no approval. Run creation and intake happen outside Tinkery; tink-sdlc keeps its definition approval gate."));
+            lines.push(Line::raw("Copying starts nothing and grants no approval. b reviews a worker start; only F2 there authorizes execution. tink-sdlc keeps its definition approval gate."));
             lines.push(Line::raw("Return to the menu and reopen Approve for a fresh read. Seeds are oldest first by the session update time."));
             lines.push(Line::raw(
                 "Seeds already recorded by a run move to Watch. Only the original location and unchanged contents establish a match.",
@@ -419,7 +439,11 @@ impl Approve {
                     if let Some(reading) = found.seeds.get(self.selected) {
                         let seed = &reading.seed;
                         keys = if seed.commands.is_some() {
-                            "n/p seed   ↑↓ read   c copy command   esc back   ? help"
+                            if found.start_unknown.is_none() && seed.target.is_some() {
+                                "b review start   c copy command   n/p seed   ↑↓ read   esc back   ? help"
+                            } else {
+                                "n/p seed   ↑↓ read   c copy command   esc back   ? help"
+                            }
                         } else {
                             "n/p seed   ↑↓ read   esc back   ? help"
                         };
@@ -443,7 +467,7 @@ impl Approve {
                             lines.push(Line::raw(display(line)));
                         }
                         lines.push(Line::styled(
-                            "Manual handoff · not approval to implement",
+                            "Choose how to start · seed confirmation is not implementation permission",
                             palette.muted,
                         ));
                         if let Some(note) = &seed.confirmation_note {
@@ -463,7 +487,7 @@ impl Approve {
                         }
                         if seed.commands.is_some() {
                             lines.push(Line::raw(
-                                "Paste this command to create the titled run and import its checks for definition review. Copying runs nothing."
+                                "b reviews an explicit worker start. Or copy this command for a manual handoff. Copying runs nothing."
                             ));
                         }
                         if let Some(commands) = &seed.commands {

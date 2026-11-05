@@ -210,21 +210,17 @@ impl Taste {
             }
             KeyCode::Char('v') if self.preview.is_none() => {
                 if let Some(row) = self.rows.get(self.selected) {
-                    match (row.preview(), &row.url, &row.head) {
-                        (Ok(Some(spec)), Ok(url), Some(head)) => {
-                            self.preview = Some(preview::Preview::start(
-                                url.clone(),
-                                head.clone(),
-                                spec.clone(),
-                            ));
+                    match (row.preview(), row.preview_source()) {
+                        (Ok(Some(spec)), Some(source)) => {
+                            self.preview = Some(preview::Preview::start(source, spec.clone()));
                             self.notice.clear();
                             self.scroll = 0;
                         }
-                        (Ok(None), _, _) => {
+                        (Ok(None), _) => {
                             self.notice =
                                 format!("{} ? says how to add one.", preview::NO_DECLARATION)
                         }
-                        (Err(why), _, _) => self.notice = why.into(),
+                        (Err(why), _) => self.notice = why.into(),
                         _ => self.notice = "Result identity unknown; press r.".into(),
                     }
                 }
@@ -272,6 +268,11 @@ impl Taste {
                                 command.args(["pr", "view", &url, "--web"]);
                                 sdlc::execute(&root, command, stop, DEADLINE).map(|_| ())
                             }));
+                        }
+                        Err(_) if row.local().is_some() => {
+                            self.notice =
+                                "This local result has no PR. Use v to try its declared preview."
+                                    .into();
                         }
                         Err(gap) => self.notice = gap.next.into(),
                     }
@@ -471,6 +472,20 @@ impl Taste {
         } else {
             ""
         };
+        let handoffs = if selected.is_some_and(|row| row.url.is_ok()) {
+            "a/c copy accept/correct requests · l report a person's prior acceptance\n"
+        } else {
+            ""
+        };
+        let after = if selected.is_some_and(|row| row.url.is_ok()) {
+            concat!(
+                "After external acceptance\nUse l only if a person already accepted this result elsewhere.\n",
+                "This unverified report stays in this view and saves no verdict.\n",
+                "t drafts Next. Copying and green checks never imply acceptance or a merge."
+            )
+        } else {
+            ""
+        };
         let preview = selected.map_or("", |row| match row.preview() {
             Ok(Some(_)) => "v runs the project's preview at its exact commit; Esc stops it",
             Ok(None) => preview::NO_DECLARATION,
@@ -489,15 +504,14 @@ impl Taste {
             concat!(
                 "Right now\nq goes back to the menu · F10 Home · ? / Esc close help\n",
                 "{}{}e details: checks, goal, IDs, evidence · n/p result\n",
-                "{}\na/c copy accept/correct requests · l report a person's prior acceptance\n\n",
+                "{}\n{}\n",
                 "Verdict\n{}\n\n",
-                "What Taste reads\nOnly r reads the checkout's run status, each run's recorded PR and\n",
-                "its preview file, with gh and your login. Nothing is written or launched.\n{}\n",
-                "After external acceptance\nUse l only if a person already accepted this result elsewhere.\n",
-                "This unverified report stays in this view and saves no verdict.\n",
-                "t drafts Next. Copying and green checks never imply acceptance or a merge."
+                "What Taste reads\nr reads run status and committed preview declarations.\n",
+                "Recorded PRs use gh and your login; checked local results use Git.\n",
+                "v rechecks local source identity before running the disclosed preview.\n",
+                "Reading starts no preview, agent or model request.\n{}\n{}"
             ),
-            open_result, open_pr, preview, verdict, declaration
+            open_result, open_pr, preview, handoffs, verdict, declaration, after
         )
     }
 
@@ -663,6 +677,9 @@ fn result_lines(row: &ResultRow) -> Vec<String> {
 }
 
 fn handoff(row: &ResultRow, action: char) -> Result<String, &'static str> {
+    if row.local().is_some() {
+        return Err("This local result has no PR. Use v to try its declared preview.");
+    }
     if !matches!(row.goal, Goal::Matched(_)) || row.id.is_empty() {
         return Err("Goal/run identity unknown; repair sources and press r before copying.");
     }

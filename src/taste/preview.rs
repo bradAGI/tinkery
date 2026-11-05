@@ -3,11 +3,12 @@
 
 use crate::sdlc::{self, DEADLINE, Read};
 use serde::Deserialize;
+use serde_json::Value;
 use std::{
     io::{Read as _, Write as _},
     net::{SocketAddr, TcpStream},
     os::unix::process::CommandExt,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
         Arc, Mutex,
@@ -19,6 +20,166 @@ use std::{
 
 /// Exact-head 404: help explains how to add the absent declaration.
 pub(super) const NO_DECLARATION: &str = "No preview for this project.";
+
+/// A source-owned local result, bound to its run, checked commit, receipt and original goal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Local {
+    root: PathBuf,
+    checkout: PathBuf,
+    slug: String,
+    id: String,
+    head: String,
+    receipt: Value,
+    seed: Value,
+    goal: sdlc::Goal,
+}
+
+impl Local {
+    /// Require a current checked commit whose source files are committed; run evidence is separate.
+    pub(super) fn read(root: &Path, run: &Value, stop: &AtomicBool) -> Result<Self, String> {
+        if run.get("pr") != Some(&Value::Null) || !run["closure"].is_null() {
+            return Err("This run is not an open local result; press r.".into());
+        }
+        let receipt = &run["verification"];
+        if run["verification_status"] != "current"
+            || receipt["passed"] != true
+            || receipt["result"] != "passed"
+        {
+            return Err("Local preview needs a current passed verification. Commit and verify, then press r.".into());
+        }
+        let head = receipt["candidate"]["head"]
+            .as_str()
+            .filter(|head| head.len() == 40 && head.bytes().all(|b| b.is_ascii_hexdigit()))
+            .ok_or("Local result commit is unknown; commit and verify, then press r.")?;
+        let source = match run.get("checkout") {
+            None => root,
+            Some(value) => Path::new(
+                value
+                    .as_str()
+                    .filter(|s| !s.contains('\0'))
+                    .ok_or("Local result checkout is invalid; inspect the run and press r.")?,
+            ),
+        };
+        if !source.is_absolute() {
+            return Err(
+                "Local result checkout must be absolute; inspect the run and press r.".into(),
+            );
+        }
+        let checkout = source
+            .canonicalize()
+            .map_err(|_| "Local result checkout is unavailable.")?;
+        let actual = git(&checkout, &["rev-parse", "--show-toplevel"], false, stop)?;
+        if Path::new(actual.trim()) != checkout {
+            return Err(
+                "Local result checkout is not its Git root; inspect the run and press r.".into(),
+            );
+        }
+        let paths = [".", ":(exclude)runs"];
+        let mut diff = vec![
+            "diff",
+            "--quiet",
+            "--no-ext-diff",
+            "--no-textconv",
+            head,
+            "--",
+        ];
+        diff.extend(paths);
+        git(&checkout, &diff, false, stop).map_err(
+            |_| "Local source differs from the checked commit. Commit and verify, then press r.",
+        )?;
+        let mut untracked = vec!["ls-files", "--others", "--exclude-standard", "-z", "--"];
+        untracked.extend(paths);
+        if !git(&checkout, &untracked, false, stop)?.is_empty() {
+            return Err(
+                "Local source has uncommitted files. Commit and verify, then press r.".into(),
+            );
+        }
+        Ok(Self {
+            root: root.to_path_buf(),
+            checkout,
+            slug: run["slug"]
+                .as_str()
+                .ok_or("Local run locator is unknown.")?
+                .into(),
+            id: run["run_id"]
+                .as_str()
+                .ok_or("Local run identity is unknown.")?
+                .into(),
+            head: head.into(),
+            receipt: receipt.clone(),
+            seed: run["seed_contract"].clone(),
+            goal: sdlc::goal(run),
+        })
+    }
+
+    /// The exact checked commit, never a newer checkout HEAD or inferred branch.
+    pub(super) fn head(&self) -> &str {
+        &self.head
+    }
+
+    /// The source-owned checkout, shown as local result provenance.
+    pub(super) fn checkout(&self) -> &Path {
+        &self.checkout
+    }
+
+    /// Read the committed blob only; a working-tree edit or symlink cannot supply a command.
+    pub(super) fn declaration(&self, stop: &AtomicBool) -> Result<Option<Spec>, String> {
+        let found = git(
+            &self.checkout,
+            &[
+                "ls-tree",
+                "--name-only",
+                &self.head,
+                "--",
+                "tinkery.preview",
+            ],
+            false,
+            stop,
+        )?;
+        if found.trim().is_empty() {
+            return Ok(None);
+        }
+        let blob = git(
+            &self.checkout,
+            &["show", &format!("{}:tinkery.preview", self.head)],
+            false,
+            stop,
+        )?;
+        Spec::parse(&blob).map(Some)
+    }
+
+    fn recheck(&self, stop: &AtomicBool) -> Result<(), String> {
+        let output = sdlc::status(
+            &self.root,
+            &["status".into(), self.slug.clone(), "--json".into()],
+            stop,
+            DEADLINE,
+        )?;
+        let value = sdlc::envelope(&output)?;
+        if Self::read(&self.root, &value["run"], stop)? != *self {
+            return Err(
+                "Local result changed since reading. Press r before running its preview.".into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+/// An explicit PR result or a current checked local result; never a guessed repository.
+#[derive(Clone, Debug)]
+pub(super) enum Source {
+    GitHub { url: String, head: String },
+    Local(Local),
+}
+
+impl Source {
+    fn head(&self) -> &str {
+        match self {
+            Self::GitHub { head, .. } => head,
+            Self::Local(local) => local.head(),
+        }
+    }
+}
 
 /// A declared shell line and loopback-only HTTP address from the exact result commit.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -120,13 +281,13 @@ pub(super) struct Preview {
 
 impl Preview {
     /// Start only after the explicit v action, using the already-disclosed declaration.
-    pub(super) fn start(url: String, head: String, spec: Spec) -> Self {
+    pub(super) fn start(source: Source, spec: Spec) -> Self {
         let status = Arc::new(Mutex::new(
             "Preparing temporary exact-commit checkout… Esc stops.".into(),
         ));
         let progress = status.clone();
         let worker = Read::task(move |stop| {
-            if let Err(why) = run(&url, &head, &spec, stop, &progress) {
+            if let Err(why) = run(&source, &spec, stop, &progress) {
                 *progress.lock().unwrap() =
                     format!("Preview stopped: {why} Press Esc, then v to retry.");
             }
@@ -156,60 +317,80 @@ impl Drop for Process {
     }
 }
 
+fn git(root: &Path, args: &[&str], github: bool, stop: &AtomicBool) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command.args([
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "core.fileMode=true",
+        "-c",
+        "credential.helper=",
+    ]);
+    if github {
+        command.args(["-c", "credential.helper=!gh auth git-credential"]);
+    }
+    command
+        .args(args)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    for key in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG_COUNT",
+    ] {
+        command.env_remove(key);
+    }
+    sdlc::execute(root, command, stop, DEADLINE)
+}
+
 fn run(
-    url: &str,
-    head: &str,
+    source: &Source,
     spec: &Spec,
     stop: &AtomicBool,
     progress: &Mutex<String>,
 ) -> Result<(), String> {
+    if let Source::Local(local) = source {
+        local.recheck(stop)?;
+    }
     let temp = tempfile::Builder::new()
         .prefix("tinkery-TEST-preview-")
         .tempdir()
         .map_err(|e| e.to_string())?;
     let root = temp.path();
-    let git = |args: &[&str]| {
-        let mut command = Command::new("git");
-        command
-            .args([
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "credential.helper=",
-                "-c",
-                "credential.helper=!gh auth git-credential",
-            ])
-            .args(args)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_TERMINAL_PROMPT", "0");
-        for key in [
-            "GIT_DIR",
-            "GIT_WORK_TREE",
-            "GIT_INDEX_FILE",
-            "GIT_COMMON_DIR",
-            "GIT_CONFIG_COUNT",
-        ] {
-            command.env_remove(key);
+    let (repository, github) = match source {
+        Source::GitHub { url, .. } => {
+            (format!("https://github.com/{}.git", repository(url)?), true)
         }
-        sdlc::execute(root, command, stop, DEADLINE)
+        Source::Local(local) => (local.checkout.to_string_lossy().into_owned(), false),
     };
-    git(&["init", "--quiet"])?;
-    git(&[
-        "fetch",
-        "--quiet",
-        "--depth=1",
-        &format!("https://github.com/{}.git", repository(url)?),
-        head,
-    ])?;
-    git(&["checkout", "--quiet", "--detach", "FETCH_HEAD"])?;
-    if git(&["rev-parse", "HEAD"])?.trim() != head {
+    let head = source.head();
+    git(root, &["init", "--quiet"], github, stop)?;
+    git(
+        root,
+        &["fetch", "--quiet", "--depth=1", &repository, head],
+        github,
+        stop,
+    )?;
+    git(
+        root,
+        &["checkout", "--quiet", "--detach", "FETCH_HEAD"],
+        github,
+        stop,
+    )?;
+    if git(root, &["rev-parse", "HEAD"], github, stop)?.trim() != head {
         return Err("Checkout commit disagrees with the displayed result.".into());
     }
     // Read the blob, not a working-tree symlink or checkout-filter output.
-    let checked = Spec::parse(&git(&["show", "HEAD:tinkery.preview"])?)?;
+    let checked = Spec::parse(&git(root, &["show", "HEAD:tinkery.preview"], github, stop)?)?;
     if &checked != spec {
         return Err("Preview declaration changed; press r before running.".into());
+    }
+    if let Source::Local(local) = source {
+        local.recheck(stop)?;
     }
     let (address, path) = spec.address()?;
     if TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_ok() {
