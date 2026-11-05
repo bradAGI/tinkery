@@ -159,7 +159,7 @@ def journey(width,height,home=False,menu_only=False,home_case='absolute',session
    os.write(master,b'\x1b[6~'*30);await_text('Must not: build a dashboard.')
    assert 'Next: shape it into a seed in Shape.' in right(),screen.text()
    for line in ledger['goal'].splitlines(): assert ' '.join(line.split()) in first_goal or ' '.join(line.split()) in right(),(line,first_goal,screen.text())
-   send(b'\x1bOP','Right now');send(b'h','How it works')
+   send(b'\x1bOP','Right now');send(b'h','┌ How it works ')
    # Page down one step at a time: the record path follows Seed Me's, and its length varies by platform.
    seen=[right()]
    for _ in range(16):

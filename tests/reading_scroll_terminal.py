@@ -119,13 +119,20 @@ def journey(width, height, no_color):
             # Help names this route and leaves both the reading position and draft intact.
             draft = 'Keep this café answer.'
             send(draft.encode()); before_help = reading()
-            send(b'\x1bOP'); send(b'h')
+            send(b'\x1bOP')
+            before = screen.frames
+            os.write(master, b'h')
+            wait_for(lambda: '┌ How it works ' in screen.text(), 'How it works missing', before)
             help_seen = []
             for _ in range(24):
                 help_seen.append(' '.join(joined(right()).replace('│', '').split()))
                 if any('PgUp/PgDn   scroll the reading' in line or 'PgUp/PgDn scroll the reading' in line for line in help_seen):
                     break
-                send(b'\x1b[6~')
+                before = screen.frames
+                previous = right()
+                os.write(master, b'\x1b[6~')
+                wait_for(lambda: '┌ How it works ' in screen.text() and right() != previous,
+                         'Help page did not advance to the reading instructions', before)
             else:
                 raise AssertionError('How it works does not document reading scrolling')
             before = screen.frames
