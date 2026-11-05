@@ -115,11 +115,12 @@ pub(super) fn signer(root: &Path, stop: &AtomicBool) -> Result<String, String> {
     }
 }
 
-/// Run the checkout's own `sdlc.py label`, signed with the name the form showed.
-/// tink-sdlc decides; its refusal comes back word for word.
+/// Ask the checkout to label only the reviewed run, signed with the name the form showed.
+/// A checkout that cannot enforce its identity refuses; there is no unchecked retry.
 pub(super) fn write(
     root: &Path,
     slug: &str,
+    id: &str,
     kind: Kind,
     words: &str,
     reviewer: &str,
@@ -130,6 +131,7 @@ pub(super) fn write(
     label.arg(sdlc::SCRIPT).args([
         "label".to_owned(),
         slug.to_owned(),
+        format!("--expected-run-id={id}"),
         format!("--kind={}", kind.word()),
         format!("--words={words}"),
         format!("--reviewer={reviewer}"),
@@ -137,9 +139,14 @@ pub(super) fn write(
     ]);
     sdlc::execute(root, label, stop, DEADLINE)
         .map(|out| out.trim().to_owned())
-        .map_err(|why| match why.split_once(": Error: ") {
-            Some((_, said)) => format!("tink-sdlc said: {said}"),
-            None => why,
+        .map_err(|why| {
+            if why.contains("unrecognized arguments: --expected-run-id") {
+                return "This checkout needs a newer tink-sdlc to save a verdict safely. Update it, reread the result, and try again.".into();
+            }
+            match why.split_once(": Error: ") {
+                Some((_, said)) => format!("tink-sdlc said: {said}"),
+                None => why,
+            }
         })
 }
 

@@ -377,10 +377,10 @@ impl Taste {
                         self.notice = "Checking your name again; press F2 once it shows.".into();
                     }
                     (Ok((kind, words)), Some(Ok(name))) => {
-                        let (slug, name) = (row.slug.clone(), name.clone());
+                        let (slug, id, name) = (row.slug.clone(), row.id.clone(), name.clone());
                         self.notice = "Saving your label…".into();
                         self.labelling = Some(Read::task(move |stop| {
-                            label::write(&root, &slug, kind, &words, &name, stop)
+                            label::write(&root, &slug, &id, kind, &words, &name, stop)
                         }));
                     }
                 }

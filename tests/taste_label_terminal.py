@@ -1,7 +1,7 @@
 """Taste labels (#666, #672): "Is this good?" answered pass or fail in the operator's words reaches
 tink-sdlc's own labels.jsonl verbatim, only on F2, signed with the name the form showed.
 
-A real tink-sdlc checkout (this repo's bundled 1.52.0 scaffold) in a TEST root; no providers, no gh.
+A real tink-sdlc checkout (this repo's bundled scaffold) in a TEST root; no providers, no gh.
 """
 import json
 import os
@@ -41,13 +41,36 @@ def labels(root):
     return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 
-def journey(width, height, no_color, operator):
+def journey(width, height, no_color, operator, save_case=None):
     with tempfile.TemporaryDirectory(prefix='tinkery-TEST-taste-label-') as directory:
         base = Path(directory).resolve()
         tools = base / 'bin'
         tools.mkdir()
         (tools / 'gh').write_text('#!/bin/sh\necho "TEST gh must not run" >&2\nexit 1\n')
         (tools / 'gh').chmod(0o755)
+        label_started, label_release = base / 'TEST-label-started', base / 'TEST-label-release'
+        if save_case in ('during-save', 'old-runtime'):
+            (tools / 'python3').write_text(f'''#!{sys.executable}
+import json, os, sys, time
+from pathlib import Path
+if sys.argv[2:3] == ['label']:
+    with Path({str(label_started)!r}).open('a') as log:
+        log.write(json.dumps(sys.argv[1:]) + '\\n')
+    if {save_case!r} == 'old-runtime':
+        if any(arg.startswith('--expected-run-id') for arg in sys.argv[3:]):
+            print('sdlc.py: error: unrecognized arguments: --expected-run-id', file=sys.stderr)
+            print('Commands: new, status, decide, dry-run, verify, mark, pr, close, label, '
+                  'lock-tests, skills, stage, step, walk. See _system/SDLC.md.', file=sys.stderr)
+            raise SystemExit(2)
+    else:
+        deadline = time.monotonic() + 10
+        while not Path({str(label_release)!r}).exists():
+            if time.monotonic() >= deadline:
+                raise SystemExit('TEST label command was not released')
+            time.sleep(.01)
+os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])
+''')
+            (tools / 'python3').chmod(0o755)
         env = {**os.environ, 'HOME': str(base / 'HOME'), 'PATH': f'{tools}:{os.environ["PATH"]}',
                'TERM': 'xterm-256color', 'TINKERY_NODE': '/tinkery-TEST-no-node',
                'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': str(base / 'TEST-global.gitconfig')}
@@ -65,12 +88,12 @@ def journey(width, height, no_color, operator):
                                    width=width, height=height)
         master, screen = terminal.master, terminal.screen
 
-        def wait(text, seconds=10):
+        def wait(text, seconds=10, alternative=None):
             def feed(chunk):
                 terminal.raw.extend(chunk)
                 screen.feed(chunk)
             for returncode in wait_output(master, terminal.process, feed, time.monotonic() + seconds):
-                if text in screen.text() and not screen.synchronized:
+                if (text in screen.text() or (alternative and alternative in screen.text())) and not screen.synchronized:
                     return
                 assert returncode is None, screen.text()
             raise AssertionError(f'{text!r} not shown ({width}x{height}):\n{screen.text()}')
@@ -86,6 +109,46 @@ def journey(width, height, no_color, operator):
             assert 'awaiting human verdict' in screen.text(), screen.text()
             send(b'\r', 'Is this good?')
             assert 'Run ID' not in screen.text(), screen.text()
+            if save_case:
+                git('config', 'user.name', 'TEST operator')
+                send(b'w', 'Signed as TEST operator.')
+                send(b'1', '› 1 pass')
+                send(WORDS.encode(), 'Ω')
+                run = root / 'runs/test-label'
+                original_id = json.loads((run / 'run.json').read_text())['run_id']
+                if save_case == 'during-save':
+                    send(F2, 'Saving your label')
+                    deadline = time.monotonic() + 5
+                    while not label_started.exists() and time.monotonic() < deadline:
+                        time.sleep(.01)
+                    assert label_started.exists(), 'label command never started'
+                original = base / 'TEST-original-run'
+                if save_case != 'old-runtime':
+                    run.rename(original)
+                    sdlc(root, env, 'new', 'test-label')
+                    replacement_id = json.loads((run / 'run.json').read_text())['run_id']
+                    assert replacement_id != original_id
+                if save_case == 'during-save':
+                    label_release.touch()
+                else:
+                    os.write(master, F2)
+                wait('Not recorded.', alternative='Saved your label.')
+                assert labels(root) == [], ('unexpected verdict', labels(root), screen.text())
+                assert not (original / 'labels.jsonl').exists()
+                shown = ' '.join(screen.text().split())
+                reason = 'Run identity changed; reread the run before saving a label.'
+                if save_case == 'old-runtime':
+                    reason = ('This checkout needs a newer tink-sdlc to save a verdict safely. '
+                              'Update it, reread the result, and try again.')
+                    [command] = [json.loads(line) for line in label_started.read_text().splitlines()]
+                    assert any(arg.startswith('--expected-run-id') for arg in command), command
+                assert reason in shown, screen.text()
+                assert 'Not recorded.' in shown and 'Your words' in shown, screen.text()
+                assert 'Signed as TEST operator.' in shown and '› 1 pass' in shown, screen.text()
+                assert WORDS in shown, screen.text()
+                print(json.dumps(dict(journey='Taste label refused', case=save_case, width=width,
+                                      height=height, no_color=no_color, labels=0, provider_calls=0)))
+                return
             if operator == 'agent':
                 assert 'Only a human can record the verdict.' in screen.text(), screen.text()
                 assert 'w is this good?' not in screen.text() and 'w  answer' not in screen.text(), screen.text()
@@ -153,3 +216,6 @@ if __name__ == '__main__':
     journey(100, 30, False, None)
     journey(80, 24, True, 'human')
     journey(80, 24, True, 'agent')
+    journey(100, 30, False, 'human', 'before-save')
+    journey(80, 24, True, 'human', 'during-save')
+    journey(80, 24, True, 'human', 'old-runtime')

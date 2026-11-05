@@ -84,10 +84,11 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   The list pairs each available result title with a goal excerpt. Open a result to see
   what was built, your goal and the first human check reported pending.
   With no such check, it asks “Is this good?” Only a human can press `w` to write a verdict.
-  F2 saves pass or fail with their words and the checkout's git name. `e` shows checks,
-  owed gates, the whole goal, IDs and evidence. For PR results, `o` opens the PR and
-  `a`/`c` copy external review handoffs. Once a person accepts the result elsewhere,
-  `l` reports that decision for this view and
+  F2 saves pass or fail with their words and the checkout's git name. Saving requires
+  tink-sdlc 1.53.0 or later to check that the reviewed run is still the one being labelled.
+  `e` shows checks, owed gates, the whole goal, IDs and evidence. For PR results,
+  `o` opens the PR and `a`/`c` copy external review handoffs. Once a person accepts
+  the result elsewhere, `l` reports that decision for this view and
   reveals one italic next-dump guess; `t` opens it for editing in Think. Only F2 sends.
   No unmet conditions means observe the accepted behavior, not invent another feature.
   See [Taste](docs/design/taste.md).
