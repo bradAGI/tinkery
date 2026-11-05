@@ -35,8 +35,11 @@ stays unknown. Tinkery stores no mapping and launches take no PR input.
 
 Only `r` reads result metadata from GitHub, via `gh pr view <recorded URL> --json` using the operator's
 login. Read the title, current head, state and PR-head checks. The title is display text only;
-the list uses the goal when the title is missing, and the review uses the recorded URL. Per-run status also reports how many labels
-the run has; a checkout that doesn't say leaves the list silent rather than guessing. Recorded open and
+the list uses the goal when the title is missing, and the review uses the recorded URL.
+Per-run status also reports label counts by kind. When both `accepted` and `rejected`
+are valid nonnegative integers, the reminder stays visible when both are zero,
+including after notes and corrections. Either positive count clears it. Missing or malformed verdict counts
+leave the verdict state unknown and the list omits the reminder. Recorded open and
 merged PRs stay listed, including green PRs with no source gates owed: checks never
 remove the need for human review. Merged results are marked “merged” in the list
 and review; neither merge state nor green checks imply acceptance. Closed-unmerged
