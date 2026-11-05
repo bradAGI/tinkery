@@ -24,15 +24,22 @@ pub(super) const UNKNOWN_RUN: PrGap = PrGap {
 
 /// The PR the run recorded for itself, or why it is unknown. Never reads files or contacts GitHub.
 pub(super) fn recorded(run: &Value) -> Result<String, PrGap> {
-    let url = match &run["pr"] {
-        Value::Null => {
+    let url = match run.get("pr") {
+        None => {
             return Err(PrGap {
-                known_absent: run.get("pr").is_some(),
+                known_absent: false,
+                title: "Result unknown: run status omitted the PR field",
+                next: "Use --sdlc-root to choose a checkout that reports this run's PR.",
+            });
+        }
+        Some(Value::Null) => {
+            return Err(PrGap {
+                known_absent: true,
                 title: "Result unknown: no recorded PR",
                 next: "When this run has a PR, record it with tink-sdlc, then press r.",
             });
         }
-        pr => pr["url"].as_str().unwrap_or(""),
+        Some(pr) => pr["url"].as_str().unwrap_or(""),
     };
     if !canonical_pr_url(url) {
         return Err(PrGap {

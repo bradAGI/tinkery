@@ -236,9 +236,13 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                     wait(lambda: 'Preview identity unknown' in screen.text().splitlines()[-4])
                     assert 'how to add one' not in screen.text(), screen.text()
                 else:
-                    if mapping_case in ('missing', 'unreported'):
+                    if mapping_case == 'missing':
                         title = 'Result unknown: no recorded PR'
                         advice = 'When this run has a PR, record it with tink-sdlc, then press r.'
+                    elif mapping_case == 'unreported':
+                        title = 'Result unknown: run status omitted the PR field'
+                        advice = "Use --sdlc-root to choose a checkout that reports this run's PR."
+                        assert 'no recorded PR' not in review and 'record it with tink-sdlc' not in review, review
                     else:
                         title = 'Result unknown: invalid PR URL'
                         advice = "Inspect this run's PR record outside Tinkery. After repair, press r."

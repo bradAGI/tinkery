@@ -23,10 +23,11 @@ Each run records its own PR with tink-sdlc's `sdlc.py pr` (1.50.0 and later), an
 API 1 per-run `status --json` reports it as `pr.url`. That record is the only link:
 handoff prose is not a machine interface, and neither a slug, branch, title nor handoff
 file can supply it. Taste reads `pr` only from the per-run status whose run ID matches
-the list. A run without a recorded PR keeps an unknown-result row. Its review, help and
-direct open or preview keys say to record the PR with tink-sdlc once available, then
-press `r`. If status reports an invalid PR URL, Taste asks the operator to inspect the
-run's PR record outside Tinkery and reread after repair. Neither offers an open
+the list. When status reports `pr: null`, review, help and direct open or preview keys
+say to record the PR with tink-sdlc once available, then press `r`. If status omits
+the field, they direct the operator to a checkout that reports this run's PR.
+If status reports an invalid PR URL, Taste asks the operator to inspect the
+run's PR record outside Tinkery and reread after repair. These gaps offer no open
 or preview action. Taste accepts only a full `https://github.com/OWNER/REPO/pull/NUMBER`.
 If GitHub names a different PR (owner and repo compare case-insensitively), the row
 stays unknown. Tinkery stores no mapping and launches take no PR input.
