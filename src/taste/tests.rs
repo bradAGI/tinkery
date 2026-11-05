@@ -55,6 +55,48 @@ fn screen(taste: &mut Taste, width: u16, height: u16) -> String {
 }
 
 #[test]
+fn list_distinguishes_results_with_the_same_goal_prefix_and_keeps_the_untitled_goal() {
+    let mut taste = ready();
+    let prefix = "Practice reading wind patterns ".repeat(6);
+    taste.rows[0].goal = Goal::Matched(format!("{prefix}over a tall ridge."));
+    taste.rows[0].title = Some("Heron Lift 🪶".into());
+    taste.rows.push(ResultRow {
+        title: Some("Roof Gap 🏠".into()),
+        goal: Goal::Matched(format!("{prefix}between buildings.")),
+        merged: true,
+        ..row()
+    });
+    taste.rows.push(ResultRow {
+        title: None,
+        goal: Goal::Matched("Untitled goal café".into()),
+        ..row()
+    });
+
+    taste.key(KeyEvent::from(KeyCode::Down));
+    let shown = screen(&mut taste, 80, 24);
+    for (title, state) in [("Heron Lift", "open"), ("Roof Gap", "merged")] {
+        let line = shown
+            .lines()
+            .find(|line| line.contains(title))
+            .expect(&shown);
+        assert!(
+            line.contains("Practice reading wind") && line.contains('…'),
+            "{line}"
+        );
+        assert!(line.trim_end().ends_with(state), "{line}");
+    }
+    assert!(
+        shown
+            .lines()
+            .any(|line| line.trim_start().starts_with("› Roof Gap")),
+        "{shown}"
+    );
+    assert!(shown.contains("Untitled goal café · open"), "{shown}");
+    taste.key(KeyEvent::from(KeyCode::Enter));
+    assert!(screen(&mut taste, 80, 24).contains("Roof Gap"));
+}
+
+#[test]
 fn preview_disclosure_says_each_fact_once_without_running_on_navigation() {
     for (width, height) in [(100, 30), (80, 24)] {
         let mut taste = ready();

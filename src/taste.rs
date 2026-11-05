@@ -468,14 +468,15 @@ impl Taste {
                 "Enter opens a result\n",
                 "o opens the PR · e details: checks, goal, IDs, evidence · n/p result\n",
                 "v runs the project's preview at its exact commit; Esc stops it\n",
-                "a/c copy accept/correct requests · l you accepted it elsewhere\n\n",
+                "a/c copy accept/correct requests · l report a person's prior acceptance\n\n",
                 "Verdict\n{}\n\n",
                 "What Taste reads\nOnly r reads the checkout's run status, each run's recorded PR and\n",
                 "its preview file, with gh and your login. Nothing is written or launched.\n",
                 "Add a preview: commit tinkery.preview at the project root, one line:\n",
                 "{{\"command\":\"npm run dev -- --host 127.0.0.1\",\"url\":\"http://127.0.0.1:5173/\"}}\n\n",
-                "After external acceptance\nl reports you accepted it elsewhere (not verified); t drafts the guess.\n",
-                "Copying or green checks never imply acceptance; you merge externally."
+                "After external acceptance\nUse l only if a person already accepted this result elsewhere.\n",
+                "This unverified report stays in this view and saves no verdict.\n",
+                "t drafts Next. Copying and green checks never imply acceptance or a merge."
             ),
             verdict
         )

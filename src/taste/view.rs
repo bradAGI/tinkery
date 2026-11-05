@@ -122,18 +122,27 @@ pub(super) fn list(
         } else {
             " · result unknown"
         };
-        let title = safe(goal(&row.goal).split('\n').next().unwrap_or(""));
-        lines.push(Line::from(vec![
-            Span::styled(if index == selected { "› " } else { "  " }, p.jade),
-            Span::styled(
-                preview(
-                    &title,
-                    usize::from(width).saturating_sub(2 + suffix.width()),
-                ),
-                p.ink,
-            ),
-            Span::styled(suffix, p.muted),
-        ]));
+        let goal = safe(goal(&row.goal).split('\n').next().unwrap_or(""));
+        let mut available = usize::from(width).saturating_sub(2 + suffix.width());
+        let mut summary = vec![Span::styled(
+            if index == selected { "› " } else { "  " },
+            p.jade,
+        )];
+        let separator = " · Goal: ";
+        if let Some(title) = &row.title
+            && available >= separator.width() + 2
+        {
+            available -= separator.width();
+            // Give the title priority and reserve a third of the line for a long goal.
+            let goal_reserve = goal.width().min(available.div_ceil(3));
+            let title = preview(&safe(title), available - goal_reserve);
+            available -= title.width();
+            summary.push(Span::styled(title, p.ink.add_modifier(Modifier::BOLD)));
+            summary.push(Span::styled(separator, p.muted));
+        }
+        summary.push(Span::styled(preview(&goal, available), p.ink));
+        summary.push(Span::styled(suffix, p.muted));
+        lines.push(Line::from(summary));
         let mut counts = vec![Span::raw("  ")];
         for (s, glyph, word) in [
             (State::Passed, "✓", "passed"),
@@ -582,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    fn compact_list_has_counts_and_only_goal_preview_can_be_shortened() {
+    fn untitled_list_result_uses_the_goal_and_counts() {
         for width in [76, 96] {
             let row = row();
             let lines = list(std::slice::from_ref(&row), 0, width, Palette::new(true));
@@ -601,6 +610,34 @@ mod tests {
                     && text.contains("You owe 1")
             );
             assert!(!text.contains(&row.items[0].label) && !text.contains("Confirm the synthetic"));
+        }
+    }
+
+    #[test]
+    fn long_titles_and_goals_share_one_line_and_keep_whole_graphemes() {
+        let mut row = row();
+        let title = "研究👩‍💻e\u{301}".repeat(30);
+        row.title = Some(title.clone());
+        for width in [76, 116] {
+            let lines = list(std::slice::from_ref(&row), 0, width, Palette::new(true));
+            let line = lines[0].to_string();
+            let (shown, goal) = line
+                .strip_prefix("› ")
+                .unwrap()
+                .split_once("… · Goal: ")
+                .unwrap();
+            assert_eq!(
+                title
+                    .graphemes(true)
+                    .take(shown.graphemes(true).count())
+                    .collect::<String>(),
+                shown
+            );
+            assert!(
+                goal.starts_with("TEST café") && goal.ends_with("… · merged"),
+                "{line}"
+            );
+            assert!(lines[0].width() <= usize::from(width), "{line}");
         }
     }
 

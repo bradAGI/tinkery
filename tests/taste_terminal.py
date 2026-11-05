@@ -196,11 +196,17 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 return
             assert not calls(), 'opening Taste must disclose reads, not perform them'
             send(b'?', 'What Taste reads')
+            assert "l report a person's prior acceptance" in screen.text(), screen.text()
+            assert 'a person already accepted this result elsewhere' in screen.text(), screen.text()
+            assert 'unverified' in screen.text() and 'saves no verdict' in screen.text(), screen.text()
+            assert 'never imply acceptance or a merge.' in screen.text(), screen.text()
             os.write(master, b'oacr')
             time.sleep(.1)
             assert not calls(), 'help leaked actions'
             send(b'\x1b', 'Press r to read results')
-            send(b'r', '›  TEST café')
+            send(b'r', 'TEST café')
+            if mapping_case in ('valid', 'case'):
+                assert '› TEST clinic allocation comparison' in screen.text(), screen.text()
             assert 'Enter open result' in screen.text() and 'a/c copy' not in screen.text()
             if mapping_case not in ('valid', 'case'):
                 github = 1 if mapping_case == 'moved' else 0

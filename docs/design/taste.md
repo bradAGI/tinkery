@@ -31,7 +31,7 @@ stays unknown. Tinkery stores no mapping and launches take no PR input.
 
 Only `r` reads result metadata from GitHub, via `gh pr view <recorded URL> --json` using the operator's
 login. Read the title, current head, state and PR-head checks. The title is display text only;
-a missing one falls back to the recorded URL. Per-run status also reports how many labels
+the list uses the goal when the title is missing, and the review uses the recorded URL. Per-run status also reports how many labels
 the run has; a checkout that doesn't say leaves the list silent rather than guessing. Recorded open and
 merged PRs stay listed, including green PRs with no source gates owed: checks never
 remove the need for human review. Merged results are marked “merged” in the list
@@ -47,9 +47,11 @@ with a reason. No complete empty claim survives a failed read.
 
 ## One result
 
-The list gives each result a compact two-line block: a one-row goal preview with
-an explicit ellipsis when needed and muted open/merged/unknown context, then glyphs
-and counts for passed, waiting, stale, failed and unknown observations, plus
+The list identifies each result by its recorded PR title and an excerpt from the
+saved goal, followed by its open, merged or unknown state. Without a title the goal
+uses the whole available space. Both excerpts share one line and use an ellipsis
+when shortened. The next line shows counts for passed, waiting, stale, failed and
+unknown observations, plus
 “You owe N” when gates are owed and “awaiting human verdict” when the run has none. No check sentences, PR URLs, paths, hashes, run IDs
 or commands appear in the list. Jade marks selection; the goal remains ink.
 Counts are observations, never an aggregate done/approved verdict.
@@ -87,7 +89,7 @@ and constraints. Result gives the PR URL, commit, run ID/locator, seed digest, r
 time and preview declaration once, muted, last rather than in a competing fixed header.
 The shared source/path-and-digest join supplies the goal; changed, moved, missing or
 unmatchable originals stay unknown. Escape unsafe controls only for display, not
-storage or copying. The list's goal preview is the only shortened source text.
+storage or copying. Only the list shortens the title and goal for display.
 
 Only failures use rust, always with `!` and words. Passed states stay ink; waiting,
 stale and unknown cues are muted. Jade is selection or the current owed action,
@@ -231,9 +233,9 @@ append-only; Taste stores nothing.
 
 ## After external acceptance
 
-From the list or detail, `l` means “I accepted this exact result externally.” It reports the
-operator's decision for this snapshot only; it neither verifies acceptance nor
-records a verdict. Copying `a`, browser navigation, green checks and merged/closed
+Use `l` from the list or review only after a person has accepted that exact result
+elsewhere. Either launch role may report that person's decision for the current
+reading. The unverified report reveals Next and saves no verdict. Copying `a`, browser navigation, green checks and merged/closed
 PR states never imply acceptance. Unknown goal, run or result identity refuses the
 report. A recorded merged result remains available after refresh, but the
 next-step note still requires `l`; refreshing never restores an acceptance report.
