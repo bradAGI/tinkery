@@ -50,8 +50,9 @@ with a reason. No complete empty claim survives a failed read.
 ## One result
 
 The list identifies each result by its recorded PR title and an excerpt from the
-saved goal, followed by its open, merged or unknown state. Without a title the goal
-uses the whole available space. Both excerpts share one line and use an ellipsis
+saved goal, followed by its open, merged or unknown state. An explicit empty PR record
+shows “no recorded PR”. Other unresolved results show “result unknown”. Without a
+title the goal uses the whole available space. Both excerpts share one line and use an ellipsis
 when shortened. The next line shows counts for passed, waiting, stale, failed and
 unknown observations, plus
 “You owe N” when gates are owed and “awaiting human verdict” when the run has none. No check sentences, PR URLs, paths, hashes, run IDs

@@ -7,6 +7,8 @@ use serde_json::Value;
 /// Why the checkout cannot supply a PR and what the operator can do about it.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct PrGap {
+    /// True only when the source explicitly reports that the run has no PR.
+    pub(super) known_absent: bool,
     /// What the source establishes about the result.
     pub(super) title: &'static str,
     /// The prerequisite for opening the PR or reading an exact-head preview.
@@ -15,6 +17,7 @@ pub(super) struct PrGap {
 
 /// The list could not identify a valid run whose own PR record we can read.
 pub(super) const UNKNOWN_RUN: PrGap = PrGap {
+    known_absent: false,
     title: "Result unknown: run identity unavailable",
     next: "Repair the run externally, then press r.",
 };
@@ -24,6 +27,7 @@ pub(super) fn recorded(run: &Value) -> Result<String, PrGap> {
     let url = match &run["pr"] {
         Value::Null => {
             return Err(PrGap {
+                known_absent: run.get("pr").is_some(),
                 title: "Result unknown: no recorded PR",
                 next: "When this run has a PR, record it with tink-sdlc, then press r.",
             });
@@ -32,6 +36,7 @@ pub(super) fn recorded(run: &Value) -> Result<String, PrGap> {
     };
     if !canonical_pr_url(url) {
         return Err(PrGap {
+            known_absent: false,
             title: "Result unknown: invalid PR URL",
             next: "Inspect this run's PR record outside Tinkery. After repair, press r.",
         });

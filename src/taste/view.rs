@@ -119,6 +119,8 @@ pub(super) fn list(
             " · merged"
         } else if row.head.is_some() {
             " · open"
+        } else if row.url.as_ref().is_err_and(|gap| gap.known_absent) {
+            " · no recorded PR"
         } else {
             " · result unknown"
         };
