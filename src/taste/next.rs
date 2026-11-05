@@ -22,7 +22,10 @@ pub(super) fn suggest(row: &ResultRow) -> Pause {
         .items
         .iter()
         .filter(|i| {
-            matches!(i.kind.as_str(), "automated" | "human attestation") && i.state != Check::Pass
+            matches!(
+                i.kind.as_str(),
+                "automated" | "human attestation" | "manual check"
+            ) && i.state != Check::Pass
         })
         .collect();
     let repair = failed.is_some() || !row.gates.is_empty();

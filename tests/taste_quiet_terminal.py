@@ -154,7 +154,8 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
         if not legacy:
             list_only()
         copies = transport()
-        send(b'\r', 'Goal (unchanged)' if legacy else 'Is this good?')
+        send(b'\r', 'Goal (unchanged)' if legacy else 'What to judge')
+        review = screen.text()
         send(b'l', 'Guess · Next:')
         main = screen.text()
         assert main.count('Guess · Next:') == 1, main
@@ -165,18 +166,19 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
             first = '\n'.join(screen.text().split('\n')[:7]) + document(detail, True)
             evidence_frames = []
         else:
-            review = screen.text()
             first = document([review])
-            for part in ['TEST clinic allocation comparison', 'Your goal', 'Is this good?',
-                         'w  answer pass or fail', 'No preview for this project.', '! ' + GAP[:20],
-                         'w is this good?', 'e details']:
+            human = state['detail']['run']['checklist'][-1]['verify']
+            assert ''.join(human.split()) in ''.join(review.split()), review
+            for part in ['TEST clinic allocation comparison', 'Your goal', 'What to judge',
+                         'Only a human can record the verdict.', 'No preview for this project.', '! ' + GAP[:20],
+                         'Human verdict only', 'e details']:
                 assert part in review, (part, review)
-            order = [review.index(part) for part in ['TEST clinic allocation', 'Your goal', 'Is this good?']]
+            order = [review.index(part) for part in ['TEST clinic allocation', 'No preview', 'What to judge', human[:25], 'Your goal']]
             assert order == sorted(order), review
             for hidden in [URL, HEAD, RUN_ID, 'TEST-result', record['sha256'], 'You owe', 'Checks', 'Must not',
                            'Why:', 'Done when', 'argv:', 'cwd:', 'tinkery.preview', 'accepted externally',
-                           'a/c copy', 'Read 0 min ago', *[item['verify'][:30]
-                                                           for item in state['detail']['run']['checklist']]]:
+                           'Is this good?', 'w write verdict', 'a/c copy', 'Read 0 min ago', *[item['verify'][:30]
+                                                           for item in state['detail']['run']['checklist'][:-1]]]:
                 assert hidden not in review, (hidden, review)
             detail = [review]
             send(b'e', 'You owe')
@@ -188,7 +190,6 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
                 < details.index('Evidence') < details.index('\nResult'), details
             assert details.count(URL) == 1 and details.count('Commit:') == 1, details
             checks = details[details.index('Checks'):details.index('Goal')]
-            human = state['detail']['run']['checklist'][-1]['verify']
             assert re.sub(r'\s+', '', human) not in re.sub(r'\s+', '', checks), checks
             if long_checks:
                 assert '? unknown: no CI reported' in details and 'waiting: no record found' in details, details
@@ -197,7 +198,7 @@ def run(base, width, height, mono, binary, legacy=False, long_checks=False):
                       str(checkout / 'runs/TEST-result/04-test/output/test-log.md'),
                       'argv: ["python3","TEST-allocation-check.py"]', 'cwd: "./"',
                       state['detail']['run']['verification']['log'],
-                      *[item['verify'] for item in state['detail']['run']['checklist']]]:
+                      *[item['verify'] for item in state['detail']['run']['checklist'][:-1]]]:
             assert re.sub(r'\s+', '', value) in joined, (value, detail, evidence_frames)
         assert transport() == copies, 'evidence view copy bytes differ'
         if not legacy:

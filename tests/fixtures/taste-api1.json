@@ -60,6 +60,7 @@
           "status": "pending",
           "automatic": false,
           "proof": "attested",
+          "operator_attestation": true,
           "needs_recheck": false,
           "mark": null
         }

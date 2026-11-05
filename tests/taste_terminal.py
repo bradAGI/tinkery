@@ -159,7 +159,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             update()
             before = len(calls())
             os.write(master, b'r')
-            wait(lambda: len(calls()) >= before + 2 and 'Is this good?' in screen.text()
+            wait(lambda: len(calls()) >= before + 2 and 'Your goal' in screen.text()
                  and 'Reading results' not in screen.text())
 
         def copied():
@@ -227,6 +227,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 assert 'You owe' not in screen.text(), screen.text()
                 assert '? 2 unknown' in screen.text(), screen.text()
                 send(b'\r', 'Is this good?')
+                assert 'What to judge' not in screen.text() and 'receipts not found here' in screen.text(), screen.text()
                 send(b'e', 'Checks')
                 owed_and_checks = screen.text().split('Goal')[0]
                 assert owed_and_checks.count('unknown: receipts not found here') == 3, screen.text()
@@ -257,7 +258,8 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 assert ' · merged' in screen.text(), screen.text()
                 assert 'Guess · Next:' not in screen.text(), 'merge is not acceptance'
                 os.write(master, b't')
-            send(b'\r', 'Is this good?')
+            send(b'\r', 'What to judge')
+            assert 'confirm no clinical claims' in screen.text() and 'Is this good?' not in screen.text(), screen.text()
             assert 'Guess · Next:' not in screen.text(), 'review is not acceptance'
             assert 'TEST café' in screen.text() and 'TEST clinic allocation comparison' in screen.text(), screen.text()
             assert HEAD not in screen.text() and RUN_ID not in screen.text(), screen.text()
@@ -306,13 +308,13 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                     before = len(calls())
                     os.write(master, b'r')
                     wait(lambda: len(calls()) == before + 3 and 'Reading results' not in screen.text())
-                send(b'\x1b[H', 'Is this good?')
+                send(b'\x1b[H', 'Your goal')
                 before = len(calls())
                 send(b'?', 'After external acceptance')
                 os.write(master, b'lte')
                 time.sleep(.1)
                 os.write(master, b'\x1b')
-                wait(lambda: 'What Taste reads' not in screen.text() and 'Is this good?' in screen.text())
+                wait(lambda: 'What Taste reads' not in screen.text() and 'Your goal' in screen.text())
                 assert 'Guess · Next:' not in screen.text(), 'help leaked acceptance'
                 send(b'l', 'Guess · Next:')
                 assert screen.text().count('Next:') == 1, screen.text()
@@ -324,7 +326,9 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                     assert 'Resolve Allocation works' in screen.text(), screen.text()
                 else:
                     assert 'confirm no clinical claims' in screen.text(), screen.text()
+                assert 'Human verdict only' in screen.text() and 'w write verdict' not in screen.text(), screen.text()
                 send(b'?', 'Outcome: unobserved')
+                assert 'Only a human can record the verdict.' in screen.text() and 'w opens' not in screen.text(), screen.text()
                 expected_decision = 'proceed' if next_case in ['nothing unmet', 'absent ci'] else 'stop and repair'
                 assert f'Decision: {expected_decision}' in screen.text(), screen.text()
                 assert 'Next:' not in screen.text(), 'help repeats the next step'
@@ -359,6 +363,28 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                                       width=width, height=height, no_color=no_color,
                                       provider_calls=0, sends='F2 only', verdicts=0)))
                 return
+            # Among several human checks, show the first active, pending one.
+            checklist = state['detail']['run']['checklist']
+            automatic, human = checklist
+            worker = {**human, 'id': 'TEST-worker', 'verify': 'TEST worker smoke check'}
+            del worker['operator_attestation']
+            checklist[:] = [automatic, worker,
+                            {**human, 'id': 'TEST-passed', 'verify': 'TEST previous observation',
+                             'status': 'passed', 'mark': {'evidence': 'TEST checked'}, 'needs_recheck': True},
+                            {**human, 'id': 'TEST-inactive', 'verify': 'TEST provisional', 'pending': True},
+                            {**human, 'id': 'TEST-unknown', 'verify': 'TEST marked unknown',
+                             'status': 'unknown', 'mark': {'evidence': 'TEST uncertain'}},
+                            human, {**human, 'id': 'TEST-second', 'verify': 'TEST second criterion'}]
+            reread()
+            assert '2 pending human checks' in screen.text() and human['verify'] in screen.text(), screen.text()
+            for hidden in [worker['verify'], 'TEST previous observation', 'TEST provisional', 'TEST marked unknown',
+                           'TEST second criterion', 'Is this good?']:
+                assert hidden not in screen.text(), screen.text()
+            send(b'e', 'TEST second criterion')
+            owed, checks = screen.text().split('Checks', 1)
+            assert worker['verify'] not in owed and worker['verify'] in checks, screen.text()
+            send(b'e', 'What to judge')
+            checklist[:] = [automatic, human]
             # Fully green open PRs still need external human review; never filter them away.
             state['detail']['run']['gates'][0]['status'] = 'approved'
             state['detail']['run']['checklist'][1].update(status='passed', mark={'evidence': 'TEST human observation'})
@@ -397,7 +423,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             reread()
             send(b'e', '! failed  Allocation works')
             assert 'waiting' in screen.text()
-            send(b'e', 'Is this good?')
+            send(b'e', 'What to judge')
             # Unknown original refuses copying, without falling back to the old goal.
             seed.write_text('TEST changed original\n')
             send(b'r', 'Goal unknown')
@@ -442,7 +468,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             update()
             before_prose = len(calls())
             os.write(master, b'r')
-            wait(lambda: len(calls()) == before_prose + 3 and 'Is this good?' in screen.text()
+            wait(lambda: len(calls()) == before_prose + 3 and 'What to judge' in screen.text()
                  and 'Reading results' not in screen.text())
             send(b'e', 'Checks')
             send(b'\x1b[F', HEAD)

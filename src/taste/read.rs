@@ -26,6 +26,8 @@ pub(super) enum Check {
     /// A GitHub check that hasn't finished.
     Pending,
     NotSuccessful,
+    /// An active human check reported pending for a known result.
+    AwaitingHuman,
     MatchingEvidenceMissing,
     AttestationEvidenceMissing,
     InspectExternally,
@@ -47,7 +49,9 @@ impl Check {
             Self::Stale => "stale",
             Self::Pending => "pending",
             Self::NotSuccessful => "pending (not a successful check)",
-            Self::MatchingEvidenceMissing => "pending (matching evidence missing)",
+            Self::AwaitingHuman | Self::MatchingEvidenceMissing => {
+                "pending (matching evidence missing)"
+            }
             Self::AttestationEvidenceMissing => "pending (attestation evidence missing)",
             Self::InspectExternally => "pending (inspect externally)",
             Self::NotActivated => "pending (not activated)",
@@ -102,7 +106,7 @@ pub(super) struct ResultRow {
     pub(super) seed: String,
     /// Imported conditions and source observations, separately labelled.
     pub(super) items: Vec<Item>,
-    /// No verification, decisions or human marks were reported at the read root.
+    /// No verification, decisions or checklist marks were reported at the read root.
     pub(super) receipts_missing: bool,
     /// Plain actions still owed, including human attestations.
     pub(super) gates: Vec<String>,
@@ -202,7 +206,16 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
     }
     for item in checklist {
         let automatic = item["automatic"].as_bool().ok_or("Check method missing.")?;
+        let human = match item.get("operator_attestation") {
+            None => false,
+            Some(value) => value
+                .as_bool()
+                .ok_or("Operator attestation flag unreadable.")?,
+        };
         let proof = text(item, "proof")?;
+        if automatic && human {
+            return Err("Automated check also claims to require operator attestation.".into());
+        }
         if proof != if automatic { "automated" } else { "attested" } {
             return Err("Check method conflicts with proof.".into());
         }
@@ -239,10 +252,11 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
             "passed" => Check::Pass,
             "failed" if exact => Check::Fail,
             "failed" => Check::FailureRevisionDiffers,
+            "pending" if human => Check::AwaitingHuman,
             "pending" | "unknown" => Check::MatchingEvidenceMissing,
             _ => return Err("Unknown completion condition status.".into()),
         };
-        if !row.receipts_missing && !automatic && (!pending && status != "passed" || recheck) {
+        if !row.receipts_missing && human && (!pending && status != "passed" || recheck) {
             row.gates.push(if recheck {
                 format!("may need recheck: {label}")
             } else {
@@ -260,7 +274,11 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
         } else {
             mark["evidence"]
                 .as_str()
-                .unwrap_or("No operator evidence recorded")
+                .unwrap_or(if human {
+                    "No operator evidence recorded"
+                } else {
+                    "No manual evidence recorded"
+                })
                 .to_owned()
         };
         row.items.push(Item {
@@ -268,8 +286,10 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
             state,
             kind: if automatic {
                 "automated"
-            } else {
+            } else if human {
                 "human attestation"
+            } else {
+                "manual check"
             }
             .into(),
             evidence: if row.receipts_missing {
@@ -499,6 +519,7 @@ mod tests {
             (Stale, "stale"),
             (Pending, "pending"),
             (NotSuccessful, "pending (not a successful check)"),
+            (AwaitingHuman, "pending (matching evidence missing)"),
             (
                 MatchingEvidenceMissing,
                 "pending (matching evidence missing)",
@@ -577,18 +598,11 @@ mod tests {
                 .all(|item| item.state == Check::ReceiptsMissing)
         );
         for color in [false, true] {
-            let detail = super::super::view::detail(
-                &target,
-                None,
-                None,
-                96,
-                crate::Palette::new(color),
-                true,
-            )
-            .iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
+            let detail = super::super::view::details(&target, None, 96, crate::Palette::new(color))
+                .iter()
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
             let (owed_and_checks, _) = detail.split_once("\nGoal\n").unwrap();
             assert_eq!(
                 owed_and_checks.matches(MISSING_RECEIPTS).count(),
@@ -605,6 +619,55 @@ mod tests {
         }
         let pause = super::super::next::suggest(&target);
         assert!(pause.lines.join(" ").contains("Decision: proceed"));
+    }
+
+    #[test]
+    fn worker_only_checks_stay_in_evidence_and_next_without_a_human_obligation() {
+        for flag in [None, Some(false)] {
+            let mut source = run();
+            let mut worker = json!({
+                "id": "smoke", "verify": "worker output", "automatic": false, "proof": "attested",
+                "status": "pending", "needs_recheck": false, "mark": null,
+            });
+            if let Some(flag) = flag {
+                worker["operator_attestation"] = json!(flag);
+            }
+            let mut recorded = worker.clone();
+            recorded["id"] = json!("fixture");
+            recorded["verify"] = json!("Check the fixture");
+            recorded["status"] = json!("passed");
+            recorded["needs_recheck"] = json!(true);
+            recorded["mark"] = json!({"actor": {"by": "agent"}, "evidence": "TEST fixture opened"});
+            source["checklist"] = json!([worker, recorded]);
+            source["gates"] = json!([]);
+            let mut target = row();
+            target.goal = Goal::Matched("TEST saved goal".into());
+            local(Path::new("/TEST"), &source, &mut target).unwrap();
+            let review = super::super::view::review(
+                &target,
+                None,
+                None,
+                80,
+                crate::Palette::new(true),
+                true,
+            )
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<String>();
+            assert!(
+                review.contains("Is this good?") && !review.contains("What to judge"),
+                "{review}"
+            );
+            assert!(target.gates.is_empty());
+            for action in ['a', 'c'] {
+                let copy = super::super::handoff(&target, action).unwrap();
+                assert!(copy.contains("worker output: pending (matching evidence missing) (manual check, No manual evidence recorded)"), "{copy}");
+                assert!(copy.contains("Check the fixture: pass (may need recheck) (manual check, TEST fixture opened)"), "{copy}");
+                assert!(!copy.contains("human attestation"), "{copy}");
+            }
+            let next = super::super::next::suggest(&target);
+            assert!(next.next.contains("Check worker output"), "{}", next.next);
+        }
     }
 
     #[test]
@@ -673,6 +736,11 @@ mod tests {
             let mut target = row();
             target.head = head;
             assert!(local(Path::new("/TEST"), &unknown, &mut target).is_err());
+        }
+        for (index, flag) in [(1, json!("true")), (1, Value::Null), (0, json!(true))] {
+            let mut broken = run();
+            broken["checklist"][index]["operator_attestation"] = flag;
+            assert!(local(Path::new("/TEST"), &broken, &mut row()).is_err());
         }
         for field in [
             "status",

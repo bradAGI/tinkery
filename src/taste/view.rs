@@ -34,6 +34,7 @@ fn state(item: &Item) -> State {
         Check::NoneReported | Check::ReceiptsMissing => State::Unknown,
         Check::Pending
         | Check::NotSuccessful
+        | Check::AwaitingHuman
         | Check::MatchingEvidenceMissing
         | Check::AttestationEvidenceMissing
         | Check::InspectExternally
@@ -63,7 +64,9 @@ fn status(item: &Item) -> String {
         waiting => format!(
             "… waiting: {}",
             match waiting {
-                Check::MatchingEvidenceMissing | Check::AttestationEvidenceMissing => {
+                Check::AwaitingHuman
+                | Check::MatchingEvidenceMissing
+                | Check::AttestationEvidenceMissing => {
                     "no record found"
                 }
                 Check::InspectExternally => "review externally",
@@ -160,7 +163,7 @@ pub(super) fn list(
             ));
         }
         if row.labelled == Some(false) {
-            counts.push(Span::styled("waiting for your label", p.jade));
+            counts.push(Span::styled("awaiting human verdict", p.jade));
         }
         lines.push(Line::from(counts));
         lines.push(Line::default());
@@ -281,19 +284,16 @@ fn built(row: &ResultRow) -> String {
     )
 }
 
-/// The review asks one question. It shows what was built, the goal's first line and the label
-/// key; identity is checked silently and surfaces only as a mismatch. Everything else is details.
-pub(super) fn detail(
+/// One source-pending human check with the preview offer, or a general verdict when none is known.
+/// Other checks remain in details. Only human launches offer the verdict form.
+pub(super) fn review(
     row: &ResultRow,
     pause: Option<&Pause>,
     at: Option<Instant>,
     width: u16,
     p: Palette,
-    details: bool,
+    agent: bool,
 ) -> Vec<Line<'static>> {
-    if details {
-        return everything(row, at, width, p);
-    }
     let mut lines = Vec::new();
     block(
         &mut lines,
@@ -309,6 +309,42 @@ pub(super) fn detail(
         Ok(spec) => block(&mut lines, Span::raw(""), &spec.offer(), width, p.muted),
         Err(why) => block(&mut lines, Span::raw(""), why, width, p.muted),
     }
+    if let Some(pause) = pause {
+        heading(&mut lines, "Next", p.ink);
+        let guess = p.ink.add_modifier(Modifier::ITALIC);
+        block(
+            &mut lines,
+            Span::styled("  ", guess),
+            &pause.next,
+            width,
+            guess,
+        );
+    }
+    let mut pending = row
+        .items
+        .iter()
+        .filter(|item| item.state == Check::AwaitingHuman && !item.label.trim().is_empty());
+    if let Some(first) = pending.next() {
+        heading(&mut lines, "What to judge", p.jade);
+        block(&mut lines, Span::raw("  "), &first.label, width, p.ink);
+        let others = pending.count();
+        if others > 0 {
+            lines.push(Line::styled(
+                format!("  {} pending human checks · e shows all", others + 1),
+                p.muted,
+            ));
+        }
+    } else {
+        heading(&mut lines, "Is this good?", p.jade);
+    }
+    lines.push(Line::styled(
+        if agent {
+            super::HUMAN_VERDICT
+        } else {
+            "  w  answer pass or fail, in your own words"
+        },
+        if agent { p.muted } else { p.jade },
+    ));
     heading(&mut lines, "Your goal", p.ink);
     block(
         &mut lines,
@@ -342,28 +378,17 @@ pub(super) fn detail(
             p.muted,
         ));
     }
-    heading(&mut lines, "Is this good?", p.jade);
-    lines.push(Line::styled(
-        "  w  answer pass or fail, in your own words",
-        p.jade,
-    ));
-    if let Some(pause) = pause {
-        heading(&mut lines, "Next", p.ink);
-        let guess = p.ink.add_modifier(Modifier::ITALIC);
-        block(
-            &mut lines,
-            Span::styled("  ", guess),
-            &pause.next,
-            width,
-            guess,
-        );
-    }
     lines
 }
 
 /// Details on request: owed gates, every check in its source words, the whole goal, the evidence
 /// behind each check, then result identity last. Nothing is shortened or dropped.
-fn everything(row: &ResultRow, at: Option<Instant>, width: u16, p: Palette) -> Vec<Line<'static>> {
+pub(super) fn details(
+    row: &ResultRow,
+    at: Option<Instant>,
+    width: u16,
+    p: Palette,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     heading(&mut lines, "You owe", p.jade);
     if row.receipts_missing {
@@ -527,7 +552,7 @@ mod tests {
             items: vec![
                 Item { label: "Every original check word stays intact while this long sentence wraps with a hanging indent and no abbreviation.".into(),
                     state: Check::Fail, kind: "automated".into(), evidence: "/TEST/log; argv: [TEST]".into() },
-                Item { label: human.into(), state: Check::MatchingEvidenceMissing,
+                Item { label: human.into(), state: Check::AwaitingHuman,
                     kind: "human attestation".into(), evidence: "No operator evidence recorded".into() },
             ],
         }
@@ -584,7 +609,7 @@ mod tests {
         let row = row();
         for mono in [false, true] {
             let p = Palette::new(mono);
-            let lines = detail(&row, None, None, 96, p, true);
+            let lines = details(&row, None, 96, p);
             let full = lines
                 .iter()
                 .map(Line::to_string)
@@ -650,7 +675,7 @@ mod tests {
                 cells[(2, owed_row as u16)].fg,
                 p.jade.fg.unwrap_or(ratatui::style::Color::Reset)
             );
-            let evidence = detail(&row, None, None, 96, p, true)
+            let evidence = details(&row, None, 96, p)
                 .iter()
                 .map(Line::to_string)
                 .collect::<Vec<_>>()
@@ -668,7 +693,7 @@ mod tests {
         let mut row = row();
         row.title = Some("TEST clinic comparison".into());
         for width in [76, 96] {
-            let text = detail(&row, None, None, width, Palette::new(true), false)
+            let text = review(&row, None, None, width, Palette::new(true), false)
                 .iter()
                 .map(Line::to_string)
                 .collect::<Vec<_>>()
@@ -676,8 +701,9 @@ mod tests {
             let order = [
                 "TEST clinic comparison",
                 "No preview declared",
+                "What to judge",
+                "Confirm the synthetic",
                 "Your goal",
-                "Is this good?",
             ]
             .map(|part| text.find(part).unwrap());
             assert!(order.is_sorted(), "{text}");
@@ -694,12 +720,12 @@ mod tests {
             }
         }
         let old = Instant::now().checked_sub(STALE).unwrap();
-        let stale = detail(&row, None, Some(old), 96, Palette::new(true), false)
+        let stale = review(&row, None, Some(old), 96, Palette::new(true), false)
             .iter()
             .map(Line::to_string)
             .collect::<String>();
         assert!(stale.contains("may be out of date, press r."), "{stale}");
-        let fresh = detail(
+        let fresh = review(
             &row,
             None,
             Some(Instant::now()),
@@ -712,10 +738,10 @@ mod tests {
         .collect::<String>();
         assert!(!fresh.contains("min ago"), "{fresh}");
         row.title = None;
-        let untitled = detail(&row, None, None, 96, Palette::new(true), false)[0].to_string();
+        let untitled = review(&row, None, None, 96, Palette::new(true), false)[0].to_string();
         assert_eq!(untitled, "https://github.com/TEST/example/pull/1");
         row.head = None;
-        let unknown = detail(&row, None, None, 96, Palette::new(true), false)
+        let unknown = review(&row, None, None, 96, Palette::new(true), false)
             .iter()
             .map(Line::to_string)
             .collect::<String>();
