@@ -95,6 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--sdlc-root" => {
                 sdlc_root = Some(PathBuf::from(
                     args.next()
+                        .filter(|root| !root.is_empty())
                         .ok_or("--sdlc-root needs a tink-sdlc checkout path")?,
                 ))
             }
