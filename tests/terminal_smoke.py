@@ -39,6 +39,23 @@ for arguments, error in [
 
 assert b'--taste-result' not in subprocess.check_output([str(BINARY), '--help'], env=ENV)
 
+binding = '00000000-0000-4000-8000-000000000729:00000000-0000-7000-8000-000000000729:TEST report:one.json'
+for arguments, error in [
+    (['--codex-report'], b'needs RUN_UUID:CHAT_ID:PATH'),
+    (['--codex-report', ''], b'needs RUN_UUID:CHAT_ID:PATH'),
+    (['--codex-report', binding.replace('4000', '7000', 1)], b'canonical UUIDs'),
+    (['--codex-report', 'bad:' + binding.split(':', 1)[1]], b'canonical UUIDs'),
+    (['--codex-report', binding.split(':', 1)[0] + '::TEST-file'], b'canonical UUIDs'),
+    (['--codex-report', binding.rsplit(':', 2)[0] + ':'], b'canonical UUIDs'),
+    (['--codex-report', binding, '--codex-report', binding], b'only once'),
+    (['--codex-report', binding], b'requires --home and --sdlc-root'),
+    (['--home', '--codex-report', binding], b'requires --home and --sdlc-root'),
+]:
+    result = subprocess.run([str(BINARY), *arguments], env=ENV, capture_output=True)
+    assert result.returncode != 0 and error in result.stderr, (arguments, result.stderr)
+assert b'--codex-report RUN_UUID:CHAT_ID:PATH' in subprocess.check_output(
+    [str(BINARY), '--help'], env=ENV)
+
 # Invalid-HOME scenarios now stop at the test boundary, never by executing Tinkery.
 # Rust's pure root tests retain the application-level invalid-HOME contracts.
 no_home = {key: value for key, value in ENV.items() if key != 'HOME'}

@@ -450,7 +450,7 @@ fn a_run_says_whether_a_worker_is_building_it_and_an_ended_turn_needs_you() {
     let text = screen(&mut watch, 100, 30);
     for (slug, words) in [
         ("ended", "not verified yet · worker's turn ended"),
-        ("idle", "not verified yet · no worker running ·"),
+        ("idle", "not verified yet · no active worker step ·"),
         ("building", "not verified yet · worker running ·"),
         ("older-sdlc", "not verified yet · 0/0 checks passed"),
     ] {

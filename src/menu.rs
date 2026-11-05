@@ -64,6 +64,7 @@ pub struct Home {
     repo: Option<crate::repo::Repo>,
     shape_agent: Option<Arc<crate::shape::Agent>>,
     sdlc_root: Option<PathBuf>,
+    codex_report: Option<crate::watch::CodexReport>,
     /// An agent launch without --shape-pi: Shape only reads.
     shape_held: bool,
     /// Launched with `--operator agent`; Taste then refuses the operator's labels.
@@ -127,6 +128,7 @@ impl Home {
             repo: None,
             shape_agent: None,
             sdlc_root: None,
+            codex_report: None,
             shape_held: false,
             agent: false,
             approve_reader: approve::Reader::default(),
@@ -147,6 +149,12 @@ impl Home {
     /// The one tink-sdlc checkout the read-only run views use; absent roots explain configuration.
     pub fn with_sdlc_root(mut self, root: Option<PathBuf>) -> Self {
         self.sdlc_root = root;
+        self
+    }
+
+    /// Show one explicitly bound saved Codex report in Watch; it grants no execution authority.
+    pub fn with_codex_report(mut self, report: Option<crate::watch::CodexReport>) -> Self {
+        self.codex_report = report;
         self
     }
 
@@ -511,7 +519,9 @@ impl Home {
                 self.request_sessions();
                 View::Approve(Box::new(approve::Approve::open(self.sdlc_root.clone())))
             }
-            4 => View::Watch(Box::new(Watch::open(self.sdlc_root.clone()))),
+            4 => View::Watch(Box::new(
+                Watch::open(self.sdlc_root.clone()).with_codex_report(self.codex_report.clone()),
+            )),
             5 => View::Taste(Box::new(Taste::open(self.sdlc_root.clone(), self.agent))),
             6 => View::Measure(Box::new(measure::Measure::open(self.repo.clone()))),
             other => View::Soon(other),
