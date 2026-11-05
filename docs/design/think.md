@@ -4,6 +4,8 @@
 
 The blank writing box accepts typing or paste without fields, kinds or cards.
 Only F2 interprets; Enter is a newline. Originals stay intact on the left.
+Below 80×24, the size warning holds F2 for typed and dictated drafts. Resizing back
+retains the words and requires a fresh F2 press before sending.
 One “I think you mean…” reading and at most one focused question sit on the right.
 Competing interpretations get a disambiguating question, not a second reading.
 The app shares one launch allowance across Think and Shape, defaulting to zero;

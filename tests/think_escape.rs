@@ -53,6 +53,7 @@ fn escape_from_original_preserves_words_and_guards_discard_without_calls_or_save
             let mut app = BrainDump::with_host(host.clone())
                 .with_sessions(Some(root.path().join("TEST-sessions")))
                 .with_record_root(root.path().join("TEST-records"));
+            snapshot(width, height, &mut app, false).unwrap();
             app.paste(ORIGINAL);
             key(&mut app, KeyCode::F(2));
             let deadline = Instant::now() + Duration::from_secs(3);

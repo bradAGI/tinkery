@@ -392,6 +392,7 @@ fn typing_during_request_is_never_replaced_by_the_result() {
 fn applying_a_held_reply_with_cleared_input_does_not_send_again() {
     let host = Arc::new(Recording::default());
     let mut a = BrainDump::with_host(host.clone());
+    snapshot(100, 30, &mut a, false).unwrap();
     a.paste("First dump.");
     key(&mut a, KeyCode::F(2));
     a.paste("Local text while thinking.");
@@ -416,6 +417,7 @@ fn a_failed_held_reply_with_cleared_input_still_retries() {
     let host = Arc::new(Recording::default());
     host.fail.store(true, Ordering::Relaxed);
     let mut a = BrainDump::with_host(host.clone());
+    snapshot(100, 30, &mut a, false).unwrap();
     a.paste("First dump.");
     key(&mut a, KeyCode::F(2));
     a.paste("Local text while thinking.");
