@@ -36,7 +36,11 @@ pub(super) fn recorded(run: &Value) -> Result<String, PrGap> {
             return Err(PrGap {
                 known_absent: true,
                 title: "Result unknown: no recorded PR",
-                next: "When this run has a PR, record it with tink-sdlc, then press r.",
+                next: if run["closure"]["outcome"] == "abandoned" {
+                    "This run closed without a PR."
+                } else {
+                    "When this run has a PR, record it with tink-sdlc, then press r."
+                },
             });
         }
         Some(pr) => pr["url"].as_str().unwrap_or(""),

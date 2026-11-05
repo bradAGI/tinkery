@@ -103,8 +103,11 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             state['detail']['run']['gates'][0]['status'] = 'pending'
             for item in state['detail']['run']['checklist']:
                 item.update(status='pending', mark=None)
-        if mapping_case == 'missing':
-            state['detail']['run'].update(pr=None, labels={'count': 0})
+        if mapping_case in ('missing', 'abandoned'):
+            state['detail']['run'].update(pr=None, closure=None, labels={'count': 0})
+            if mapping_case == 'abandoned':
+                state['detail']['run']['closure'] = {'outcome': 'abandoned', 'time_ns': 1}
+                state['detail']['run']['labels']['count'] = 1
         elif mapping_case == 'unreported':  # Older run status has no PR field.
             del state['detail']['run']['pr']
         elif mapping_case == 'malformed':
@@ -122,7 +125,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
         (binary / 'gh').write_text(f'#!{sys.executable}\n' + FAKE)
         (binary / 'gh').chmod(0o755)
         preview_git = base / 'TEST-preview-git'
-        if mapping_case in ('missing', 'unreported', 'malformed', 'moved'):
+        if mapping_case in ('missing', 'abandoned', 'unreported', 'malformed', 'moved'):
             (binary / 'git').write_text(f'#!{sys.executable}\nfrom pathlib import Path\n'
                                         f'Path({str(preview_git)!r}).touch()\nraise SystemExit(1)\n')
             (binary / 'git').chmod(0o755)
@@ -219,7 +222,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             assert 'Enter open result' in screen.text() and 'a/c copy' not in screen.text()
             if mapping_case not in ('valid', 'case'):
                 summary = next(line.rstrip() for line in screen.text().splitlines() if '›' in line and 'TEST café' in line)
-                suffix = ' · no recorded PR' if mapping_case == 'missing' else ' · result unknown'
+                suffix = ' · no recorded PR' if mapping_case in ('missing', 'abandoned') else ' · result unknown'
                 assert summary.endswith(suffix), summary
                 if mapping_case == 'missing':
                     assert 'awaiting human verdict' in screen.text(), screen.text()
@@ -236,9 +239,12 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                     wait(lambda: 'Preview identity unknown' in screen.text().splitlines()[-4])
                     assert 'how to add one' not in screen.text(), screen.text()
                 else:
-                    if mapping_case == 'missing':
+                    if mapping_case in ('missing', 'abandoned'):
                         title = 'Result unknown: no recorded PR'
                         advice = 'When this run has a PR, record it with tink-sdlc, then press r.'
+                        if mapping_case == 'abandoned':
+                            advice = 'This run closed without a PR.'
+                            assert 'record it with tink-sdlc' not in review, review
                     elif mapping_case == 'unreported':
                         title = 'Result unknown: run status omitted the PR field'
                         advice = "Use --sdlc-root to choose a checkout that reports this run's PR."
@@ -252,6 +258,8 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                     assert ('w write verdict' in review) == (operator == 'human'), review
                     send(b'?', 'What Taste reads')
                     assert advice in screen.text(), screen.text()
+                    if mapping_case == 'abandoned':
+                        assert 'record it with tink-sdlc' not in screen.text(), screen.text()
                     for offer in ('o opens the PR', "v runs the project's preview", 'Preview format:'):
                         assert offer not in screen.text(), screen.text()
                     send(b'\x1b', 'Your goal')
@@ -593,6 +601,6 @@ if __name__ == '__main__':
         for no_color in (False,):
             for next_case in ['accept', 'correct', 'nothing unmet', 'merged', 'absent ci', 'failed', 'receipts elsewhere']:
                 journey(*dimensions, no_color, next_case=next_case)
-    for case in ['missing', 'unreported', 'malformed', 'moved', 'case']:
+    for case in ['missing', 'abandoned', 'unreported', 'malformed', 'moved', 'case']:
         journey(80, 24, True, case)
     journey(100, 30, False, 'missing', operator='human')
