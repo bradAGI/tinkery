@@ -9,7 +9,7 @@ fn row() -> ResultRow {
             " TEST café  \nWhy: TEST reason.\nDone when: TEST check.\nMust not: TEST claims.  "
                 .into(),
         ),
-        url: Some("https://github.com/TEST/example/pull/1".into()),
+        url: Ok("https://github.com/TEST/example/pull/1".into()),
         title: Some("TEST clinic allocation comparison".into()),
         head: Some("a".repeat(40)),
         merged: false,
@@ -116,7 +116,7 @@ fn preview_disclosure_says_each_fact_once_without_running_on_navigation() {
         let detail = result_lines(&taste.rows[0]).join("\n");
         assert_eq!(detail.matches(&"a".repeat(40)).count(), 1);
         assert!(taste.preview.is_none(), "navigation ran the command");
-        taste.rows[0].preview = Err("No preview for this project.".into());
+        taste.rows[0].preview = Ok(None);
         taste.key(KeyEvent::from(KeyCode::Char('v')));
         let shown = screen(&mut taste, width, height);
         assert_eq!(
@@ -183,7 +183,7 @@ fn unknown_goal_or_result_refuses_copy_and_navigation_starts_nothing() {
     taste.rows[0].head = None;
     assert!(handoff(&taste.rows[0], 'c').is_err());
     taste.rows[0].head = Some("a".repeat(40));
-    taste.rows[0].url = None;
+    taste.rows[0].url = Err(links::UNKNOWN_RUN);
     assert!(handoff(&taste.rows[0], 'a').is_err());
 }
 
@@ -379,7 +379,7 @@ fn selection_is_retained_by_run_and_pr_not_index_and_missing_selection_returns_t
     });
     taste.selected = 1;
     taste.detail = true;
-    let key = ("TEST-other".to_owned(), taste.rows[1].url.clone());
+    let key = ("TEST-other".to_owned(), taste.rows[1].url.clone().ok());
     taste.selection = Some(key);
     let mut rows = taste.rows.clone();
     rows.reverse();

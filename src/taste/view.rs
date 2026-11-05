@@ -266,7 +266,7 @@ pub(super) fn running_preview(
     p: Palette,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if let Ok(spec) = &row.preview {
+    if let Ok(Some(spec)) = &row.preview {
         block(
             &mut lines,
             Span::raw(""),
@@ -288,9 +288,16 @@ fn built(row: &ResultRow) -> String {
     safe(
         row.title
             .as_deref()
-            .or(row.url.as_deref())
-            .unwrap_or("Result unknown: no recorded PR"),
+            .unwrap_or_else(|| row.url.as_deref().unwrap_or_else(|gap| gap.title)),
     )
+}
+
+fn preview_offer(row: &ResultRow) -> String {
+    match row.preview() {
+        Ok(Some(spec)) => spec.offer(),
+        Ok(None) => super::preview::NO_DECLARATION.into(),
+        Err(why) => why.into(),
+    }
 }
 
 /// One source-pending human check with the preview offer, or a general verdict when none is known.
@@ -304,20 +311,22 @@ pub(super) fn review(
     agent: bool,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    block(
-        &mut lines,
-        Span::raw(""),
-        &built(row),
-        width,
-        p.ink.add_modifier(Modifier::BOLD),
-    );
+    let (prefix, ink) = if row.url.is_err() {
+        (Span::styled("! ", p.rust), p.rust)
+    } else {
+        (Span::raw(""), p.ink.add_modifier(Modifier::BOLD))
+    };
+    block(&mut lines, prefix, &built(row), width, ink);
     if row.merged {
         lines.push(Line::styled("merged", p.muted));
     }
-    match &row.preview {
-        Ok(spec) => block(&mut lines, Span::raw(""), &spec.offer(), width, p.muted),
-        Err(why) => block(&mut lines, Span::raw(""), why, width, p.muted),
-    }
+    block(
+        &mut lines,
+        Span::raw(""),
+        &preview_offer(row),
+        width,
+        p.muted,
+    );
     if let Some(pause) = pause {
         heading(&mut lines, "Next", p.ink);
         let guess = p.ink.add_modifier(Modifier::ITALIC);
@@ -362,7 +371,7 @@ pub(super) fn review(
         width,
         p.ink,
     );
-    if !row.gaps.is_empty() || (row.url.is_some() && row.head.is_none()) {
+    if !row.gaps.is_empty() || (row.url.is_ok() && row.head.is_none()) {
         lines.push(Line::default());
         for gap in &row.gaps {
             block(&mut lines, Span::styled("! ", p.rust), gap, width, p.rust);
@@ -452,7 +461,7 @@ pub(super) fn details(
     let mut result = vec![
         format!(
             "PR: {}{}",
-            row.url.as_deref().unwrap_or("unknown"),
+            row.url.as_deref().unwrap_or_else(|gap| gap.title),
             if row.merged { " · merged" } else { "" }
         ),
         format!("Commit: {}", row.head.as_deref().unwrap_or("unknown")),
@@ -464,10 +473,7 @@ pub(super) fn details(
             at.map_or(0, |at| at.elapsed().as_secs() / 60)
         ),
     ];
-    match &row.preview {
-        Ok(spec) => result.push(spec.offer()),
-        Err(why) => result.push(why.clone()),
-    }
+    result.push(preview_offer(row));
     for text in result {
         block(&mut lines, Span::raw("  "), &text, width, p.muted);
     }
@@ -556,7 +562,7 @@ mod tests {
         ResultRow {
             id: "TEST-run-id".into(), slug: "TEST-run".into(),
             goal: Goal::Matched(format!("{}\nWhy: TEST reason.\nDone when: TEST result.", "TEST café 👩‍💻 goal ".repeat(12))),
-            url: Some("https://github.com/TEST/example/pull/1".into()), title: None, head: Some("a".repeat(40)),
+            url: Ok("https://github.com/TEST/example/pull/1".into()), title: None, head: Some("a".repeat(40)),
             merged: true, preview: Err("No preview declared".into()), receipts_missing: false, seed: "TEST-seed".into(), gates: vec![human.into()], gaps: vec![], labelled: None,
             items: vec![
                 Item { label: "Every original check word stays intact while this long sentence wraps with a hanging indent and no abbreviation.".into(),
@@ -581,8 +587,8 @@ mod tests {
             assert!(lines.iter().all(|line| line.width() <= width as usize));
             let complete = lines.iter().map(Line::to_string).collect::<String>();
             let expected = row
-                .preview
-                .as_ref()
+                .preview()
+                .unwrap()
                 .unwrap()
                 .disclosure(row.head.as_deref().unwrap())
                 .replace('\n', "");

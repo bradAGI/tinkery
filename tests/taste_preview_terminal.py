@@ -179,8 +179,12 @@ def journey(width, height, mono, wrong_head=False, response_delay=0):
 from pathlib import Path
 if sys.argv[1] == 'api':
     assert sys.argv[-1].endswith('tinkery.preview?ref={head}')
-    if json.loads(Path(os.environ['TEST_TASTE_STATE']).read_text()).get('no_preview'):
-        print('HTTP 404', file=sys.stderr)
+    error = json.loads(Path(os.environ['TEST_TASTE_STATE']).read_text()).get('preview_error')
+    if error == 'malformed':
+        print('not JSON')
+        sys.exit(0)
+    if error:
+        print(error, file=sys.stderr)
         sys.exit(1)
     print({json.dumps(spec)!r})
     sys.exit(0)
@@ -285,7 +289,7 @@ os.execv({git!r}, [{git!r}, *args])
                 send(b'\x1b[21~', '1  think')  # F10 leaves and stops, including startup.
                 stopped(record)
                 send(b'6', 'Press r to read results')
-                state['no_preview'] = True
+                state['preview_error'] = 'HTTP 404'
                 statefile.write_text(json.dumps(state))
                 send(b'r', '› TEST clinic allocation comparison')
                 send(b'\r', 'No preview for this project.')
@@ -295,7 +299,18 @@ os.execv({git!r}, [{git!r}, *args])
                 # The suggested declaration binds the probed address, not localhost (often ::1 only).
                 assert '--host 127.0.0.1' in ' '.join(screen.text().split()), screen.text()
                 send(b'\x1b', 'What to judge')
-                assert not opened.exists(), 'undeclared preview opened a browser'
+                for error, reason in [('malformed', 'Invalid tinkery.preview'),
+                                      ('HTTP 403', "Couldn't read tinkery.preview")]:
+                    state['preview_error'] = error
+                    statefile.write_text(json.dumps(state))
+                    send(b'r', reason)
+                    os.write(master, b'v')
+                    wait(lambda: reason in screen.text().splitlines()[-4])
+                    assert 'how to add one' not in screen.text() and 'No preview for this project.' not in screen.text(), screen.text()
+                    send(b'?', 'commit tinkery.preview at the project root')
+                    assert 'v runs the project' not in screen.text(), screen.text()
+                    send(b'\x1b', 'What to judge')
+                assert not opened.exists(), 'unavailable preview opened a browser'
             assert tree(checkout) == original and tree(repo) == repo_original
             events = base / 'http-events'
             http_events = [json.loads(line) for line in events.read_text().splitlines()] if events.exists() else []

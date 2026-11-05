@@ -17,7 +17,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-const DECLARE: &str = "No preview for this project.";
+/// Exact-head 404: help explains how to add the absent declaration.
+pub(super) const NO_DECLARATION: &str = "No preview for this project.";
 
 /// A declared shell line and loopback-only HTTP address from the exact result commit.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -87,7 +88,7 @@ pub(super) fn declaration(
     url: &str,
     head: &str,
     stop: &AtomicBool,
-) -> Result<Spec, String> {
+) -> Result<Option<Spec>, String> {
     let repo = repository(url)?;
     let mut command = Command::new("gh");
     command.args([
@@ -97,8 +98,8 @@ pub(super) fn declaration(
         &format!("repos/{repo}/contents/tinkery.preview?ref={head}"),
     ]);
     match sdlc::execute(root, command, stop, DEADLINE) {
-        Ok(source) => Spec::parse(&source),
-        Err(why) if why.contains("HTTP 404") => Err(DECLARE.into()),
+        Ok(source) => Spec::parse(&source).map(Some),
+        Err(why) if why.contains("HTTP 404") => Ok(None),
         Err(_) => {
             Err("Couldn't read tinkery.preview at this commit. Check gh access and press r.".into())
         }

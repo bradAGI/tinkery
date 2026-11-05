@@ -17,14 +17,16 @@ owns bounded execution, cancellation and the exact saved-goal join used by Watch
 Unsupported interfaces or states refuse the reading. No source writes or polling.
 Without a current result, the footer keeps help and exit, plus `r read results` only
 when the named checkout is available and no read/open helper is running. Result
-actions return when a result is selected; this changes guidance, not key behavior.
+actions follow the selected result's recorded PR and exact-head preview declaration.
 
 Each run records its own PR with tink-sdlc's `sdlc.py pr` (1.50.0 and later), and
 API 1 per-run `status --json` reports it as `pr.url`. That record is the only link:
 handoff prose is not a machine interface, and neither a slug, branch, title nor handoff
 file can supply it. Taste reads `pr` only from the per-run status whose run ID matches
-the list. A run without a recorded PR keeps an unknown-result row; the run's own status
-says how to record one. tink-sdlc reports a malformed record as an invalid run, and
+the list. A run without a recorded PR keeps an unknown-result row. Its review, help and
+direct open or preview keys say to record the PR with tink-sdlc once available, then
+press `r`. A malformed record calls for correcting the URL. Neither offers an open
+or preview action. tink-sdlc reports a malformed record as an invalid run, and
 Taste also refuses any URL that is not a full `https://github.com/OWNER/REPO/pull/NUMBER`.
 If GitHub names a different PR (owner and repo compare case-insensitively), the row
 stays unknown. Tinkery stores no mapping and launches take no PR input.
@@ -189,7 +191,8 @@ not an acceptance record or implementation permission.
   complete document. `n`/`p` or Right/Left change result, clamped. Esc from detail
   returns to the list and discards the ephemeral report, without rereading.
 - `v` on the review runs the explicitly declared local preview above; Esc stops it and returns to the review.
-- `o` alone uses `gh pr view <recorded URL> --web` to open the PR. Navigation records
+- `o` alone uses `gh pr view <recorded URL> --web` to open the PR, even if its revision
+  could not be read. Navigation records
   nothing and rereads no checks. Browser failure names the retry. Repeated or modified
   action keys never open, reread or copy.
 - `a` / `c` copy acceptance-review / correction requests through the existing clipboard

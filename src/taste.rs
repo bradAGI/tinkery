@@ -96,7 +96,7 @@ impl Taste {
         self.selection = self
             .rows
             .get(self.selected)
-            .map(|r| (r.id.clone(), r.url.clone()));
+            .map(|r| (r.id.clone(), r.url.clone().ok()));
         self.rows.clear();
         self.evidence = false;
         self.pause = None;
@@ -114,17 +114,12 @@ impl Taste {
             self.reading = None;
             match result {
                 Ok(rows) => {
-                    self.selected = self
-                        .selection
-                        .as_ref()
-                        .and_then(|key| {
-                            rows.iter()
-                                .position(|r| (&r.id, &r.url) == (&key.0, &key.1))
-                        })
-                        .unwrap_or(0);
-                    if self.selection.as_ref().is_some_and(|key| {
-                        !rows.iter().any(|r| (&r.id, &r.url) == (&key.0, &key.1))
-                    }) {
+                    let selected = self.selection.as_ref().and_then(|(id, url)| {
+                        rows.iter()
+                            .position(|r| &r.id == id && r.url.as_ref().ok() == url.as_ref())
+                    });
+                    self.selected = selected.unwrap_or(0);
+                    if self.selection.is_some() && selected.is_none() {
                         self.detail = false;
                         self.notice =
                             "Selected result is no longer in this reading; choose a result.".into();
@@ -215,8 +210,8 @@ impl Taste {
             }
             KeyCode::Char('v') if self.preview.is_none() => {
                 if let Some(row) = self.rows.get(self.selected) {
-                    match (&row.preview, &row.url, &row.head) {
-                        (Ok(spec), Some(url), Some(head)) => {
+                    match (row.preview(), &row.url, &row.head) {
+                        (Ok(Some(spec)), Ok(url), Some(head)) => {
                             self.preview = Some(preview::Preview::start(
                                 url.clone(),
                                 head.clone(),
@@ -225,9 +220,11 @@ impl Taste {
                             self.notice.clear();
                             self.scroll = 0;
                         }
-                        (Err(why), _, _) => {
-                            self.notice = format!("{why} ? says how to add one.");
+                        (Ok(None), _, _) => {
+                            self.notice =
+                                format!("{} ? says how to add one.", preview::NO_DECLARATION)
                         }
+                        (Err(why), _, _) => self.notice = why.into(),
                         _ => self.notice = "Result identity unknown; press r.".into(),
                     }
                 }
@@ -266,19 +263,20 @@ impl Taste {
             KeyCode::Down | KeyCode::Char('j' | 'n') | KeyCode::Right => self.select(true),
             KeyCode::Up | KeyCode::Char('k' | 'p') | KeyCode::Left => self.select(false),
             KeyCode::Char('o') if self.reading.is_none() && self.opening.is_none() => {
-                if let (Some(root), Some(url)) = (
-                    &self.root,
-                    self.rows.get(self.selected).and_then(|r| r.url.clone()),
-                ) {
-                    let root = root.clone();
-                    self.opening = Some(Read::task(move |stop| {
-                        let mut command = Command::new("gh");
-                        command.args(["pr", "view", &url, "--web"]);
-                        sdlc::execute(&root, command, stop, DEADLINE).map(|_| ())
-                    }));
+                if let (Some(root), Some(row)) = (&self.root, self.rows.get(self.selected)) {
+                    match &row.url {
+                        Ok(url) => {
+                            let (root, url) = (root.clone(), url.clone());
+                            self.opening = Some(Read::task(move |stop| {
+                                let mut command = Command::new("gh");
+                                command.args(["pr", "view", &url, "--web"]);
+                                sdlc::execute(&root, command, stop, DEADLINE).map(|_| ())
+                            }));
+                        }
+                        Err(gap) => self.notice = gap.next.into(),
+                    }
                 } else {
-                    self.notice =
-                        "No usable recorded PR for this result; its run status says what to record.".into();
+                    self.notice = "Select a result first.".into();
                 }
             }
             KeyCode::Char('l') if self.reading.is_none() && self.opening.is_none() => {
@@ -462,27 +460,44 @@ impl Taste {
                 pause.lines.join("\n")
             );
         }
-        let open_result = if !self.detail && self.rows.get(self.selected).is_some() {
+        let selected = self.rows.get(self.selected);
+        let open_result = if !self.detail && selected.is_some() {
             "Enter opens a result\n"
+        } else {
+            ""
+        };
+        let open_pr = if selected.is_some_and(|row| row.url.is_ok()) {
+            "o opens the PR · "
+        } else {
+            ""
+        };
+        let preview = selected.map_or("", |row| match row.preview() {
+            Ok(Some(_)) => "v runs the project's preview at its exact commit; Esc stops it",
+            Ok(None) => preview::NO_DECLARATION,
+            Err(why) => why,
+        });
+        let declaration = if selected.is_some_and(|row| row.head.is_some()) {
+            concat!(
+                "Preview format: commit tinkery.preview at the project root, one line:\n",
+                r#"{"command":"npm run dev -- --host 127.0.0.1","url":"http://127.0.0.1:5173/"}"#,
+                "\n"
+            )
         } else {
             ""
         };
         format!(
             concat!(
                 "Right now\nq goes back to the menu · F10 Home · ? / Esc close help\n",
-                "{}o opens the PR · e details: checks, goal, IDs, evidence · n/p result\n",
-                "v runs the project's preview at its exact commit; Esc stops it\n",
-                "a/c copy accept/correct requests · l report a person's prior acceptance\n\n",
+                "{}{}e details: checks, goal, IDs, evidence · n/p result\n",
+                "{}\na/c copy accept/correct requests · l report a person's prior acceptance\n\n",
                 "Verdict\n{}\n\n",
                 "What Taste reads\nOnly r reads the checkout's run status, each run's recorded PR and\n",
-                "its preview file, with gh and your login. Nothing is written or launched.\n",
-                "Add a preview: commit tinkery.preview at the project root, one line:\n",
-                "{{\"command\":\"npm run dev -- --host 127.0.0.1\",\"url\":\"http://127.0.0.1:5173/\"}}\n\n",
+                "its preview file, with gh and your login. Nothing is written or launched.\n{}\n",
                 "After external acceptance\nUse l only if a person already accepted this result elsewhere.\n",
                 "This unverified report stays in this view and saves no verdict.\n",
                 "t drafts Next. Copying and green checks never imply acceptance or a merge."
             ),
-            open_result, verdict
+            open_result, open_pr, preview, verdict, declaration
         )
     }
 
@@ -494,6 +509,7 @@ impl Taste {
             area.width,
             2,
         );
+        let selected = self.rows.get(self.selected);
         let review_actions;
         let actions = if self.labelling.is_some() {
             "Saving your label with tink-sdlc…\n? help"
@@ -501,7 +517,7 @@ impl Taste {
             "1 pass  2 fail, then type your words\nF2 save  Esc cancel"
         } else if self.preview.is_some() {
             "Preview · Esc stops and returns · F10 Home\narrows/PgUp/PgDn scroll  ? help"
-        } else if self.rows.get(self.selected).is_none() {
+        } else if selected.is_none() {
             if self.root.is_some() && self.reading.is_none() && self.opening.is_none() {
                 "r read results  ? help  Esc back"
             } else {
@@ -520,8 +536,12 @@ impl Taste {
             } else {
                 "w write verdict"
             };
-            review_actions =
-                format!("{next}{verdict}  o open PR  Esc list\ne details  ? more keys");
+            let open_pr = if selected.is_some_and(|row| row.url.is_ok()) {
+                "  o open PR"
+            } else {
+                ""
+            };
+            review_actions = format!("{next}{verdict}{open_pr}  Esc list\ne details  ? more keys");
             &review_actions
         } else {
             "arrows move  Enter open result  r reread\n? more keys  Esc back"
@@ -646,7 +666,7 @@ fn handoff(row: &ResultRow, action: char) -> Result<String, &'static str> {
     if !matches!(row.goal, Goal::Matched(_)) || row.id.is_empty() {
         return Err("Goal/run identity unknown; repair sources and press r before copying.");
     }
-    let (Some(url), Some(head)) = (&row.url, &row.head) else {
+    let (Ok(url), Some(head)) = (&row.url, &row.head) else {
         return Err("Result identity unknown; press r after repairing the source.");
     };
     Ok(format!(

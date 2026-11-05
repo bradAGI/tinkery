@@ -71,7 +71,7 @@ def confirmed_seed(base, goal=GOAL):
     return session / 'seed-contract.md'
 
 
-def journey(width, height, no_color, mapping_case='valid', next_case=None, empty_case=None):
+def journey(width, height, no_color, mapping_case='valid', next_case=None, empty_case=None, operator='agent'):
     with tempfile.TemporaryDirectory(prefix='tinkery-TEST-taste-') as directory:
         base = Path(directory).resolve()
         checkout = base / 'TEST-checkout'
@@ -118,13 +118,18 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
         (binary / 'python3').symlink_to(sys.executable)
         (binary / 'gh').write_text(f'#!{sys.executable}\n' + FAKE)
         (binary / 'gh').chmod(0o755)
+        preview_git = base / 'TEST-preview-git'
+        if mapping_case in ('missing', 'malformed', 'moved'):
+            (binary / 'git').write_text(f'#!{sys.executable}\nfrom pathlib import Path\n'
+                                        f'Path({str(preview_git)!r}).touch()\nraise SystemExit(1)\n')
+            (binary / 'git').chmod(0o755)
         env = {**os.environ, 'HOME': str(base / 'HOME'), 'PATH': f'{binary}:/usr/bin:/bin',
                'TERM': 'xterm-256color', 'TINKERY_NODE': '/tinkery-TEST-no-node',
                'TEST_TASTE_STATE': str(statefile), 'TEST_TASTE_CALLS': str(log), 'TEST_TASTE_PID': str(pid)}
         env.pop('NO_COLOR', None)
         if no_color:
             env['NO_COLOR'] = '1'
-        args = [str(REPO / 'target/debug/tinkery'), '--operator', 'agent', '--home',
+        args = [str(REPO / 'target/debug/tinkery'), '--operator', operator, '--home',
                 '--seed-session-root', str(base / 'TEST-sessions')]
         if empty_case != 'missing-root':
             args += ['--sdlc-root', str(checkout)]
@@ -214,6 +219,39 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 assert len(calls()) == 2 + github, calls()
                 assert sum('pr' in call for call in calls()) == github, calls()
                 send(b'\r', 'Is this good?')
+                review = screen.text()
+                if mapping_case == 'moved':
+                    assert 'o open PR' in review and 'Preview identity unknown' in review, review
+                    send(b'o', 'PR sent to browser')
+                    assert calls()[-1] == ['pr', 'view', URL, '--web']
+                    os.write(master, b'v')
+                    wait(lambda: 'Preview identity unknown' in screen.text().splitlines()[-4])
+                    assert 'how to add one' not in screen.text(), screen.text()
+                else:
+                    if mapping_case == 'missing':
+                        title = 'Result unknown: no recorded PR'
+                        advice = 'When this run has a PR, record it with tink-sdlc, then press r.'
+                    else:
+                        title = 'Result unknown: invalid PR URL'
+                        advice = 'Correct the recorded GitHub PR URL with tink-sdlc, then press r.'
+                        assert 'no recorded PR' not in review, review
+                    assert title in review and advice in review, review
+                    assert 'o open PR' not in review and 'Preview identity unknown' not in review, review
+                    assert ('w write verdict' in review) == (operator == 'human'), review
+                    send(b'?', 'What Taste reads')
+                    assert advice in screen.text(), screen.text()
+                    for offer in ('o opens the PR', "v runs the project's preview", 'Preview format:'):
+                        assert offer not in screen.text(), screen.text()
+                    send(b'\x1b', 'Your goal')
+                    for action in (b'o', b'v'):
+                        os.write(master, action)
+                        wait(lambda: advice in screen.text().splitlines()[-4])
+                        assert screen.text().splitlines()[-4].strip() == advice, screen.text()
+                        reread()  # Clears the key feedback before checking the other refusal.
+                        assert advice in screen.text() and 'o open PR' not in screen.text(), screen.text()
+                    assert len(calls()) == 6, calls()  # Three explicit list/run status reads.
+                assert not Path(str(log) + '.preview').exists(), 'unknown head fetched the preview declaration'
+                assert not preview_git.exists(), 'unknown head launched a preview checkout'
                 send(b'e', 'Checks')
                 assert 'waiting: revision unknown  Allocation works' in screen.text(), screen.text()
                 send(b'\x1b[F', 'Commit: unknown')
@@ -226,7 +264,7 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
                 process.wait(timeout=5)
                 assert process.returncode == 0 and tree(checkout) == original
                 print(json.dumps(dict(journey='Taste mapping refusal', mapping=mapping_case,
-                                      width=width, height=height, no_color=no_color, gh_calls=github)))
+                                      width=width, height=height, no_color=no_color, gh_calls=sum(call[0] == 'pr' for call in calls()))))
                 return
             assert len(calls()) == 3, calls()
             assert all('--web' not in c for c in calls())
@@ -545,3 +583,4 @@ if __name__ == '__main__':
                 journey(*dimensions, no_color, next_case=next_case)
     for case in ['missing', 'malformed', 'moved', 'case']:
         journey(80, 24, True, case)
+    journey(100, 30, False, 'missing', operator='human')
