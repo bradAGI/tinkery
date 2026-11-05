@@ -9,8 +9,26 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-/// The goal block as a wrapped paragraph, line breaks kept, in ink.
+/// Direction marks, overrides and isolates that need a visible spelling in a goal.
+pub(crate) fn is_direction_control(c: char) -> bool {
+    matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// The goal block in ink, with line breaks kept and direction controls shown by code point.
 pub fn goal_block(body: String, palette: Palette) -> Paragraph<'static> {
+    let body = if body.contains(is_direction_control) {
+        let mut shown = String::with_capacity(body.len());
+        for c in body.chars() {
+            if is_direction_control(c) {
+                shown.extend(c.escape_default());
+            } else {
+                shown.push(c);
+            }
+        }
+        shown
+    } else {
+        body
+    };
     Paragraph::new(body)
         .wrap(Wrap { trim: false })
         .style(palette.ink)
