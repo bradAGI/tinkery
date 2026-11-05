@@ -193,14 +193,58 @@ def retired_option():
     print('--agent-confirmation is no longer an option')
 
 
+def redirected_session_root(width, height):
+    with tempfile.TemporaryDirectory(prefix='tinkery-TEST-retired-save-') as directory:
+        root = Path(directory)
+        home = root / 'TEST-home'
+        retired = home / '.local/share/seed-me/sessions'
+        retired.mkdir(parents=True)
+        (retired / 'TEST-original').write_bytes(b'TEST preserved bytes\x00\xff')
+        safe = root / 'TEST-safe'
+        safe.mkdir()
+        alias = root / 'TEST-sessions'
+        alias.symlink_to(safe, target_is_directory=True)
+        run = Run(root, width, height, 4, agent=True, home=home)
+        try:
+            run.wait('1  think')
+            run.send(b'1', "What's on your mind?")
+            run.type('Refusals feel noisy.')
+            run.send(F2, 'May refusals show private text?')
+            run.type('never')
+            run.send(F2, 'Ready for your review')
+            run.choose('Review the goal', 'You are confirming')
+            run.read_until('type confirm')
+            alias.unlink()
+            alias.symlink_to(retired, target_is_directory=True)
+            before = {p.relative_to(retired): p.read_bytes() for p in retired.rglob('*')}
+            run.send(b'confirm\r', 'Handoff not complete.')
+            assert {p.relative_to(retired): p.read_bytes() if p.is_file() else None
+                    for p in retired.rglob('*')} == before, 'refused save wrote into retired storage'
+            assert not run.records.exists(), 'refused save wrote a Think record'
+            alias.unlink()
+            alias.symlink_to(safe, target_is_directory=True)
+            run.send(b'\r', 'Saved.')
+            record = json.loads(next(run.records.iterdir()).read_text())
+            ledger = helper.load(safe / record['seed_me_session'])
+            assert record['goal'] == ledger['goal'] and ledger['operator'] == 'agent'
+            assert list(retired.iterdir()) == [retired / 'TEST-original']
+            assert not run.calls()
+            print(f'Think redirected session root {width}x{height}: retired save refused without writes; '
+                  'safe alias retry saved the confirmed goal')
+        finally:
+            run.close()
+
+
 if __name__ == '__main__':
     retired_option()
+    redirected_session_root(100, 30)
     confirmation_after_reading(94, 51)
     confirmation_after_reading(94, 51, correct_typo=True)
     confirmation_after_reading(100, 30)
     confirmation_after_reading(100, 30, correct_typo=True)
     journey(100, 30)
     os.environ['NO_COLOR'] = '1'
+    redirected_session_root(80, 24)
     confirmation_after_reading(80, 24)
     confirmation_after_reading(80, 24, correct_typo=True)
     journey(80, 24)

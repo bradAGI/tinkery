@@ -16,11 +16,13 @@ pub fn initialize(root: &Path, timestamp: &str) -> Result<std::path::PathBuf, St
 }
 
 /// Create a session for the same authorized actor that will publish its goal and answers.
+/// Refuse retired storage before creating any folder or ledger.
 pub(crate) fn initialize_for(
     root: &Path,
     timestamp: &str,
     actor: crate::think_record::Actor<'_>,
 ) -> Result<std::path::PathBuf, String> {
+    crate::seed_me::migration::refuse_old_root(root)?;
     std::fs::create_dir_all(root)
         .map_err(|_| "Cannot create the sessions folder. Check its permissions.")?;
     let directory = tempfile::Builder::new()
