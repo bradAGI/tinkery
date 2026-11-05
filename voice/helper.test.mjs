@@ -117,9 +117,17 @@ test('signals terminate capture without a final', async t => {
   const c = client(t); await c.wait('ready'); c.send('start'); await c.wait('partial'); c.child.kill('SIGTERM'); await c.exit;
   assert.ok(!c.events.some(e => e.event === 'final'));
 });
-test('near-zero whole take reports plain permission guidance, not empty final', async t => {
-  const c = client(t, { text: 'thank you' }, { TINKERY_VOICE_FAKE_PCM: 'silence' }); await c.wait('ready'); c.send('start'); await c.wait('partial'); c.send('stop');
-  const error = await c.wait('error'); assert.equal(error.kind, 'mic-permission'); assert.equal(error.message, 'Allow microphone access for your terminal in System Settings → Privacy & Security → Microphone.');
+test('a quiet take reports nothing heard and allows another take', async t => {
+  const c = client(t, { text: 'thank you' }, { TINKERY_VOICE_FAKE_PCM: 'silence' });
+  await c.wait('ready');
+  for (const take of [1, 2]) {
+    c.send('start', take);
+    assert.equal((await c.wait('partial', e => e.take === take)).text, 'thank you');
+    c.send('stop', take);
+    const error = await c.wait('error', e => e.take === take);
+    assert.equal(error.message, 'I didn’t hear anything');
+    assert.equal(error.kind, 'capture');
+  }
   assert.ok(!c.events.some(e => e.event === 'final'));
 });
 test('batch-only models still produce final without partials', async t => {

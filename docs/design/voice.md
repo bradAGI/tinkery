@@ -37,8 +37,9 @@ modify a newer take. The helper stays goal-blind.
   the recorder and terminate the helper. Voice is disabled in review/receipt.
 - A recorder read rejected by deliberate stop ends the take; it is not an audio
   failure. Permission, unavailable/busy microphone, install/model/version and
-  engine errors get one actionable plain line. Near-zero capture and known
-  silence fillers insert nothing (“Didn't catch that.”).
+  engine errors get one actionable plain line. A near-zero take clears its preview
+  and shows “I didn’t hear anything”. A known silence filler shows “Didn't catch that.”
+  Both leave the draft ready to edit or dictate again.
 
 No audio is retained and no transcript is logged. Local voice does not send
 anything to a provider; F2 in **live shaping mode** sends the editable text like

@@ -219,7 +219,7 @@ async function finish(take) {
     await take.feeds;
     if (!live(take)) return;
     if (take.samples && Math.sqrt(take.energy / take.samples) < 0.00001)
-      throw issue('mic-permission', permissionHelp);
+      throw issue('capture', 'I didn’t hear anything');
     let text = '';
     if (take.samples) {
       if (take.stream) { await take.stream.finalize(); if (live(take)) text = take.stream.snapshot.text; }
