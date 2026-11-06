@@ -21,7 +21,7 @@ REJECTION = '  Ignores my sample — keep the "raw" lines.  '
 RUN = 'test-label'
 
 
-def checked_result(base, env, sessions):
+def checked_result(base, env, sessions, changed_label_command=False):
     """Real seed intake and verification, with the rejected change only on the build branch."""
     root, git = checkout(base, env)
     git('config', 'user.name', 'TEST operator')
@@ -38,6 +38,12 @@ def checked_result(base, env, sessions):
     build = base / 'TEST-build'
     sdlc(root, env, 'stage', RUN, '3', '--worktree', str(build))
     (build / 'example.txt').write_text('Only the rejected build has this file.\n')
+    if changed_label_command:
+        script = build / '_system/scripts/sdlc.py'
+        script.write_text(script.read_text().replace('ROOT = Path(__file__)', """if 'label' in sys.argv and os.environ.get('TEST_UNEXPECTED_LABEL'):
+    Path(os.environ['TEST_UNEXPECTED_LABEL']).touch()
+ROOT = Path(__file__)""", 1))
+        git('-C', str(build), 'add', '_system/scripts/sdlc.py')
     git('-C', str(build), 'add', 'example.txt')
     git('-C', str(build), 'commit', '-qm', 'TEST candidate')
     candidate = git('-C', str(build), 'rev-parse', 'HEAD').stdout.decode().strip()
@@ -48,23 +54,51 @@ def checked_result(base, env, sessions):
     return root, build, session, candidate, git
 
 
+class ReviewTerminal(TerminalProcess):
+    def wait(self, text):
+        def consume(chunk):
+            self.raw.extend(chunk)
+            self.screen.feed(chunk)
+
+        for code in wait_output(self.master, self.process, consume,
+                                time.monotonic() + 12):
+            if text in ' '.join(self.screen.text().split()) and self.screen.ready():
+                return
+            assert code is None, self.screen.text()
+        raise AssertionError(f'Missing {text!r}\n{self.screen.text()}')
+
+    def send(self, keys, text):
+        os.write(self.master, keys)
+        self.wait(text)
+
+    def open_review(self):
+        self.send(b'6', 'Press r to read results')
+        self.send(b'r', 'Keep the original goal.')
+        self.send(b'\r', 'e details')
+
+
+def test_environment(base, width):
+    tools = base / 'bin'
+    tools.mkdir()
+    (tools / 'python3').symlink_to(sys.executable)
+    forbidden = base / 'unexpected-launch'
+    for name in ('pi', 'gh', 'claude'):
+        tool = tools / name
+        tool.write_text(f'#!{sys.executable}\nfrom pathlib import Path\n'
+                        f'Path({str(forbidden)!r}).touch()\nraise SystemExit(99)\n')
+        tool.chmod(0o755)
+    env = subprocess.environment({**os.environ, 'TERM': 'xterm-256color',
+        'PATH': f'{tools}:/usr/bin:/bin', 'TINKERY_NODE': '/tinkery-TEST-no-node',
+        'GIT_CONFIG_NOSYSTEM': '1'}, home=base / 'TEST-home')
+    if width == 80:
+        env['NO_COLOR'] = '1'
+    return env, forbidden
+
+
 def journey(width, height, forwarded, legacy=False):
     with tempfile.TemporaryDirectory(prefix='tinkery-TEST-taste-retry-') as directory:
         base = Path(directory).resolve()
-        tools = base / 'bin'
-        tools.mkdir()
-        (tools / 'python3').symlink_to(sys.executable)
-        forbidden = base / 'unexpected-launch'
-        for name in ('pi', 'gh', 'claude'):
-            tool = tools / name
-            tool.write_text(f'#!{sys.executable}\nfrom pathlib import Path\n'
-                            f'Path({str(forbidden)!r}).touch()\nraise SystemExit(99)\n')
-            tool.chmod(0o755)
-        env = subprocess.environment({**os.environ, 'TERM': 'xterm-256color',
-            'PATH': f'{tools}:/usr/bin:/bin', 'TINKERY_NODE': '/tinkery-TEST-no-node',
-            'GIT_CONFIG_NOSYSTEM': '1'}, home=base / 'TEST-home')
-        if width == 80:
-            env['NO_COLOR'] = '1'
+        env, forbidden = test_environment(base, width)
         sessions = base / 'TEST-sessions'
         root, build, original, candidate, git = checked_result(base, env, sessions)
         if legacy:
@@ -74,30 +108,11 @@ def journey(width, height, forwarded, legacy=False):
         refs = git('show-ref', '--heads').stdout
         worktrees = git('worktree', 'list', '--porcelain').stdout
 
-        terminal = TerminalProcess([str(REPO / 'target/debug/tinkery'), '--operator', 'human', '--home',
+        terminal = ReviewTerminal([str(REPO / 'target/debug/tinkery'), '--operator', 'human', '--home',
                 '--sdlc-root', str(root if forwarded else build), '--shape-budget', '0',
                 '--seed-session-root', str(sessions)], cwd=root, env=env, width=width, height=height)
 
-        def wait(text):
-            def consume(chunk):
-                terminal.raw.extend(chunk)
-                terminal.screen.feed(chunk)
-
-            for code in wait_output(terminal.master, terminal.process, consume,
-                                    time.monotonic() + 12):
-                if text in ' '.join(terminal.screen.text().split()) and terminal.screen.ready():
-                    return
-                assert code is None, terminal.screen.text()
-            raise AssertionError(f'Missing {text!r}\n{terminal.screen.text()}')
-
-        def send(keys, text):
-            os.write(terminal.master, keys)
-            wait(text)
-
-        def open_review():
-            send(b'6', 'Press r to read results')
-            send(b'r', 'Keep the original goal.')
-            send(b'\r', 'e details')
+        wait, send, open_review = terminal.wait, terminal.send, terminal.open_review
 
         try:
             wait('1 think')
@@ -166,7 +181,70 @@ def journey(width, height, forwarded, legacy=False):
             terminal.close()
 
 
+def refusals():
+    """Use one verified build for changed verdicts, an agent visit and a changed build command."""
+    with tempfile.TemporaryDirectory(prefix='tinkery-TEST-taste-retry-refusals-') as directory:
+        base = Path(directory).resolve()
+        sessions = base / 'TEST-sessions'
+        env, forbidden = test_environment(base, 100)
+        root, build, original, head, git = checked_result(base, env, sessions, changed_label_command=True)
+        worktrees = git('worktree', 'list', '--porcelain').stdout
+        labels = build / f'runs/{RUN}/labels.jsonl'
+        marker = base / 'TEST-candidate-label-ran'
+
+        def verdict(kind, source):
+            sdlc(build, env, 'label', RUN, '--kind', kind, '--source', source,
+                 '--words', REJECTION, '--reviewer', 'TEST operator')
+
+        def visit(role):
+            terminal = ReviewTerminal([str(REPO / 'target/debug/tinkery'), '--operator', role,
+                '--home', '--sdlc-root', str(root), '--shape-budget', '0',
+                '--seed-session-root', str(sessions)], cwd=root,
+                env={**env, 'TEST_UNEXPECTED_LABEL': str(marker)}, width=100, height=30)
+            terminal.wait('1 think')
+            terminal.open_review()
+            return terminal
+
+        verdict('rejected', f'taste@{head}')
+        agent = visit('agent')
+        try:
+            agent.send(b's', 'Only a human can save this attempt.')
+            agent.wait(REJECTION.strip())
+            agent.send(F2 + b'?', 'Review the previous goal')
+            assert set(sessions.iterdir()) == {original}
+            assert git('worktree', 'list', '--porcelain').stdout == worktrees
+        finally:
+            agent.close()
+
+        human = visit('human')
+        try:
+            human.send(b's', 'Confirmed goal')
+            verdict('accepted', 'taste')
+            human.send(F2, 'The rejection changed.')
+            assert set(sessions.iterdir()) == {original}
+            assert git('worktree', 'list', '--porcelain').stdout == worktrees
+            for changed_hash in (False, True):
+                if changed_hash:
+                    verdict('rejected', f'taste@{"f" * 40}')
+                human.send(F10, '1 think')
+                human.open_review()
+                human.send(b's?', 'What Taste reads')
+                human.send(ESC, 'e details')
+                assert 'Shape the next attempt' not in human.screen.text()
+            recorded = labels.read_bytes()
+            human.send(b'w', 'Signed as TEST operator.')
+            human.send(b'2', '› 2 fail')
+            human.send(b'TEST refusal', 'TEST refusal')
+            human.send(F2, 'The build checkout has a different label command.')
+            assert not marker.exists() and labels.read_bytes() == recorded
+            assert not forbidden.exists()
+            print('PASS stale verdict, wrong hash, agent read-only and forwarded command refusals')
+        finally:
+            human.close()
+
+
 if __name__ == '__main__':
     journey(100, 30, forwarded=True)
     journey(80, 24, forwarded=False)
     journey(100, 30, forwarded=False, legacy=True)
+    refusals()
