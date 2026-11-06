@@ -454,7 +454,7 @@ fn rejected(reason: String) -> Refusal {
 /// Check a reply-built `state` against the ledger's rules before any write, so a broken rule is
 /// the reply's and never a storage failure.
 fn reply_fits(state: &Value) -> Result<(), Refusal> {
-    ledger::validate(&ledger_value(state)?)
+    ledger::validate(&ledger::Value::from(state.clone()))
         .map(drop)
         .map_err(rejected)
 }
@@ -509,17 +509,6 @@ fn publish(session: &Path, expected: u64, reason: &str, state: &Value) -> Result
         state,
         &publication_time(SystemTime::now())?,
     )
-}
-
-fn ledger_value(value: &Value) -> Result<ledger::Value, Refusal> {
-    let unusable = || {
-        not_saved(
-            "The question or session could not be read. Reopen the session and retry the step."
-                .into(),
-        )
-    };
-    let text = serde_json::to_string(value).map_err(|_| unusable())?;
-    ledger::Value::parse(&text).map_err(|_| unusable())
 }
 
 fn publish_at(
@@ -690,8 +679,8 @@ pub fn ask(session: &Path, expected: u64, ask: &Ask, folder: &Path) -> Result<u6
     if let Some(recommendation) = ask.recommendation().filter(|_| !ask.hard()) {
         node["recommendation"] = recommendation.into();
     }
-    let mut state = ledger_value(&ledger.state)?;
-    ledger::queue_question(&mut state, ledger_value(&node)?).map_err(rejected)?;
+    let mut state = ledger::Value::from(ledger.state);
+    ledger::queue_question(&mut state, ledger::Value::from(node)).map_err(rejected)?;
     ledger.state = json(&state.pretty().map_err(not_saved)?)?;
     let mut assumed = ledger.state["assumed"]
         .as_array()
@@ -720,8 +709,9 @@ pub fn ask(session: &Path, expected: u64, ask: &Ask, folder: &Path) -> Result<u6
 
 fn resolutions(state: &mut Value, links: Option<&Value>) -> Result<(), Refusal> {
     if let Some(links) = links {
-        let mut proposed = ledger_value(state)?;
-        ledger::resolve_unknowns(&mut proposed, &ledger_value(links)?).map_err(rejected)?;
+        let mut proposed = ledger::Value::from(state.clone());
+        ledger::resolve_unknowns(&mut proposed, &ledger::Value::from(links.clone()))
+            .map_err(rejected)?;
         *state = json(&proposed.pretty().map_err(not_saved)?)?;
     }
     Ok(())
@@ -886,7 +876,9 @@ pub fn promote(session: &Path, expected: u64) -> Result<Option<u64>, Refusal> {
     if !ledger.state["current_question"].is_null() {
         return Ok(None);
     }
-    let Some(id) = ledger::next_question(&ledger_value(&ledger.state)?).map_err(not_saved)? else {
+    let Some(id) =
+        ledger::next_question(&ledger::Value::from(ledger.state.clone())).map_err(not_saved)?
+    else {
         return Ok(None);
     };
     let mut state = ledger.state;
@@ -961,7 +953,7 @@ pub fn draft_seed(
         }
         None => 1,
     };
-    let records = ledger::Value::parse(&checks.to_string()).map_err(not_saved)?;
+    let records = ledger::Value::from(checks.clone());
     ledger::validate_goal_checks(ledger.goal().unwrap_or(""), &records).map_err(rejected)?;
     let rendered = ledger::checks_block(&records).map_err(not_saved)?;
     let version = if found.is_empty() && resolves.is_none() {
