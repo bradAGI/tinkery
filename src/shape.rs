@@ -101,6 +101,7 @@ pub enum Leave {
 enum Aside {
     TeachBack,
     Change,
+    RepairCheck(bool),
 }
 
 struct Opened {
@@ -146,6 +147,12 @@ struct Opened {
 /// A change Shape asks of the ledger without a model.
 #[derive(Clone)]
 enum Write {
+    RepairCheck {
+        expected: u64,
+        seed: String,
+        words: String,
+        judgment: bool,
+    },
     Revisit {
         id: String,
         expected: u64,
@@ -386,6 +393,14 @@ impl Shape {
             if let Some(result) = result {
                 open.writing = None;
                 open.notice = Some(match (result, write) {
+                    (Ok(()), Write::RepairCheck { .. }) => {
+                        open.aside = None;
+                        (
+                            "Check saved. Read the changed draft, then confirm. No model ran."
+                                .into(),
+                            None,
+                        )
+                    }
                     (Ok(()), Write::Revisit { .. }) => {
                         open.form = None;
                         open.typed.clear();
@@ -532,6 +547,8 @@ impl Shape {
                 let what = match aside {
                     Aside::TeachBack => "Teach-back",
                     Aside::Change => "Change",
+                    Aside::RepairCheck(false) => "Check command",
+                    Aside::RepairCheck(true) => "How to judge",
                 };
                 open.notice = Some((format!("{what} cancelled. Nothing was saved."), None));
                 return Leave::Stay;
@@ -912,6 +929,14 @@ impl Shape {
                         _,
                     ) => Some("F2 save + redraft".to_owned()),
                     (
+                        _,
+                        Some(Typing {
+                            act: Act::RepairCheck { .. },
+                            ..
+                        }),
+                        _,
+                    ) => Some("F2 save check".to_owned()),
+                    (
                         Some(_),
                         Some(Typing {
                             act: Act::Keep { .. },
@@ -1088,6 +1113,11 @@ impl Shape {
 /// What a key asks of an open session.
 #[derive(Clone)]
 enum Act {
+    RepairCheck {
+        expected: u64,
+        seed: String,
+        judgment: bool,
+    },
     Respond {
         id: String,
         expected: u64,
@@ -1145,6 +1175,18 @@ impl Opened {
         ) = (&self.aside, &shaping.stage, shaping.version)
         {
             return Some(match aside {
+                Aside::RepairCheck(judgment) => Typing {
+                    act: Act::RepairCheck {
+                        expected,
+                        seed: seed.clone(),
+                        judgment: *judgment,
+                    },
+                    label: if *judgment {
+                        "your how-to-judge words"
+                    } else {
+                        "your check command"
+                    },
+                },
                 Aside::TeachBack => Typing {
                     act: Act::TeachBack {
                         revision: revision.clone(),
@@ -1355,6 +1397,18 @@ impl Opened {
         std::thread::spawn(move || {
             let actor = confirmation.as_ref();
             let result = match (work, expected) {
+                (
+                    Write::RepairCheck {
+                        expected,
+                        seed,
+                        words,
+                        judgment,
+                    },
+                    _,
+                ) => crate::seed_me::ledger::repair_check(
+                    &session, expected, &seed, &words, judgment, actor,
+                )
+                .map_err(Refusal::Refused),
                 (Write::Keep { id, reason }, Some(expected)) => {
                     answering::keep(&session, expected, &id, &reason, actor)
                 }
@@ -1471,6 +1525,23 @@ impl Opened {
             .map_or(&self.typed, |(_, words)| words)
             .text()
             .to_owned();
+        if let Act::RepairCheck {
+            expected,
+            seed,
+            judgment,
+        } = act
+        {
+            self.write(
+                Write::RepairCheck {
+                    expected,
+                    seed,
+                    words,
+                    judgment,
+                },
+                "Saving your check. No model runs.",
+            );
+            return;
+        }
         let refuse = |said: &str| Some((said.to_owned(), None));
         let folder = match &self.folder {
             Folder::Known(folder) => Some(folder.clone()),
@@ -1517,6 +1588,7 @@ impl Opened {
         let folder = folder.unwrap_or_default();
         let feedback = self.feedback.take();
         let (work, doing) = match act {
+            Act::RepairCheck { .. } => unreachable!("handled before model work"),
             Act::Respond {
                 id,
                 expected,

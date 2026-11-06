@@ -21,6 +21,7 @@ fn done(stage: Shaped) -> Shape {
         confirmation: vec![],
         teach_back: vec![],
         deferred: None,
+        commandless_check: None,
         open: vec![],
         decided: vec![
             Decided {
@@ -1155,6 +1156,21 @@ fn stacker_r1_draft_stores_records_instead_of_model_markdown() {
     assert!(
         draft.contains("You are confirming the goal: create a software version of Stacker.\r\n")
     );
+    while crate::seed_me::shaping::read(&receipt.session)
+        .unwrap()
+        .commandless_check
+        .is_some()
+    {
+        crate::seed_me::ledger::repair_check(
+            &receipt.session,
+            version,
+            &std::fs::read_to_string(receipt.session.join("seed-contract.md")).unwrap(),
+            "TEST operator inspects this requirement.",
+            true,
+            None,
+        )
+        .unwrap();
+    }
     answering::confirm_seed(
         &receipt.session,
         crate::seed_me::answering::read(&receipt.session)
@@ -1918,10 +1934,10 @@ print(json.dumps({{'next': 'seed', 'confirming': body, 'checks': checks, 'review
         "TEST yes to proposed checks, not implementation",
         None,
     )
-    .unwrap();
+    .unwrap_err();
     assert!(matches!(
         shaping::read(&receipt.session).unwrap().stage,
-        Shaped::Ready { .. }
+        Shaped::Drafted { .. }
     ));
     assert_eq!(agent.remaining(), 0);
     assert!(!temp.path().join("TEST-CHECK-WAS-RUN").exists());

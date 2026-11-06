@@ -23,15 +23,16 @@ mod seed;
 mod storage;
 pub(crate) use checks::{FULL, prose_headings};
 pub use checks::{
-    checks_block, document_headings, read_checks, readable_acceptance, validate_checks,
+    checks_block, commandless_check, document_headings, read_checks, readable_acceptance,
+    validate_checks,
 };
 pub(crate) use checks::{goal_criteria, keeps_criterion, validate_goal_checks};
 pub(crate) use seed::status_from_ledger;
 pub use seed::{decisions_block, seed_summary, status, verify_handoff};
 pub use storage::{
     PublishError, SaveState, confirm_as, confirm_displayed_as, confirm_seed,
-    confirm_with_teach_back, end, initialize, publish, record_teach_back, respond, revalidate,
-    set_checks,
+    confirm_with_teach_back, end, initialize, publish, record_teach_back, repair_check, respond,
+    revalidate, set_checks,
 };
 pub(crate) use storage::{initialize_for, save_draft};
 mod python;

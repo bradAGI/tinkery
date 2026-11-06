@@ -16,6 +16,7 @@ pub(super) enum Choice {
     Revise,
     Revisit,
     TeachBack,
+    RepairCheck(bool),
     Change,
     Folder,
     SoFar,
@@ -59,6 +60,15 @@ impl Shape {
             })) = &open.reading
         {
             rows.push(Row::new("Answer deferred prerequisite", Choice::Revisit));
+        }
+        if agent
+            && matches!(&open.reading, Reading::Done(Ok(shaping)) if shaping.commandless_check.is_some())
+        {
+            rows.push(Row::new(
+                "Supply a check command",
+                Choice::RepairCheck(false),
+            ));
+            rows.push(Row::new("Make it a judgment", Choice::RepairCheck(true)));
         }
         if agent && open.offers_teach_back() {
             rows.push(Row::new("Revise the draft", Choice::Change));
@@ -126,6 +136,20 @@ impl Shape {
                     "Which assumption do you object to?".into(),
                     Some("Next: press its number; Esc keeps them all.".into()),
                 ));
+            }
+            Choice::RepairCheck(judgment) => {
+                open.aside = Some((Aside::RepairCheck(judgment), Words::new("")));
+                if let Reading::Done(Ok(shaping)) = &open.reading {
+                    open.notice = shaping.commandless_check.as_ref().map(|statement| {
+                        (
+                            format!("Check: {statement}"),
+                            Some(
+                                "Next: type your words, then F2 saves the check; Esc cancels."
+                                    .into(),
+                            ),
+                        )
+                    });
+                }
             }
             Choice::TeachBack => {
                 open.aside = Some((Aside::TeachBack, Words::new(open.typed.text())));
