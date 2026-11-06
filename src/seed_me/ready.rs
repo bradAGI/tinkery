@@ -90,11 +90,14 @@ fn read_with(
             .ok_or("The verified seed has no goal.")?,
         revision: revision.ok_or("The verified seed has no revision.")?,
         acceptance: acceptance(&seed)?,
-        commands: root.and_then(|root| {
-            let title = seed.lines().find_map(|line| line.strip_prefix("# "))?;
-            let run = slug(title.strip_prefix("Seed: ").unwrap_or(title))?;
-            intake(session, &std::env::current_exe().ok()?, &run, root)
-        }),
+        // A checkout without its tink-sdlc script cannot run the command, so none is offered.
+        commands: root
+            .filter(|root| root.join(crate::sdlc::SCRIPT).is_file())
+            .and_then(|root| {
+                let title = seed.lines().find_map(|line| line.strip_prefix("# "))?;
+                let run = slug(title.strip_prefix("Seed: ").unwrap_or(title))?;
+                intake(session, &std::env::current_exe().ok()?, &run, root)
+            }),
         confirmation_note: shaped.confirmation_note,
     }))
 }
@@ -224,6 +227,11 @@ mod tests {
         super::super::ledger::fixtures::confirmed(&session, " TEST goal\nverbatim  ", "r1");
         if !verified {
             fs::remove_file(session.join("seed-confirmation.json")).unwrap();
+        }
+        // Both named checkouts have tink-sdlc's script, so a command can be offered.
+        for checkout in [root.path(), session.as_path()] {
+            fs::create_dir_all(checkout.join("_system/scripts")).unwrap();
+            fs::write(checkout.join(crate::sdlc::SCRIPT), "TEST script").unwrap();
         }
         (root, session)
     }

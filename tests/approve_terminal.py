@@ -27,7 +27,7 @@ def journey(width, height, case, no_color):
         sessions = root / "TEST sessions' folder"
         expected = []
         retarget = case == 'retarget-checkout'
-        if retarget or case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'no-checkout', 'different-repo'):
+        if retarget or case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'no-checkout', 'different-repo', 'no-script'):
             for name, date in [('TEST oldest café', '2026-01-01T00:00:00Z'),
                                ('TEST newest', '2026-02-01T00:00:00Z')]:
                 # #434: a ready goal tall enough to push the command below the fold at both sizes.
@@ -55,7 +55,7 @@ def journey(width, height, case, no_color):
         checkout = root / "TEST checkout's folder"
         if case == 'target-twin-checkouts':
             checkout = root / r'TEST\tparent' / checkout.name
-        configured = retarget or case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'different-repo')
+        configured = retarget or case.startswith('target-') or case in ('ready', 'started', 'edited', 'moved', 'runs-unreadable', 'different-repo', 'no-script')
         if configured:
             script = checkout / '_system/scripts/sdlc.py'
             script.parent.mkdir(parents=True)
@@ -66,7 +66,10 @@ def journey(width, height, case, no_color):
                 {'slug': 'TEST-unrelated-name', 'seed_contract': record}] if not case.startswith('target-') and case not in ('ready', 'different-repo') else []}
             script.write_text('print(' + repr(json.dumps(report)) + ')\n'
                               if case != 'runs-unreadable' else 'raise SystemExit("TEST unreadable runs")\n')
-            if case == 'edited':
+            if case == 'no-script':  # #716: the named checkout lacks tink-sdlc's script.
+                restored = script.read_text()
+                script.unlink()
+            elif case == 'edited':
                 original.write_text(original.read_text() + '\nTEST edit after intake\n')
             elif case == 'moved':
                 moved = sessions / 'TEST moved session'
@@ -275,6 +278,20 @@ def journey(width, height, case, no_color):
                 os.write(master, b'c')
                 send(b'\x1b', '4 approve')
                 assert not copies(), 'mismatched repo offered a copy'
+            elif case == 'no-script':
+                wait(lambda: 'Seed 1 of 2' in flat())
+                send(b'\x1b[F', 'Cannot copy: name a checkout with tink-sdlc installed')
+                assert 'c copy command' not in flat() and 'python3 _system' not in flat(), screen.text()
+                os.write(master, b'bc')
+                send(b'\x1b', '4 approve')
+                assert not copies(), 'a checkout without tink-sdlc offered a command'
+                # Restoring the script and reopening Approve offers the command again.
+                script.write_text(restored)  # It reports the oldest seed started.
+                before = files(root)
+                send(b'4', 'Seed 1 of 1')
+                send(b'\x1b[F', 'c copy command')
+                send(b'c', 'Copied. Run it in a terminal; after it succeeds, open Watch.')
+                wait(lambda: len(copies()) == 1)
             elif case == 'no-checkout':
                 wait(lambda: 'Seed 1 of 2' in flat())
                 send(b'\x1b[F', 'Cannot copy:')
@@ -345,7 +362,7 @@ def journey(width, height, case, no_color):
 if __name__ == '__main__':
     for size in [(80, 24), (100, 30)]:
         for no_color in [False, True]:
-            for case in ['ready', 'empty', 'incomplete', 'unreadable', 'started', 'edited', 'moved', 'runs-unreadable', 'no-checkout', 'different-repo']:
+            for case in ['ready', 'empty', 'incomplete', 'unreadable', 'started', 'edited', 'moved', 'runs-unreadable', 'no-checkout', 'different-repo', 'no-script']:
                 journey(*size, case, no_color)
             for case in ['target-ready','target-stale','target-missing','target-started','target-twin-checkouts']:
                 journey(*size,case,no_color)

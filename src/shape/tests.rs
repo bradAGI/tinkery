@@ -2732,6 +2732,8 @@ fn ending_completes_only_a_verified_seed_keeps_it_ready_and_leaves_it_read_only(
             ended: true
         }
     );
+    std::fs::create_dir_all(session.join("_system/scripts")).unwrap();
+    std::fs::write(session.join(crate::sdlc::SCRIPT), "TEST script").unwrap();
     assert!(
         crate::seed_me::ready::read(&session, Some(&session))
             .unwrap()

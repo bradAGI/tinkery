@@ -495,7 +495,10 @@ impl Approve {
                                 lines.push(Line::raw(line.to_owned()));
                             }
                         } else if !matches!(reading.origin_note, Some(OriginNote::Different(_))) {
-                            lines.push(Line::raw("Cannot copy: name a checkout with --sdlc-root PATH; checkout, seed, title and executable must be safe for one shell line."));
+                            lines.push(Line::raw(concat!(
+                                "Cannot copy: name a checkout with tink-sdlc installed using --sdlc-root PATH; ",
+                                "checkout, seed, title and executable must be safe for one shell line."
+                            )));
                         }
                     } else {
                         lines.push(Line::raw(
