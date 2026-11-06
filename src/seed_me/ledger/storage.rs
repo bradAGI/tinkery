@@ -67,6 +67,13 @@ pub struct PublishError {
     pub save_state: SaveState,
 }
 
+impl PublishError {
+    /// Only an explicit version refusal is a conflict. Diagnostic details may quote user text.
+    pub(crate) fn stale(&self) -> bool {
+        self.save_state == SaveState::NotSaved && self.reason == super::STALE_VERSION
+    }
+}
+
 impl std::fmt::Display for PublishError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.reason)
@@ -150,7 +157,7 @@ pub fn revalidate(
     let _writer = Writer::acquire(directory)?;
     let ledger = load(directory)?;
     let expected = super::value::int(expected);
-    super::require(ledger["version"] == expected, "stale publication version")?;
+    super::require(ledger["version"] == expected, super::STALE_VERSION)?;
     let state = super::editable(&ledger)?;
     super::validate_revalidation(&super::value::object(&[(id, reason.into())]))?;
     let review_reason = actor.context().map_or_else(
@@ -197,7 +204,7 @@ pub fn respond(
         "The session could not be read. Reopen it and check its saved ledger before trying again.".to_owned()
     })?;
     let expected = super::value::int(expected);
-    super::require(ledger["version"] == expected, "stale publication version")?;
+    super::require(ledger["version"] == expected, super::STALE_VERSION)?;
     if matches!(action, super::AnswerAction::Revisit(_)) {
         super::require(
             !directory.join(super::seed::FILE).exists(),
@@ -359,7 +366,7 @@ pub(crate) fn save_draft(
     let ledger = load(directory)?;
     super::require(
         ledger["version"] == super::value::int(expected),
-        "stale publication version",
+        super::STALE_VERSION,
     )?;
     super::require(ledger["status"].is("active"), "ended session is read-only")?;
     let path = directory.join(super::seed::FILE);
@@ -408,7 +415,7 @@ pub fn record_teach_back(
     })?;
     super::require(
         ledger["version"] == super::value::int(expected),
-        "stale publication version",
+        super::STALE_VERSION,
     )?;
     let current = std::fs::read_to_string(directory.join(super::seed::FILE)).map_err(|_| {
         "The draft could not be read. Reopen Shape before recording this review again.".to_owned()
@@ -484,7 +491,7 @@ pub fn repair_check(
     let ledger = load(directory)?;
     super::require(
         ledger["version"] == super::value::int(expected),
-        "stale publication version",
+        super::STALE_VERSION,
     )?;
     super::require(ledger["status"].is("active"), "ended session is read-only")?;
     let path = directory.join(super::seed::FILE);
@@ -611,7 +618,7 @@ fn confirm(
     if let Some((expected, seed)) = displayed {
         super::require(
             ledger["version"] == super::value::int(expected),
-            "stale publication version",
+            super::STALE_VERSION,
         )?;
         let current = std::fs::read_to_string(directory.join(super::seed::FILE)).map_err(|_| {
             "The draft could not be read. Reopen Shape before confirming.".to_owned()

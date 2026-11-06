@@ -45,6 +45,8 @@ use std::{
 };
 use value::{array, int, object};
 
+const STALE_VERSION: &str = "stale publication version";
+
 type Result<T> = std::result::Result<T, String>;
 const STATE: &[&str] = &[
     "status",
@@ -880,10 +882,7 @@ pub fn transition(
     {
         return Ok(ledger.clone());
     }
-    require(
-        expected_version == &ledger["version"],
-        "stale publication version",
-    )?;
+    require(expected_version == &ledger["version"], STALE_VERSION)?;
     require(ledger["status"].is("active"), "ended session is read-only")?;
     require(text(reason), "update requires a reason")?;
     if ledger["origin"] != Value::Null {

@@ -466,7 +466,7 @@ fn not_saved(reason: String) -> Refusal {
 fn published(error: ledger::PublishError) -> Refusal {
     let reason = error.reason.lines().next().unwrap_or("");
     match error.save_state {
-        _ if reason.contains("stale publication version") => Refusal::Stale,
+        ledger::SaveState::NotSaved if error.stale() => Refusal::Stale,
         ledger::SaveState::NotSaved => Refusal::Refused(format!("Tinkery refused: {reason}")),
         ledger::SaveState::Unknown => Refusal::Refused(format!(
             "This may or may not have saved ({}). Reopen this session to see what it holds before trying again.",
