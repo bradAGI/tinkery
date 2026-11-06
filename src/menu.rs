@@ -370,6 +370,7 @@ impl Home {
                 reasons,
                 &mut self.approve_reader,
                 self.record_root.clone(),
+                self.worker_config.as_ref().map(|config| config.responses),
             );
         }
     }
@@ -557,11 +558,10 @@ impl Home {
         self.worker_panel.as_ref().is_some_and(worker::Panel::busy)
     }
 
-    fn open_worker(&mut self, seed: seed_me::ready::ReadySeed, root: PathBuf) {
+    fn open_worker(&mut self, review: approve::WorkerReview) {
         if !self.worker_busy() {
             self.worker_panel = Some(worker::Panel::review(
-                seed,
-                root,
+                review,
                 self.record_root.clone(),
                 self.worker_config.clone(),
             ));
@@ -744,9 +744,9 @@ impl Home {
                 };
             }
             if let View::Approve(view) = &mut self.view
-                && let Some((seed, root)) = view.take_worker_request()
+                && let Some(review) = view.take_worker_request()
             {
-                self.open_worker(seed, root);
+                self.open_worker(review);
             }
             return;
         }
