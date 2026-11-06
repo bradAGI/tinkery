@@ -1653,7 +1653,10 @@ fn render_so_far(
     );
 }
 
-/// Draw the session with scrollable reading and fixed words; return overflow and page size.
+/// What to read (the goal's first line, or the seed draft when one waits, then where the seed
+/// stands) comes first and scrolls when it doesn't fit; the words box, what was said and any next
+/// step follow it and stay in view. Returns whether the reading scrolls, so the key bar offers
+/// scrolling only then, and how many of its rows show.
 fn render_open(
     frame: &mut Frame,
     scroll: &mut u16,
@@ -2130,7 +2133,12 @@ struct Stand<'a> {
     instinct: bool,
 }
 
-/// Separate the stage's reading from its actions, with one next step and visibly guessed suggestions.
+/// Where the seed stands, in plain words, as what to read and then what to act with (the words box,
+/// what was said and the next step). The question's label is muted and its wording is the one
+/// thing to act on (jade); its suggestion is a guess (italic). The operator's words are in ink.
+/// At most one Next line: none when the key bar already names the one next action and nothing
+/// was said, and a notice's own next step replaces the stage's. While a step runs, the question and the words
+/// stay, muted, under what the step is doing.
 fn standing(shaping: &Shaping, stand: Stand, palette: Palette) -> (Text<'static>, Text<'static>) {
     const SETUP: &str = "Next: reopen this goal with Shape set up; F1 shows how.";
     const INSPECT: &str = "Next: check this session's files; F1 shows the path.";

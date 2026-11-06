@@ -44,7 +44,9 @@ it is the right place to say "this project isn't prepared" and print the command
 
 ## First slice
 
-Filed as [tink-sdlc #165](https://github.com/jon-devlapaz/tink-sdlc/issues/165).
+Filed as [tink-sdlc #165](https://github.com/jon-devlapaz/tink-sdlc/issues/165), then closed as not
+planned on 2026-11-06: it added surface to save typing one small file, with no evidence the
+hand-edit went wrong.
 In tink-sdlc, `init.py TARGET` accepts the operator's typed commands. It takes repeatable
 `--check-argv JSON` with `--timeout N`, and an optional `--setup-argv JSON`. With those flags
 it writes them to `verification.json` through the existing validator instead of leaving it
