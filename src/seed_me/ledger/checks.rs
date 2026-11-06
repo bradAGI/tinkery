@@ -86,6 +86,15 @@ pub fn validate_checks(records: &Value) -> Result<()> {
     Ok(())
 }
 
+/// The first provisional check needing an operator command or judgment before confirmation.
+pub(crate) fn commandless_check(records: &Value) -> Option<&str> {
+    records
+        .items()
+        .iter()
+        .find(|r| r["kind"].is("provisional") && !r.has("cmd"))
+        .and_then(|r| r["statement"].string())
+}
+
 /// The confirmed goal's explicit Done when lines, in order. Unstructured goals have none.
 pub(crate) fn goal_criteria(goal: &str) -> Vec<&str> {
     let mut in_done_when = false;

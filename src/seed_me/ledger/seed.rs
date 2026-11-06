@@ -543,6 +543,12 @@ pub(super) fn confirmed_as(
     require_seed_body(directory, "cannot confirm")?;
     require_seed_decisions(directory, ledger, "cannot confirm")?;
     let records = checks::require_seed_checks(directory, ledger, false)?;
+    if let Some(statement) = checks::commandless_check(&records) {
+        return Err(format!(
+            "Cannot confirm: \"{statement}\" has no command. F1: Supply a check command, or Make it a judgment with your how-to-judge words. Nothing was confirmed."
+        ));
+    }
+
     let first_end = split_terminator(&lines[0]).1;
     let first_end = if first_end.is_empty() {
         "\n"

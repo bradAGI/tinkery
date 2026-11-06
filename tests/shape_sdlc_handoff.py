@@ -134,6 +134,17 @@ def shape(root, env):
         send(b'\x1bOQ', "PgDn or Down to 'End of seed' first. Nothing was confirmed.")
         os.write(master, b'\x1b[6~' * 40)
         wait('F2 confirm seed r1')
+        # #739: the recorded r1 has two commandless provisionals; each needs a TEST command first.
+        for name in ('sounds', 'mechanics'):
+            send(b'\x1bOQ', 'Supply a check command, or Make it a judgment')
+            send(b'\x1bOP', 'Right now')
+            wait('Supply a check command')
+            send(screen.pick('Supply a check command'), 'your check command')
+            typed = f'python3 -m unittest tests.test_TEST_stacker_{name}'
+            send(b'\x1b[200~' + typed.encode() + b'\x1b[201~', typed)
+            send(b'\x1bOQ', 'Check saved. Read the changed draft, then confirm. No model ran.')
+            os.write(master, b'\x1b[6~' * 40)
+            wait('F2 confirm seed r1')
         send(b'\x1bOQ', 'Seed ready: you confirmed r1, and it still matches.')
         status = helper.status(session)
         assert status['handoff']['verified'] is True

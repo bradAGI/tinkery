@@ -661,6 +661,12 @@ Shape uses Think's
   transport and preservation, not model quality or operator dogfood.
 - Agent actions require `--operator agent` and [are recorded as the agent's](think.md#confirmation-attribution-185);
   seed confirmation never claims a human keypress.
+- A commandless provisional check blocks confirmation for both operators. The refusal names the
+  check; F1 offers **Supply a check command** or **Make it a judgment** without a model call.
+  The first repair keeps the command exactly as typed; the second keeps the statement and stores
+  the operator's exact how-to-judge words as an attested `judge` item. Each repairs the first such
+  check in ledger order; read the changed draft before confirming. Proposals with a command
+  confirm as before. This rule belongs to the ledger (architecture diagnostics 3 and 6).
 - Confirmation uses Tinkery's ledger with the displayed revision and typed words as its source.
   As in Think, only the exact word `confirm` confirms (#614): anything else may be a correction,
   so F2 says `Type confirm, or F1 Revise the draft. Nothing was confirmed.`, keeping the words.
