@@ -835,6 +835,9 @@ Delegation (#239), deferral (#240) and typed findings (#241) are shipped through
 - File citations use `PATH:LINE` or `PATH:FIRST-LAST`, with `-`, `–` or `—` and optional
   spaces around the dash. Commas can add ranges for the same file (`PATH:1–3, 7–9`)
   or another file citation. Check every range, not a valid prefix of a malformed token.
+  A path with spaces is checked whole only in backticks (`` `docs/design report.md:1` ``);
+  a bare filename after a directory-like word (`docs/design report.md:1`) is flagged as possibly
+  the end of a longer path, never credited to the shorter file (#718).
   Invalid, zero, reversed or overflowing bounds, missing/outside/unreadable files and
   too few lines are flagged, not refused: the check ends `; citation not found: WHY`,
   questions show `(citation not found: WHY)` and the seed groups it under that check.

@@ -16,6 +16,8 @@ fn journey(checked: &str, warning: Option<&str>, paths: &[&str]) {
     fs::write(folder.join("one.rs"), "TEST no trailing newline").unwrap();
     fs::write(folder.join("123.rs"), "TEST numeric filename\n").unwrap();
     fs::write(folder.join("empty.rs"), "").unwrap();
+    fs::write(folder.join("report.md"), "TEST unrelated report\n").unwrap();
+    fs::write(folder.join("docs/spaced name.md"), "TEST one\nTEST two\n").unwrap();
     fs::create_dir(folder.join("directory.rs")).unwrap();
     fs::write(root.path().join("outside.rs"), "TEST outside\n").unwrap();
     #[cfg(unix)]
@@ -257,4 +259,37 @@ fn unavailable_citation_files_stay_visible_as_evidence_gaps() {
     ] {
         journey(checked, Some(reason), &[]);
     }
+}
+
+#[test]
+fn a_spaced_path_credits_only_the_whole_file_it_names() {
+    // #718: `report.md` exists, `docs/design report.md` does not.
+    journey(
+        "docs/design report.md:1",
+        Some("may be the end of a longer path that contains a space"),
+        &[],
+    );
+    journey(
+        "`docs/design report.md:1`",
+        Some("docs/design report.md isn't in the folder"),
+        &[],
+    );
+    journey("`docs/spaced name.md:2`", None, &["docs/spaced name.md"]);
+    journey(
+        "`docs/spaced name.md:3`",
+        Some("docs/spaced name.md has 2 lines, not 3"),
+        &[],
+    );
+    journey("`report.md:1`", None, &["report.md"]);
+    journey(
+        "Read report.md:1 and docs/recovery.md:2.",
+        None,
+        &["docs/recovery.md", "report.md"],
+    );
+    journey(
+        "docs/recovery.md:1 report.md:1",
+        None,
+        &["docs/recovery.md", "report.md"],
+    );
+    journey("docs/design report.md:1-x", Some("may be the end"), &[]);
 }
