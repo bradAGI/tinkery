@@ -109,14 +109,20 @@ A run needs a person when tink-sdlc reports it:
 
 These lead, as do runs whose detail has any unapproved gate, an owed manual attestation, or an
 attestation flagged `needs_recheck`. A non-automatic item whose `status` is not `passed` is owed,
-except provisional (`pending: true`) items awaiting activation. A passed attestation with
+except provisional (`pending: true`) items awaiting activation and items whose
+`operator_attestation` is `false`: the worker owns those, so their status stays in detail but
+owes the operator nothing. A report without `operator_attestation` counts the item as owed;
+any other value refuses the read. A passed attestation with
 `needs_recheck` is shown as **may need recheck**, not declared invalid: upstream says to recheck
 only if the change affects it. Automatic pending checks alone do not demand a person.
 
 A worker whose turn ended also leads: tink-sdlc's `steps` report each pinned build step and,
 for an active one, its `turn`, and its next action says to read the report. Rows add
 `worker running`, `worker's turn ended` or `worker state unknown`; a run awaiting building
-with no active step says `no active worker step`. This says nothing about work outside those
+with no active step says `no active worker step`. An uncertain launch also leads, as
+`launch unconfirmed; inspect it before starting another`, beside tink-sdlc's inspection step.
+Since 1.55.0 tink-sdlc marks only the newest uncertain step `owed`; an older report without
+`owed` treats every uncertain step as owed, and a non-boolean `owed` refuses the read. This says nothing about work outside those
 steps. Detail lists each step. A tink-sdlc without `steps` adds nothing; an unfamiliar
 step state or turn refuses the read.
 

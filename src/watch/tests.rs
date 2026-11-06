@@ -366,6 +366,16 @@ fn owed_attestations_and_possible_rechecks_lead_even_after_verification() {
             .owed,
         0
     );
+    // tinkery#713: a check the source assigns to the worker owes the operator nothing.
+    for (owner, owed) in [(Some(false), 0), (Some(true), 1), (None, 1)] {
+        let mut check = item("failed", false, false);
+        if let Some(owner) = owner {
+            check["operator_attestation"] = owner.into();
+        }
+        let d = parse_detail(&detail(vec![check]).to_string()).unwrap();
+        assert_eq!(d.attention.owed, owed, "{owner:?}");
+        assert!(d.checklist[0].starts_with("TEST-item: failed"), "{owner:?}");
+    }
     let mut running = detail(vec![]);
     running["run"]["verification_status"] = "running".into();
     running["run"]["gates"][0]["status"] = "stale".into();
@@ -396,6 +406,7 @@ fn unknown_attestation_fields_refuse_instead_of_claiming_quiet() {
         ("proof", serde_json::json!("automated")),
         ("needs_recheck", serde_json::json!("false")),
         ("pending", serde_json::json!("false")),
+        ("operator_attestation", serde_json::json!("false")),
     ] {
         let mut changed = valid.clone();
         changed["run"]["checklist"][0][field] = value;
@@ -414,11 +425,22 @@ fn a_run_says_whether_a_worker_is_building_it_and_an_ended_turn_needs_you() {
         }
         step
     };
+    let uncertain = |owed: Option<bool>| {
+        let mut step = step("uncertain", None);
+        if let Some(owed) = owed {
+            step["owed"] = owed.into();
+        }
+        step
+    };
     let cases = [
         ("idle", Some(vec![])),
         ("building", Some(vec![step("active", Some("not-ended"))])),
         ("ended", Some(vec![step("active", Some("ended"))])),
         ("older-sdlc", None),
+        // tinkery#712: an uncertain launch read as quiet with no worker running.
+        ("unsure", Some(vec![uncertain(Some(true))])),
+        ("unsure-old", Some(vec![uncertain(None)])),
+        ("unsure-past", Some(vec![uncertain(Some(false))])),
     ];
     let slugs: Vec<_> = cases.iter().map(|(slug, _)| run(slug, "not-run")).collect();
     let list = envelope(&slugs.join(","));
@@ -446,20 +468,42 @@ fn a_run_says_whether_a_worker_is_building_it_and_an_ended_turn_needs_you() {
         .iter()
         .map(|r| r.slug.clone())
         .collect();
-    assert_eq!(order, ["ended", "idle", "building", "older-sdlc"]);
+    assert_eq!(
+        order,
+        [
+            "ended",
+            "unsure",
+            "unsure-old",
+            "idle",
+            "building",
+            "older-sdlc",
+            "unsure-past"
+        ]
+    );
     let text = screen(&mut watch, 100, 30);
     for (slug, words) in [
         ("ended", "not verified yet · worker's turn ended"),
         ("idle", "not verified yet · no active worker step ·"),
         ("building", "not verified yet · worker running ·"),
         ("older-sdlc", "not verified yet · 0/0 checks passed"),
+        (
+            "unsure",
+            "not verified yet · launch unconfirmed; inspect it before starting another",
+        ),
+        (
+            "unsure-old",
+            "not verified yet · launch unconfirmed; inspect it",
+        ),
+        ("unsure-past", "not verified yet · no active worker step ·"),
     ] {
         assert!(
             text.contains(&format!("{slug}  {words}")),
             "{slug}:\n{text}"
         );
     }
-    watch.key(KeyEvent::from(KeyCode::Down));
+    for _ in 0..3 {
+        watch.key(KeyEvent::from(KeyCode::Down));
+    }
     watch.key(KeyEvent::from(KeyCode::Enter));
     settle(&mut watch);
     assert!(screen(&mut watch, 100, 30).contains("No worker step has been started for this run."));
@@ -484,6 +528,7 @@ fn a_run_says_whether_a_worker_is_building_it_and_an_ended_turn_needs_you() {
         step("active", None),
         step("prepared", Some("ended")),
         step("active", Some("TEST finished maybe")),
+        serde_json::json!({"name": "build", "state": "uncertain", "owed": "yes"}),
     ] {
         let mut value = detail(vec![]);
         value["run"]["steps"] = vec![bad.clone()].into();
