@@ -1,8 +1,9 @@
 //! Graf adapter: identity-safe topology, static positions, viewport and pointer mechanics.
 //! Tend owns selection policy and linking; this starts no physics worker and writes nothing.
 
-use super::{Tend, clipped};
+use super::Tend;
 use crate::Palette;
+use crate::clipped;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use graf::{
     FeatureFlags, GraphAction, GraphMouseState, GraphState, LabelMode, NodeColorMode, NodeFill,

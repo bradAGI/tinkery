@@ -87,25 +87,6 @@ fn owed_item(row: &ResultRow, item: &Item) -> bool {
         })
 }
 
-fn preview(text: &str, width: usize) -> String {
-    if text.width() <= width {
-        return text.into();
-    }
-    let mut result = String::new();
-    let mut used = 0;
-    for g in text.graphemes(true) {
-        if used + g.width() + 1 > width {
-            break;
-        }
-        result.push_str(g);
-        used += g.width();
-    }
-    if width > 0 {
-        result.push('…');
-    }
-    result
-}
-
 /// One compact block per result, with jade selection and no check wording or technical IDs.
 pub(super) fn list(
     rows: &[ResultRow],
@@ -139,12 +120,12 @@ pub(super) fn list(
             available -= separator.width();
             // Give the title priority and reserve a third of the line for a long goal.
             let goal_reserve = goal.width().min(available.div_ceil(3));
-            let title = preview(&safe(title), available - goal_reserve);
+            let title = crate::clipped(&safe(title), available - goal_reserve);
             available -= title.width();
             summary.push(Span::styled(title, p.ink.add_modifier(Modifier::BOLD)));
             summary.push(Span::styled(separator, p.muted));
         }
-        summary.push(Span::styled(preview(&goal, available), p.ink));
+        summary.push(Span::styled(crate::clipped(&goal, available), p.ink));
         summary.push(Span::styled(suffix, p.muted));
         lines.push(Line::from(summary));
         let mut counts = vec![Span::raw("  ")];

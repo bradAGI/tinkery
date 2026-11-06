@@ -12,6 +12,7 @@ mod linking;
 pub mod needs;
 pub use discovery::{Discovery, Found, Outcome, Source, scan};
 
+use crate::clipped;
 pub use crate::seed_me::{Session, Stage};
 use crate::{
     Palette,
@@ -27,7 +28,6 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 /// How long a read may be pending before the quiet line says it is still going. A normal
@@ -386,26 +386,6 @@ impl Tend {
     }
 }
 
-fn clipped(text: &str, width: usize) -> String {
-    if text.width() <= width {
-        return text.into();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut result = String::new();
-    let mut used = 0;
-    for g in text.graphemes(true) {
-        let cells = g.width();
-        if used + cells > width - 1 {
-            break;
-        }
-        result.push_str(g);
-        used += cells;
-    }
-    result.push('…');
-    result
-}
 fn row(session: &Session, width: usize, now: Option<u64>) -> (String, String) {
     let suffix = format!(
         "{} · {}",
