@@ -1,5 +1,6 @@
 //! File-and-line receipts: recognize complete numeric ranges and flag unavailable lines.
-//! Reported paths share this grammar; neither path nor line existence proves a file was read
+//! A path containing spaces is checked whole only inside backticks; a bare filename that may end
+//! a longer spaced path is never credited. Reported paths share this grammar; neither path nor line existence proves a file was read
 //! or that its contents support the finding. Receipt words are never rewritten.
 
 use std::path::Path;
@@ -7,23 +8,47 @@ use std::path::Path;
 struct Citation<'a> {
     path: &'a str,
     ranges: Option<Vec<(u64, u64)>>,
+    /// The bare filename follows a directory-like word, so it may end a path with a space.
+    partial: bool,
 }
 
 // A filename and numeric start identify a candidate. Parse its entire range token below;
 // matching only a valid prefix would hide malformed suffixes and later abbreviated ranges.
 fn start() -> &'static regex::Regex {
     static START: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"(?:^|[\s,;(\[`])([\w./-]*\w\.\w+):([+-]?[0-9])")
-            .expect("the citation start pattern compiles")
+        regex::Regex::new(
+            r"(?:`((?:[^`\s][^`\n]*)?\w\.\w+)|(?:^|[\s,;(\[])([\w./-]*\w\.\w+)):([+-]?[0-9])",
+        )
+        .expect("the citation start pattern compiles")
     });
     &START
 }
 
 fn parse(checked: &str) -> impl Iterator<Item = Citation<'_>> {
-    start().captures_iter(checked).map(|capture| Citation {
-        path: capture.get(1).unwrap().as_str(),
-        ranges: ranges(&checked[capture.get(2).unwrap().start()..]),
+    start().captures_iter(checked).map(|capture| {
+        let quoted = capture.get(1);
+        let path = quoted.or(capture.get(2)).unwrap();
+        Citation {
+            path: path.as_str(),
+            ranges: ranges(&checked[capture.get(3).unwrap().start()..]),
+            partial: quoted.is_none() && follows_directory(&checked[..path.start()]),
+        }
     })
+}
+
+// `docs/design report.md:1` must not credit `report.md`: a preceding word with a slash and
+// no line number reads as the start of the same path.
+fn follows_directory(before: &str) -> bool {
+    let trimmed = before.trim_end();
+    trimmed.len() < before.len()
+        && trimmed
+            .rsplit(char::is_whitespace)
+            .next()
+            .is_some_and(|word| {
+                word.contains('/')
+                    && !word.contains(':')
+                    && word.ends_with(|c: char| c.is_alphanumeric() || "_-".contains(c))
+            })
 }
 
 fn ranges(mut remaining: &str) -> Option<Vec<(u64, u64)>> {
@@ -98,6 +123,9 @@ fn token_end(text: &str) -> usize {
 pub(super) fn paths(checked: &str) -> Option<Vec<&str>> {
     let mut paths = Vec::new();
     for cite in parse(checked) {
+        if cite.partial {
+            return None;
+        }
         cite.ranges?;
         paths.push(cite.path);
     }
@@ -110,6 +138,11 @@ pub(super) fn unfound(checked: &str, folder: &Path) -> Option<String> {
     let root = folder.canonicalize();
     parse(checked).find_map(|cite| {
         let path = cite.path;
+        if cite.partial {
+            return Some(format!(
+                "{path} may be the end of a longer path that contains a space"
+            ));
+        }
         let Some(ranges) = cite.ranges else {
             return Some(format!("{path} has an invalid line range"));
         };
