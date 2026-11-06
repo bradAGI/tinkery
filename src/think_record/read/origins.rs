@@ -23,14 +23,8 @@ pub(crate) fn read_origins(
     let identities = identity_index(sessions.iter().map(|(path, _)| *path))?;
     let mut records: HashMap<String, Option<Attribution>> = HashMap::new();
     let mut older = HashSet::new();
-    for entry in entries(root)? {
-        let path = entry
-            .map_err(|error| Unavailable::unreadable(root, error))?
-            .path();
-        if path.extension().is_none_or(|extension| extension != "json") {
-            continue;
-        }
-        let record = read_file(&path)?;
+    for entry in record_files(root)? {
+        let (path, record) = entry?;
         if record.schema == 1 {
             older.insert(record.seed_me_session);
             continue;
