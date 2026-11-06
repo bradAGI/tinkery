@@ -119,7 +119,10 @@ A confirmed retry seed records its isolated checkout and the rejected commit. Ap
 shows both. The named checkout must belong to the same Git repository, and the retry
 checkout must still be detached at that exact commit. The copied command checks again
 before creating the run there. A run name derived from the retry session keeps an
-unchanged seed title from colliding with the earlier run.
+unchanged seed title from colliding with the earlier run. When Approve reopens from the
+original project, it reads the matching retry intake record in the detached checkout
+as data. A verified seed already bound there leaves the waiting list. Partial or
+conflicting records keep the seed readable and disable copy and start until inspected.
 
 The worker start checks the same pin on F2 and before stage 3. Before preparing the worker,
 it checks that the build starts at that commit or its direct child containing only the

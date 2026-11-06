@@ -2,6 +2,7 @@
 
 use super::*;
 use serde_json::json;
+use std::process::Command;
 use std::{fs, time::Instant};
 
 struct Fixture {

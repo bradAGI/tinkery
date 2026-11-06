@@ -1,10 +1,7 @@
 //! Result snapshots from API 1 status and each run's recorded PR. No handoff prose, branch or
 //! title supplies a PR; missing identities never borrow a goal or old success. No writes or decisions.
 
-use super::{
-    evidence,
-    links::{self, canonical_run_id},
-};
+use super::{evidence, links};
 use crate::sdlc::{self, DEADLINE, Goal};
 use serde_json::Value;
 use std::{
@@ -485,7 +482,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             labelled: None,
             rejection: None,
         };
-        if summary["verification_status"] == "invalid" || !canonical_run_id(&row.id) {
+        if summary["verification_status"] == "invalid" || !sdlc::canonical_run_id(&row.id) {
             rows.push(row);
             continue;
         }

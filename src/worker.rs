@@ -5,12 +5,12 @@
 #[cfg(test)]
 mod tests;
 
+use crate::sdlc::git;
 use crate::{repo::Repo, sdlc, seed_me::ready, think_record};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     path::{Path, PathBuf},
-    process::Command,
     sync::{atomic::AtomicBool, mpsc},
     thread::{self, JoinHandle},
     time::Duration,
@@ -297,12 +297,6 @@ fn require_seed(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn git(root: &Path, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new("git");
-    command.arg("--no-optional-locks").args(args);
-    sdlc::execute(root, command, &AtomicBool::new(false), sdlc::DEADLINE)
-}
-
 fn source_head(root: &Path) -> Result<String, String> {
     Ok(git(root, &["rev-parse", "--verify", "HEAD"])?.trim().into())
 }
@@ -325,39 +319,6 @@ fn committed_source(root: &Path) -> Result<String, String> {
         return Err("Commit source changes first. The worker receives the committed checkout; uncommitted source outside runs/ would be omitted.".into());
     }
     Ok(head)
-}
-
-// Stage 3 may commit only the new run's evidence before forking its build checkout.
-fn verify_retry_build(build: &Run, candidate: &str) -> Result<(), String> {
-    let head = source_head(&build.root)?;
-    if head == candidate {
-        return Ok(());
-    }
-    let refused = "The new build did not start at the confirmed candidate. No worker was launched.";
-    if git(&build.root, &["show", "-s", "--format=%P", &head])
-        .map_err(|_| refused)?
-        .trim()
-        != candidate
-    {
-        return Err(refused.into());
-    }
-    let exclude = format!(":(exclude)runs/{}", build.slug);
-    git(
-        &build.root,
-        &[
-            "diff",
-            "--quiet",
-            "--no-ext-diff",
-            "--no-textconv",
-            candidate,
-            &head,
-            "--",
-            ".",
-            &exclude,
-        ],
-    )
-    .map(|_| ())
-    .map_err(|_| refused.into())
 }
 
 fn start(request: Start) -> Result<Snapshot, Failure> {
@@ -444,7 +405,8 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
         }
         known = Some(build.clone());
         if let Some(base) = &request.target.retry {
-            verify_retry_build(&build, &base.head)?;
+            base.check_build(&build.root, &build.slug, &source_head(&build.root)?)
+                .map_err(|_| "The new build did not start at the confirmed candidate. No worker was launched.")?;
         }
         let value = current(&build)?;
         require_seed(&value)?;

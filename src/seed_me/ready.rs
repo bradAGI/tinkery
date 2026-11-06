@@ -31,8 +31,8 @@ pub struct ReadySeed {
     pub acceptance: String,
     /// One combined manual command, or no copy without a safely representable named checkout.
     pub commands: Option<String>,
-    /// Why a confirmed retry cannot use the named checkout for this handoff.
-    pub(crate) retry_problem: Option<String>,
+    /// True for an exact detached retry intake; uncertain bindings prevent a second start.
+    pub(crate) retry_started: Result<bool, String>,
     /// Confirmation attribution and consumer requirements; never implementation permission.
     pub confirmation_note: Option<String>,
 }
@@ -92,16 +92,17 @@ fn read_with(
         .ready_target
         .as_ref()
         .and_then(|target| target.retry.as_ref());
-    let retry_problem = retry.and_then(|base| {
-        let Some(named) = root else {
-            return Some(format!(
-                "Name this retry’s checkout with --sdlc-root {}.",
-                base.checkout.display()
-            ));
-        };
-        base.check_checkout(named).err()
-    });
-    let commands = if retry_problem.is_none() {
+    let retry_started = match (shaped.ready_target.as_ref(), retry, root) {
+        (Some(target), Some(base), Some(named)) => {
+            base.started(named, &target.session, &retry_name(target))
+        }
+        (_, Some(base), None) => Err(format!(
+            "Name this retry’s checkout with --sdlc-root {}.",
+            base.checkout.display()
+        )),
+        _ => Ok(false),
+    };
+    let commands = if matches!(retry_started, Ok(false)) {
         root.and_then(|named| {
             let title = seed.lines().find_map(|line| line.strip_prefix("# "))?;
             let run = run_name(title, shaped.ready_target.as_ref())?;
@@ -127,7 +128,7 @@ fn read_with(
         revision: revision.ok_or("The verified seed has no revision.")?,
         acceptance: acceptance(&seed)?,
         commands,
-        retry_problem,
+        retry_started,
         confirmation_note: shaped.confirmation_note,
     }))
 }
@@ -225,36 +226,49 @@ pub(crate) fn execution(target: &SeedTarget, root: &Path) -> Result<(Intake, Str
 
 fn run_name(title: &str, target: Option<&SeedTarget>) -> Option<String> {
     if let Some(target) = target.filter(|target| target.retry.is_some()) {
-        use sha2::{Digest, Sha256};
-        let id = format!("{:x}", Sha256::digest(target.session_id.as_bytes()));
-        return Some(format!("retry-{}", &id[..16]));
+        return Some(retry_name(target));
     }
     slug(title.strip_prefix("Seed: ").unwrap_or(title))
+}
+
+fn retry_name(target: &SeedTarget) -> String {
+    use sha2::{Digest, Sha256};
+    let id = format!("{:x}", Sha256::digest(target.session_id.as_bytes()));
+    format!("retry-{}", &id[..16])
 }
 
 impl Base {
     /// Require the reviewed candidate to remain a detached checkout of the named project.
     /// Only Git metadata is read. No script from the candidate is executed.
     pub(crate) fn check_checkout(&self, named: &Path) -> Result<(), String> {
-        use std::{process::Command, sync::atomic::AtomicBool};
-        let reason = || {
-            format!(
-                "The retry needs its detached checkout at {} on commit {}. Open the matching project and restore that checkout before starting.",
-                self.checkout.display(),
-                self.head
-            )
-        };
-        if self.checkout.canonicalize().ok().as_deref() != Some(&self.checkout) {
-            return Err(reason());
+        if self.detached_head(named)? == self.head {
+            Ok(())
+        } else {
+            Err(self.moved())
         }
-        let git = |root: &Path, options: &[&str]| {
-            let mut cmd = Command::new("git");
-            cmd.args(["--no-optional-locks", "rev-parse", "--path-format=absolute"])
-                .args(options);
-            crate::sdlc::execute(root, cmd, &AtomicBool::new(false), crate::sdlc::DEADLINE)
+    }
+
+    fn moved(&self) -> String {
+        format!(
+            "The retry needs its detached checkout at {} on commit {}. Open the matching project and restore that checkout before starting.",
+            self.checkout.display(),
+            self.head
+        )
+    }
+
+    fn detached_head(&self, named: &Path) -> Result<String, String> {
+        if self.checkout.canonicalize().ok().as_deref() != Some(&self.checkout) {
+            return Err(self.moved());
+        }
+        let git = |root: &Path, args: &[&str]| {
+            crate::sdlc::git(
+                root,
+                &[&["rev-parse", "--path-format=absolute"][..], args].concat(),
+            )
+            .map_err(|_| self.moved())
         };
-        let shared = git(named, &["--git-common-dir"]).map_err(|_| reason())?;
-        let observed = git(
+        let shared = git(named, &["--git-common-dir"])?;
+        let metadata = git(
             &self.checkout,
             &[
                 "--show-toplevel",
@@ -263,19 +277,71 @@ impl Base {
                 "--abbrev-ref",
                 "HEAD",
             ],
-        )
-        .map_err(|_| reason())?;
-        let expected = format!(
-            "{}\n{}{}\nHEAD\n",
-            self.checkout.display(),
-            shared,
-            self.head
-        );
-        if observed == expected {
-            Ok(())
-        } else {
-            Err(reason())
+        )?;
+        metadata
+            .strip_prefix(&format!("{}\n{}", self.checkout.display(), shared))
+            .and_then(|tail| tail.strip_suffix("\nHEAD\n"))
+            .map(str::to_owned)
+            .ok_or_else(|| self.moved())
+    }
+
+    /// A stage-3 build may include one direct commit containing only its own run evidence.
+    pub(crate) fn check_build(&self, root: &Path, slug: &str, head: &str) -> Result<(), String> {
+        use crate::sdlc::git;
+        if head == self.head {
+            return Ok(());
         }
+        if git(root, &["show", "-s", "--format=%P", head])?.trim() != self.head {
+            return Err(self.moved());
+        }
+        let exclude = format!(":(exclude)runs/{slug}");
+        git(
+            root,
+            &[
+                "diff",
+                "--quiet",
+                "--no-ext-diff",
+                "--no-textconv",
+                &self.head,
+                head,
+                "--",
+                ".",
+                &exclude,
+            ],
+        )
+        .map(|_| ())
+        .map_err(|_| self.moved())
+    }
+
+    fn started(&self, named: &Path, session: &Path, slug: &str) -> Result<bool, String> {
+        let head = self.detached_head(named)?;
+        let unknown = || {
+            format!(
+                "Cannot identify the retry intake. Open Watch with --sdlc-root {} and inspect run {slug}.",
+                self.checkout.display()
+            )
+        };
+        let mut directory = self.checkout.clone();
+        for component in ["runs", slug] {
+            directory.push(component);
+            match std::fs::symlink_metadata(&directory) {
+                Ok(meta) if meta.is_dir() => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    return if head == self.head {
+                        Ok(false)
+                    } else {
+                        Err(self.moved())
+                    };
+                }
+                _ => return Err(unknown()),
+            }
+        }
+        self.check_build(&self.checkout, slug, &head)?;
+        let recorded = crate::sdlc::retry_seed(&directory, slug).ok_or_else(unknown)?;
+        if !recorded.matches(&path(session))? {
+            return Err(unknown());
+        }
+        Ok(true)
     }
 }
 
