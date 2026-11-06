@@ -551,6 +551,9 @@ Shape uses Think's
   The step finds the blast radius and the ways to meet the goal before choosing to ask or draft;
   a small live trial on #161 favored that order, which is evidence, not an eval.
 - The launch allowance (saved calls or `--shape-budget CALLS`) defaults to zero; each step counts one before the model starts.
+  With a current question and one run remaining, show `Drafting runs left this launch: 1 of M.`
+  beside the answer editor before F2 spends it, using Think's shared budget wording.
+  Budget policy stays behind Agent; Shape owns presentation (architecture diagnostics 3 and 6).
   Exhaustion refuses answer, defer, delegate, revision and teach-back before saving anything and explains how to allow calls.
 - Tinkery, never the model, publishes answers and questions with the displayed version
   or the version at step start. Stale versions refuse, retain

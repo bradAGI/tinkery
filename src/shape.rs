@@ -692,7 +692,7 @@ impl Shape {
                     frame,
                     &mut self.scroll,
                     open,
-                    agent,
+                    self.agent.as_deref(),
                     self.held,
                     area,
                     palette,
@@ -1656,17 +1656,17 @@ fn render_so_far(
 /// What to read (the goal's first line, or the seed draft when one waits, then where the seed
 /// stands) comes first and scrolls when it doesn't fit; the words box, what was said and any next
 /// step follow it and stay in view. Returns whether the reading scrolls, so the key bar offers
-/// scrolling only then.
-/// Draws the open session; returns whether the reading overflows and how many of its rows show.
+/// scrolling only then, and how many of its rows show.
 fn render_open(
     frame: &mut Frame,
     scroll: &mut u16,
     open: &mut Opened,
-    agent: bool,
+    drafting: Option<&Agent>,
     held: bool,
     area: Rect,
     palette: Palette,
 ) -> (bool, u16) {
+    let agent = drafting.is_some();
     let area = Rect {
         width: area.width.min(WIDTH),
         ..area
@@ -1796,6 +1796,14 @@ fn render_open(
                 },
             };
             let (mut said, mut input) = standing(shaping, stand, palette);
+            if open.running.is_none()
+                && open.offers_answers()
+                && let Some(drafting) = drafting.filter(|a| a.remaining() == 1)
+            {
+                input
+                    .lines
+                    .insert(0, Line::styled(drafting.left(), palette.muted));
+            }
             if agent && !held && open.offers_choices() && shaping.deferred.is_some() {
                 said.lines.push(Line::styled(
                     "F1 offers an explicit answer; no model runs.",
