@@ -79,7 +79,10 @@ def option(name):
 
 if args[0] == 'status':
     if len(args) == 2:
-        print(json.dumps(envelope(runs=[run()] if state.get('run') else [])))
+        rows = state.get('history', []) + ([run()] if state.get('run') else [])
+        print(json.dumps(envelope(runs=rows)))
+    elif prior := next((row for row in state.get('history', []) if row['slug'] == args[1]), None):
+        print(json.dumps(envelope(run=prior)))
     else:
         assert args == ['status', state['run']['slug'], '--json'], args
         print(json.dumps(envelope(run=run())))
@@ -490,6 +493,89 @@ def open_review(terminal):
     terminal.send(END, 'esc back')
 
 
+def cap_review(case):
+    """Real review keys, Pi JSON-mode events and a separate source-reported build checkout."""
+    with tempfile.TemporaryDirectory(prefix='tinkery-TEST-cap-review-') as directory:
+        fixture = Fixture(Path(directory).resolve())
+        slug = 'earlier-build'
+        checkout = fixture.root / slug
+        fixture.git('worktree', 'add', '-qb', slug, str(checkout))
+        (fixture.project / 'runs' / slug).mkdir(parents=True)
+        steps = checkout / 'runs' / slug / 'steps'
+        steps.mkdir(parents=True)
+        run_id = '6173fbd4-ff71-4831-9ce8-dc7881733032'
+        row = dict(slug=slug, run_id=run_id, checkout=str(checkout),
+                   seed_contract=None, verification_status='not-run', steps=[])
+
+        def record(step, responses, edit=False, cap_stop=False, op='launch', match=True):
+            session = f'tsdlc-TEST-{step}'
+            capped = cap_stop or case == 'stopped-on-resume'
+            fact = dict(name=step, state='stopped' if capped else 'completed')
+            if capped:
+                fact['stopped_by'] = 'cap'
+            row['steps'].append(fact)
+            contract = dict(schema=1, checkout=str(checkout), run_id=run_id,
+                            session=session, max_responses=responses)
+            (steps / f'{step}.json').write_text(json.dumps(contract))
+            events = [dict(type='session', version=3, id=session if match else 'another-session',
+                           cwd=str(checkout))]
+            for n in range(1, responses + 1):
+                message = dict(role='assistant', content=[], stopReason='toolUse')
+                events.extend([dict(type='message_start', message=message), dict(type='message_end', message=message)])
+                tool = 'edit' if n == 1 else ('write' if n == responses and edit else 'read')
+                result = dict(role='toolResult', toolName=tool, toolCallId=f'call-{n}', isError=n == 1)
+                events.extend([dict(type='message_end', message=result),
+                               dict(type='turn_end', message=message, toolResults=[result])])
+            content = ''.join(json.dumps(event) + '\n' for event in events)
+            if cap_stop:
+                content += f'pi-launcher: response cap {responses} reached; stopped process group 123.\n'
+            path = steps / f'{step}.{op}-100.pi.log'
+            path.write_text(content)
+            return path
+
+        if case == 'warn':
+            record('build', CAP, edit=True)
+            record('finish', 5, cap_stop=True)
+        elif case == 'at-minimum':
+            record('build', CAP - 1, edit=True)
+        elif case == 'cap-only':
+            record('finish', CAP, cap_stop=True)
+        elif case == 'stopped-on-resume':
+            record('finish', CAP, op='launch')
+            record('finish', CAP, edit=True, op='resume')
+        else:
+            path = record('escaped', 14, edit=True)
+            outside = fixture.root / 'other.log'
+            path.rename(outside)
+            path.symlink_to(outside)
+            record('mismatch', 13, edit=True, match=False)
+            record('resumed', 12, edit=True, op='resume')
+        fixture.change(lambda state: state.update(history=[row]))
+        terminal = Terminal(fixture, 100, 30)
+        try:
+            open_review(terminal)
+            terminal.send(HOME, 'Review worker start')
+            shown = terminal.flat()
+            if case == 'warn':
+                assert 'Suggested minimum: 8 responses' in shown and 'Based on 2 recent Pi launch logs' in shown, shown
+                assert 'earlier-build/build: first edit/write at response 7' in shown, shown
+                assert '! Your cap of 7 is below this minimum' in shown, shown
+                assert not fixture.mutations()
+                terminal.send(END + F2, 'Read from tink-sdlc.')
+                assert len(fixture.admissions()) == 1 and fixture.read()['step']['max_responses'] == CAP
+            elif case == 'at-minimum':
+                assert 'Suggested minimum: 7 responses' in shown and '! Your cap' not in shown, shown
+            elif case == 'cap-only':
+                assert 'Suggested minimum: 9 responses' in shown and 'no edit/write through response 7' in shown, shown
+                assert '! Your cap of 7 is below this minimum' in shown, shown
+            else:
+                assert 'Suggested minimum unknown' in shown and '! Your cap' not in shown, shown
+            assert not (fixture.root / 'unexpected-provider').exists()
+            print(f'PASS worker cap review {case}: 100x30')
+        finally:
+            terminal.close()
+
+
 def journey(width, height, case, mono=False):
     with tempfile.TemporaryDirectory(prefix='tinkery-TEST-worker-terminal-') as directory:
         fixture = Fixture(Path(directory).resolve(), scenario=case)
@@ -637,6 +723,8 @@ def journey(width, height, case, mono=False):
 
 if __name__ == '__main__':
     check_cli()
+    for case in ('warn', 'at-minimum', 'cap-only', 'stopped-on-resume', 'unusable'):
+        cap_review(case)
     journey(80, 24, 'success')
     journey(100, 30, 'success', mono=True)
     for scenario in ('no-budget', 'changed-seed', 'dirty-source', 'pending-gate', 'uncertain', 'changed-run',

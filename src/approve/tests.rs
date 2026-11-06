@@ -162,6 +162,7 @@ fn abandoned_read_cannot_publish_or_spawn_a_second_worker() {
         None,
         Err("TEST no records".into()),
         Found::default(),
+        None,
         None
     ));
     tx.send(Found {
@@ -269,7 +270,7 @@ fn origin_visit(case: &str, expected_note: Option<&str>, can_copy: bool) {
     };
     let mut view = Approve::open(named);
     let mut reader = Reader::default();
-    view.offer(Ok(vec![session]), 0, vec![], &mut reader, Ok(records));
+    view.offer(Ok(vec![session]), 0, vec![], &mut reader, Ok(records), None);
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         reader.poll(Some(&mut view));

@@ -3,7 +3,7 @@
 
 use crate::{
     Palette,
-    seed_me::ready::ReadySeed,
+    approve::WorkerReview,
     worker::{Action, Config, Job, Run, Snapshot, Start, State, Turn},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -42,15 +42,18 @@ pub(super) struct Panel {
 impl Panel {
     /// Review the exact seed and separate worker allowance without running anything.
     pub(super) fn review(
-        seed: ReadySeed,
-        root: PathBuf,
+        WorkerReview {
+            seed,
+            root,
+            cap_advice,
+        }: WorkerReview,
         record_root: Result<PathBuf, String>,
         config: Option<Config>,
     ) -> Self {
         let (start, disclosure) = match (seed.target, config) {
             (Some(target), Some(config)) => {
                 let disclosure = format!(
-                    "Pi model: {}\nResponse cap: {} (one response may already be in flight).\n\
+                    "Pi model: {}\nResponse cap: {} (one response may already be in flight).\n{cap_advice}\n\
                      Checkout: {}\n\
                      F2 uses committed source, creates the run, imports this seed, prepares an isolated build checkout, \
                      and launches its bounded worker through tink-sdlc.\n\
