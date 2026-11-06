@@ -89,6 +89,43 @@
       "revision": 0,
       "premise_version": 6,
       "reviewed_version": 6
+    },
+    {
+      "answer": "no sample: TEST toy CLI with no real input yet",
+      "authority": "user",
+      "authority_source": "The operator answered with these words in Tinkery Shape.",
+      "evidence": [],
+      "gate": "A real example to check against, or your word that there is none",
+      "id": "probe-real-sample",
+      "kind": "decision",
+      "label": "Probe: real sample",
+      "owner": "User",
+      "prerequisites": [],
+      "question": "Paste one real example of what this will work on, or say where one lives. If there is none, type no sample and say why.",
+      "status": "settled",
+      "history": [
+        {
+          "state": {
+            "evidence": [],
+            "gate": "A real example to check against, or your word that there is none",
+            "id": "probe-real-sample",
+            "kind": "decision",
+            "label": "Probe: real sample",
+            "owner": "User",
+            "prerequisites": [],
+            "question": "Paste one real example of what this will work on, or say where one lives. If there is none, type no sample and say why.",
+            "status": "unresolved",
+            "revision": 0,
+            "premise_version": 8,
+            "reviewed_version": 8
+          },
+          "superseded_at": "2026-10-21T23:25:21.000000+00:00",
+          "reason": "The operator answered probe-real-sample in Tinkery Shape."
+        }
+      ],
+      "revision": 0,
+      "premise_version": 10,
+      "reviewed_version": 10
     }
   ],
   "operator": "agent",
@@ -98,5 +135,5 @@
   "session_id": "session-hdsjLZ",
   "status": "active",
   "updated_at": "2026-10-21T23:25:20.262329+00:00",
-  "version": 3
+  "version": 5
 }

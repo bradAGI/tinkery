@@ -125,6 +125,15 @@ fn captured_missing_source_preserves_the_answer_and_recovers_on_next_look() {
         .session;
     let version = answering::read(&session).unwrap().version();
     let version = answering::probe(&session, version).unwrap().unwrap();
+    let version = answering::answer(
+        &session,
+        version,
+        answering::SAMPLE.0,
+        "TEST no sample",
+        None,
+    )
+    .unwrap();
+    let version = answering::probe(&session, version).unwrap().unwrap();
     let agent = provider(root.path(), MISSING_SOURCE, 3);
     let saved = AtomicBool::new(false);
     let error = run(
@@ -403,6 +412,15 @@ fn recorded_361_refusals_name_unsafe_coverage_and_preserve_saved_answers() {
             .unwrap()
             .session;
         let version = answering::read(&session).unwrap().version();
+        let version = answering::probe(&session, version).unwrap().unwrap();
+        let version = answering::answer(
+            &session,
+            version,
+            answering::SAMPLE.0,
+            "TEST no sample",
+            None,
+        )
+        .unwrap();
         let version = answering::probe(&session, version).unwrap().unwrap();
         let agent = provider(root.path(), raw, 1);
         let words = "TEST preserve my answer café\r\n  ";
@@ -783,6 +801,15 @@ fn a_claude_code_step_reads_only_the_shown_folder_and_drafts_from_its_json_resul
         .session;
     let version = answering::read(&session).unwrap().version();
     let version = answering::probe(&session, version).unwrap().unwrap();
+    let version = answering::answer(
+        &session,
+        version,
+        answering::SAMPLE.0,
+        "TEST no sample",
+        None,
+    )
+    .unwrap();
+    let version = answering::probe(&session, version).unwrap().unwrap();
     // Claude Code gets a clean environment, so the fake's paths are baked in.
     let log = root.path().join("TEST-started.json");
     let reply = json!({"type":"result", "is_error":false, "result":valid_reply().to_string(),
@@ -1064,6 +1091,15 @@ fn a_goal_past_32_kib_still_reaches_the_model() {
     let program = root.path().join("TEST-pi");
     fs::write(&program, "#!/usr/bin/env python3\nimport pathlib, sys\nhere = pathlib.Path(__file__)\nhere.with_name('TEST-sent').write_text(str(len(sys.stdin.buffer.read())))\nprint(here.with_name('TEST-reply.json').read_text())\n").unwrap();
     let version = answering::read(&session).unwrap().version();
+    let version = answering::probe(&session, version).unwrap().unwrap();
+    let version = answering::answer(
+        &session,
+        version,
+        answering::SAMPLE.0,
+        "TEST no sample",
+        None,
+    )
+    .unwrap();
     let version = answering::probe(&session, version).unwrap().unwrap();
     let step = run(
         &Work::Answer {

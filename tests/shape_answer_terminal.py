@@ -154,7 +154,11 @@ def make(root, question=True, operator='human', goal=GOAL):
     if question:
         nodes.append(node('storage', status='unresolved', label='Where records live',
                           question='Keep records local or synced?'))
-    # Most cases are about later steps, so the pre-mortem is already answered.
+    # Most cases are about later steps, so both probes are already answered.
+    nodes.append(node('probe-real-sample', status='settled', answer='TEST no sample', authority=authority,
+                      authority_source='TEST fixture, not real approval', label='Probe: real sample',
+                      question='Paste one real example of what this will work on, or say where one lives. '
+                               'If there is none, type no sample and say why.'))
     nodes.append(node('probe-pre-mortem', status='settled', answer='TEST pre-mortem answer', authority=authority,
                       authority_source='TEST fixture, not real approval', label='Probe: pre-mortem',
                       question='Imagine this shipped and turned out wrong. What is the most likely reason?'))
@@ -344,9 +348,18 @@ def full_journey(width, height):
             run.send(F1, 'Drafting runs left this launch: 2 of 6.')
             run.send(b'\x1b', 'F2 look into the next question')
             assert files(run.sessions) == before and run.calls() == [], 'Shape wrote or called before F2'
-            # Seed Me's pre-mortem comes first, in the operator's words, before any finding (#234).
+            # #740: a real sample comes first, so checks are drafted against real input, not invented fixtures.
+            run.send(F2, 'Probe: real sample Paste one real example of what this will work on')
+            assert run.calls() == [], 'The sample probe called a model'
+            assert 'What I found' not in run.flat() and 'Nothing found' not in run.flat(), run.screen.text()
+            assert 'type no sample and why' in run.flat(), run.screen.text()
+            sample = 'TEST refusal: cannot read /home/TEST/private.txt (exit 1)'
+            run.type(sample)
+            # Seed Me's pre-mortem comes next, in the operator's words, before any finding (#234).
             run.send(F2, 'Probe: pre-mortem Imagine this shipped and turned out wrong. What is the most likely reason?')
-            assert run.calls() == [], 'The pre-mortem called a model'
+            assert run.calls() == [], 'The probes called a model'
+            real = next(n for n in helper.load(session)['nodes'] if n['id'] == 'probe-real-sample')
+            assert (real['status'], real['answer'], real['authority']) == ('settled', sample, 'user'), real
             assert 'What I found' not in run.flat() and 'Nothing found' not in run.flat(), run.screen.text()
             assert 'or type skip and send to skip it' in run.flat(), run.screen.text()
             run.type('TEST It showed private text.')
@@ -1132,7 +1145,7 @@ def closing_summary(width, height):
             assert 'Teach back' not in run.flat(), run.screen.text()
             run.send(ESC, 'F2 look into the next question')
             run.send(F2, 'Seed draft r1')
-            for line in ['Before you confirm', 'Accepted as suggested: 2; chosen otherwise: 3.',
+            for line in ['Before you confirm', 'Accepted as suggested: 2; chosen otherwise: 4.',
                          'changed: TEST remote — reverses an earlier answer',
                          'delegated: TEST suggested — delegated; accepted exactly as suggested',
                          'Assumed: TEST Markdown — TEST either format works',
@@ -1589,6 +1602,8 @@ def exit_hint(width, height, stage):
             if stage != 'goal':
                 run.open_shape()
                 run.wait('F2 look into the next question')
+                run.send(F2, 'Probe: real sample')
+                run.type('no sample')
                 run.send(F2, 'Probe: pre-mortem')
                 # The skip the screen names is a settled answer, not a deferral (#625).
                 run.type('skip')

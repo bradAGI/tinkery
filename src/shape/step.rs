@@ -532,7 +532,8 @@ fn look(
         return Ok(Done::Asked(Asked::default()));
     }
     // A decision already recorded, such as an objection, is asked before the model looks for one,
-    // and the pre-mortem is put to the operator before any seed, also without a model.
+    // and the pre-mortem and real-sample probes are put to the operator before any seed, also
+    // without a model.
     if answering::promote(session, expected)
         .map_err(refused(answer_saved))?
         .is_some()

@@ -744,8 +744,17 @@ None of the options or case against reaches the seed.
 ### Probes
 
 Drafting requires at least three probes before a seed, with at least one put to the operator
-before any finding is shown. Shape puts the pre-mortem to the operator itself.
+before any finding is shown. Shape puts the real-sample probe and the pre-mortem to the operator
+itself, in that order.
 
+- With no current question and no `probe-real-sample` node, a step records `Probe: real sample`
+  (`Paste one real example of what this will work on, or say where one lives. If there is none,
+  type no sample and say why.`) as the current question, without a model call or budget. The
+  screen says checks are drafted against it. Since drafting refuses open decisions, no seed can be
+  drafted until the ledger holds a real sample or the operator's explicit "no sample"
+  ([#740](https://github.com/jon-devlapaz/tinkery/issues/740): a seed verified 5/5 against invented
+  fixtures and failed on the operator's real vault). The answer is saved verbatim and reaches
+  drafting as a settled decision; the model is not told to treat it specially, so no prompt changed.
 - With no current question and no `probe-pre-mortem` node, a step records `Probe: pre-mortem`
   (`Imagine this shipped and turned out wrong. What is the most likely reason?`) as the current
   question, without a model call or budget. The operator answers it with F2 like any question,

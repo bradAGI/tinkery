@@ -123,6 +123,8 @@ def journey(width, height):
             run.send(ESC, '3  shape')
             run.open_shape()
             run.wait('F2 look into the next question')
+            run.send(F2, 'Probe: real sample')
+            run.type('no sample: TEST nothing real yet')
             run.send(F2, 'Probe: pre-mortem')
             run.type('TEST private text could appear.')
             run.send(F2, 'Keep records local or synced?')
@@ -135,7 +137,7 @@ def journey(width, height):
             assert ledger['operator'] == 'agent'
             assert ledger['goal'] == record['goal'] == goal
             for node in ledger['nodes']:
-                if node['id'] in ('storage', 'probe-pre-mortem'):
+                if node['id'] in ('storage', 'probe-real-sample', 'probe-pre-mortem'):
                     assert node['authority'] == 'delegated', node
                     assert node['authority_source'].startswith('The agent '), node
                     assert 'declared: agent' in node['authority_source'], node

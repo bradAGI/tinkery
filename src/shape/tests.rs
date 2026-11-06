@@ -2100,7 +2100,7 @@ if words is not None:
     assert answer['answer'] == words
 else:
     # The goal, and the pre-mortem the operator already answered.
-    assert [n['id'] for n in request['ledger']['nodes'] if n['id'] != 'probe-pre-mortem'] == ['goal']
+    assert [n['id'] for n in request['ledger']['nodes'] if not n['id'].startswith('probe-')] == ['goal']
     assert pathlib.Path('TEST-existing.txt').read_text() == 'TEST Requested behavior already present.\n'
 assert sys.argv[sys.argv.index('--tools') + 1] == 'read,grep,find,ls'
 prompt = sys.argv[sys.argv.index('--system-prompt') + 1]
@@ -2183,7 +2183,7 @@ else:
             .iter()
             .filter_map(|n| n["id"].as_str())
             .collect();
-        assert_eq!(ids, ["goal", answering::PROBE.0]);
+        assert_eq!(ids, ["goal", answering::SAMPLE.0, answering::PROBE.0]);
     }
     let seed = fs::read_to_string(receipt.session.join("seed-contract.md")).unwrap();
     assert!(seed.starts_with("status: draft\n"));
@@ -3267,24 +3267,24 @@ fn options_live_in_the_question_and_a_hard_suggestion_waits_until_asked_for() {
     }
 }
 
-/// A TEST session whose pre-mortem probe the operator already answered, for steps about drafting.
+/// A TEST session whose real-sample and pre-mortem probes the operator already answered, for
+/// steps about drafting.
 fn answered_probe(session: &Path) -> u64 {
     use crate::seed_me::answering;
-    let version = answering::read(session).unwrap().version();
-    let version = answering::probe(session, version).unwrap().unwrap();
-    answering::answer(
-        session,
-        version,
-        answering::PROBE.0,
-        "TEST pre-mortem answer",
-        None,
-    )
-    .unwrap()
+    let mut version = answering::read(session).unwrap().version();
+    for (id, words) in [
+        (answering::SAMPLE.0, "TEST no sample: nothing real yet"),
+        (answering::PROBE.0, "TEST pre-mortem answer"),
+    ] {
+        version = answering::probe(session, version).unwrap().unwrap();
+        version = answering::answer(session, version, id, words, None).unwrap();
+    }
+    version
 }
 
 #[cfg(unix)]
 #[test]
-fn the_first_step_puts_the_pre_mortem_to_the_operator_without_a_model() {
+fn the_first_steps_put_the_sample_and_pre_mortem_to_the_operator_without_a_model() {
     use crate::{
         pi::CallBudget,
         seed_me::{Affirmed, Config, answering, shaping},
@@ -3348,16 +3348,32 @@ fn the_first_step_puts_the_pre_mortem_to_the_operator_without_a_model() {
         std::thread::sleep(Duration::from_millis(10));
     };
     assert_eq!(result, Ok(step::Done::Asked(step::Asked::default())));
-    assert_eq!(agent.remaining(), 1, "the pre-mortem used a model call");
+    assert_eq!(agent.remaining(), 1, "a probe used a model call");
     assert!(!temp.path().join("TEST-MODEL-WAS-CALLED").exists());
+    // #740: a real sample comes first, so checks are drafted against real input.
+    let Shaped::Question { id, ask, found, .. } = shaping::read(&session).unwrap().stage else {
+        panic!("the real-sample probe isn't the current question")
+    };
+    assert_eq!((id.as_str(), ask.as_str()), answering::SAMPLE);
+    assert!(found.is_empty());
+    let version = answering::read(&session).unwrap().version();
+    assert_eq!(answering::probe(&session, version).unwrap(), None);
+    let version = answering::answer(
+        &session,
+        version,
+        answering::SAMPLE.0,
+        "TEST no sample",
+        None,
+    )
+    .unwrap();
+    // Then the pre-mortem, still without a model.
+    let version = answering::probe(&session, version).unwrap().unwrap();
     let Shaped::Question { id, ask, found, .. } = shaping::read(&session).unwrap().stage else {
         panic!("the pre-mortem isn't the current question")
     };
     assert_eq!((id.as_str(), ask.as_str()), answering::PROBE);
     assert!(found.is_empty());
-    // Asked once: answered, it never comes back.
-    let version = answering::read(&session).unwrap().version();
-    assert_eq!(answering::probe(&session, version).unwrap(), None);
+    // Asked once: answered, neither comes back.
     let version =
         answering::answer(&session, version, answering::PROBE.0, "TEST skipped", None).unwrap();
     assert_eq!(answering::probe(&session, version).unwrap(), None);
@@ -3392,6 +3408,15 @@ fn the_first_step_puts_the_pre_mortem_to_the_operator_without_a_model() {
     // A current question is never displaced.
     assert_eq!(answering::probe(&session, version).unwrap(), None);
     let version = answering::answer(&session, version, "storage", "TEST local", None).unwrap();
+    let version = answering::probe(&session, version).unwrap().unwrap();
+    let version = answering::answer(
+        &session,
+        version,
+        answering::SAMPLE.0,
+        "TEST no sample",
+        None,
+    )
+    .unwrap();
     answering::probe(&session, version).unwrap().unwrap();
     let Shaped::Question { ask, .. } = shaping::read(&session).unwrap().stage else {
         panic!("the pre-mortem isn't the current question")
