@@ -18,6 +18,7 @@ use ratatui::{
 
 pub mod actions;
 mod approve;
+mod calendar;
 pub mod goal;
 pub mod measure;
 pub mod menu;
