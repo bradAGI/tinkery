@@ -692,7 +692,7 @@ impl Shape {
                     frame,
                     &mut self.scroll,
                     open,
-                    agent,
+                    self.agent.as_deref(),
                     self.held,
                     area,
                     palette,
@@ -1653,20 +1653,17 @@ fn render_so_far(
     );
 }
 
-/// What to read (the goal's first line, or the seed draft when one waits, then where the seed
-/// stands) comes first and scrolls when it doesn't fit; the words box, what was said and any next
-/// step follow it and stay in view. Returns whether the reading scrolls, so the key bar offers
-/// scrolling only then.
-/// Draws the open session; returns whether the reading overflows and how many of its rows show.
+/// Draw the session with scrollable reading and fixed words; return overflow and page size.
 fn render_open(
     frame: &mut Frame,
     scroll: &mut u16,
     open: &mut Opened,
-    agent: bool,
+    drafting: Option<&Agent>,
     held: bool,
     area: Rect,
     palette: Palette,
 ) -> (bool, u16) {
+    let agent = drafting.is_some();
     let area = Rect {
         width: area.width.min(WIDTH),
         ..area
@@ -1796,6 +1793,14 @@ fn render_open(
                 },
             };
             let (mut said, mut input) = standing(shaping, stand, palette);
+            if open.running.is_none()
+                && open.offers_answers()
+                && let Some(drafting) = drafting.filter(|a| a.remaining() == 1)
+            {
+                input
+                    .lines
+                    .insert(0, Line::styled(drafting.left(), palette.muted));
+            }
             if agent && !held && open.offers_choices() && shaping.deferred.is_some() {
                 said.lines.push(Line::styled(
                     "F1 offers an explicit answer; no model runs.",
@@ -2125,12 +2130,7 @@ struct Stand<'a> {
     instinct: bool,
 }
 
-/// Where the seed stands, in plain words, as what to read and then what to act with (the words box,
-/// what was said and the next step). The question's label is muted and its wording is the one
-/// thing to act on (jade); its suggestion is a guess (italic). The operator's words are in ink.
-/// At most one Next line: none when the key bar already names the one next action and nothing
-/// was said, and a notice's own next step replaces the stage's. While a step runs, the question and the words
-/// stay, muted, under what the step is doing.
+/// Separate the stage's reading from its actions, with one next step and visibly guessed suggestions.
 fn standing(shaping: &Shaping, stand: Stand, palette: Palette) -> (Text<'static>, Text<'static>) {
     const SETUP: &str = "Next: reopen this goal with Shape set up; F1 shows how.";
     const INSPECT: &str = "Next: check this session's files; F1 shows the path.";

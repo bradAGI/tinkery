@@ -743,6 +743,50 @@ def case(name, width=100, height=30):
             run.close()
 
 
+def real_sample_last_run(width, height):
+    """#740: a pasted real sample survives drafting; the last run's cost precedes F2."""
+    import copy
+    with tempfile.TemporaryDirectory(prefix='tinkery-TEST-740-') as directory:
+        cwd = Path(directory).resolve()
+        session = make(cwd / 'TEST-sessions', question=False, operator='agent')
+        question = {**QUESTION, 'id': 'real-sample', 'label': 'TEST real input',
+                    'question': 'Paste a short real note: should Obsidian ignore wikilinks inside code?',
+                    'found': [], 'suggestion': None}
+        question.pop('supported_by')
+        seed = copy.deepcopy(SEED)
+        seed['found'] = []
+        answer = 'TEST real note: café [[Home]]\r\n`[[not a link]]`\nIgnore links inside code.'
+        run = Run(cwd, width, height, budget=2, replies=[question, seed], agent=True)
+        try:
+            run.open_shape()
+            run.wait('F2 look into the next question')
+            assert 'Drafting runs left this launch: 1 of 2.' not in run.flat()
+            run.send(F2, question['question'])
+            run.wait('Drafting runs left this launch: 1 of 2.')
+            run.wait('F2 save + look')
+            assert len(run.calls()) == 1
+            before = files(run.sessions)
+            run.send(b'\x1b[200~' + answer.encode() + b'\x1b[201~', 'Ignore links inside code.')
+            run.wait('Drafting runs left this launch: 1 of 2.')
+            assert files(run.sessions) == before and len(run.calls()) == 1
+            run.send(F2, 'Seed draft r1')
+            ledger = helper.load(session)
+            saved = next(n for n in ledger['nodes'] if n['id'] == 'real-sample')
+            assert saved['answer'] == answer and saved['authority'] == 'delegated', saved
+            assert helper.decisions_block(ledger) in (session / 'seed-contract.md').read_text()
+            assert ' '.join(answer.split()) in helper.decisions_block(ledger)
+            assert len(run.calls()) == 2 and not (session / 'seed-confirmation.json').exists()
+            run.choose('Revise the draft', 'your change')
+            run.type('TEST improve readability')
+            before = files(run.sessions)
+            run.send(F2, "No drafting runs are left: this launch's allowance is 2.")
+            assert files(run.sessions) == before and len(run.calls()) == 2
+            print(f'Shape #740 sample and last-run warning passed at {width}x{height}: '
+                  '2 stub calls; exact sample in seed; exhausted revision saves nothing')
+        finally:
+            run.close()
+
+
 def supported_question_options(width, height, kind):
     """#297: scripted questions prove prompt delivery and preservation, not model judgment."""
     with tempfile.TemporaryDirectory(prefix='tinkery-TEST-297-') as directory:
@@ -1656,6 +1700,8 @@ if __name__ == '__main__':
     # Most journeys run once at 80x24, the smallest supported size; the core flows run at both sizes.
     small = [(80, 24)]
     both = [(100, 30), (80, 24)]
+    for size in both:
+        real_sample_last_run(*size)
     for size in small:
         for kind in ['compatible properties', 'unknown undo', 'hard choice']:
             supported_question_options(*size, kind)
