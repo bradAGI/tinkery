@@ -385,28 +385,15 @@ fn session_id(session: &Path) -> String {
 fn utc(t: SystemTime, sep: char) -> String {
     let d = t.duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = d.as_secs();
-    let (y, m, day) = civil((secs / 86_400) as i64);
+    let date = crate::calendar::date((secs / 86_400) as i64);
     let rem = secs % 86_400;
     format!(
-        "{y:04}-{m:02}-{day:02}T{:02}{sep}{:02}{sep}{:02}.{:03}Z",
+        "{date}T{:02}{sep}{:02}{sep}{:02}.{:03}Z",
         rem / 3600,
         rem / 60 % 60,
         rem % 60,
         d.subsec_millis()
     )
-}
-
-/// Year, month and day for a count of days since 1970-01-01 (Howard Hinnant's algorithm).
-fn civil(days: i64) -> (i64, u32, u32) {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (era * 400 + yoe + i64::from(month <= 2), month, day)
 }
 
 #[cfg(test)]

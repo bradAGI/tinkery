@@ -25,7 +25,7 @@ fn reviewed(raw: &str, review: &str, changes: &mut Vec<String>) -> Option<board:
 fn parsed(raw: &str) -> (board::Board, Vec<String>) {
     let r = request();
     let mut changes = vec![];
-    let g = reading::parse(raw, &r, &mut changes).unwrap();
+    let g = Guess::decode(raw, &r, &mut changes).unwrap();
     (board::Board::verify(g, &r).unwrap(), changes)
 }
 fn success_choice() -> serde_json::Value {
@@ -278,7 +278,7 @@ fn lengths_and_optional_types_are_not_boundary_rules_and_one_question_is_present
 #[test]
 fn malformed_json_fails_but_empty_partial_parts_display_without_fabrication() {
     for raw in ["not JSON", "[]"] {
-        assert!(reading::parse(raw, &request(), &mut vec![]).is_err());
+        assert!(Guess::decode(raw, &request(), &mut vec![]).is_err());
     }
     for raw in [
         r#"{}"#,
@@ -328,7 +328,7 @@ fn claimed_citations_remain_exact_and_grapheme_safe_even_without_parts() {
             serde_json::json!({"misfits":[span]}),
         ] {
             assert!(
-                reading::parse(&raw.to_string(), &request(), &mut vec![]).is_err(),
+                Guess::decode(&raw.to_string(), &request(), &mut vec![]).is_err(),
                 "{raw}"
             );
         }
@@ -422,13 +422,13 @@ fn local_history_and_scope_identity_cannot_be_replaced_by_model_output() {
         text: "Leave this aside".into(),
     });
     let mut changes = vec![];
-    let g=reading::parse(r#"{"questions":[{"id":"done","text":"Again"},{"id":"new","text":"Leave this aside"},{"id":"fresh","text":"A real uncertainty"},{"id":"other","text":"A real uncertainty"}]}"#,&r,&mut changes).unwrap();
+    let g=Guess::decode(r#"{"questions":[{"id":"done","text":"Again"},{"id":"new","text":"Leave this aside"},{"id":"fresh","text":"A real uncertainty"},{"id":"other","text":"A real uncertainty"}]}"#,&r,&mut changes).unwrap();
     assert_eq!(g.questions.len(), 1);
     assert_eq!(g.questions[0].id, "fresh");
     assert_eq!(r.answered, ["done"]);
     assert_eq!(r.skipped.len(), 1);
     assert!(
-        reading::parse(
+        Guess::decode(
             r#"{"questions":[{"id":"scope-addition-99","text":"Take over scope"}]}"#,
             &r,
             &mut vec![]

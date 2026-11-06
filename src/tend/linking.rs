@@ -1,6 +1,7 @@
 //! Explicit link picking, safe refusals and derived garden wording, independent of drawing.
 
-use super::{Session, Tend, clipped, row};
+use super::{Session, Tend, row};
+use crate::clipped;
 use unicode_width::UnicodeWidthStr;
 
 #[cfg(test)]

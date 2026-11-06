@@ -234,16 +234,9 @@ struct VerifiedRecord {
 fn verified_record(root: &Path, session: &Path, goal: &str) -> Result<VerifiedRecord, Unavailable> {
     let selected = current_session(session, goal)?;
     require_unique(&identity_index([session])?, &selected)?;
-    let entries = entries(root)?;
     let mut found = None;
-    for entry in entries {
-        let path = entry
-            .map_err(|error| Unavailable::unreadable(root, error))?
-            .path();
-        if path.extension().is_none_or(|extension| extension != "json") {
-            continue;
-        }
-        let record = read_file(&path)?;
+    for entry in record_files(root)? {
+        let (path, record) = entry?;
         if record.schema == 1 {
             if record.seed_me_session == session_id(&selected.0) {
                 return Err(Unavailable::new(
@@ -296,16 +289,26 @@ fn verified_record(root: &Path, session: &Path, goal: &str) -> Result<VerifiedRe
     })
 }
 
-fn entries(root: &Path) -> Result<fs::ReadDir, Unavailable> {
+type RecordEntry = Result<(PathBuf, SavedRecord), Unavailable>;
+
+/// Stream decoded JSON files in directory order. Surface entry and record errors to both readers.
+fn record_files(root: &Path) -> Result<impl Iterator<Item = RecordEntry>, Unavailable> {
     #[cfg(test)]
     counts::scan(root);
-    fs::read_dir(root).map_err(|error| {
+    let entries = fs::read_dir(root).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             missing(root)
         } else {
             Unavailable::unreadable(root, error)
         }
-    })
+    })?;
+    Ok(entries.filter_map(move |entry| {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(error) => return Some(Err(Unavailable::unreadable(root, error))),
+        };
+        (path.extension()? == "json").then(|| read_file(&path).map(|record| (path, record)))
+    }))
 }
 
 fn record_identity(path: &Path, record: &SavedRecord) -> Result<String, Unavailable> {

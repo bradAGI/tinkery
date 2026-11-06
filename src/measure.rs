@@ -5,6 +5,7 @@ mod read;
 #[cfg(test)]
 mod tests;
 
+use crate::clipped;
 use crate::{Palette, repo::Repo};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -15,8 +16,6 @@ use ratatui::{
 };
 use serde::Deserialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 const LIST_ROWS: usize = 7;
 const TITLE_ROWS: u16 = 5;
@@ -366,26 +365,6 @@ impl Measure {
     }
 }
 
-fn clipped(text: &str, width: u16) -> String {
-    if text.width() <= usize::from(width) {
-        return text.into();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut used = 0;
-    let mut result = String::new();
-    for grapheme in text.graphemes(true) {
-        used += grapheme.width();
-        if used >= usize::from(width) {
-            break;
-        }
-        result.push_str(grapheme);
-    }
-    result.push('…');
-    result
-}
-
 fn render_list(
     frame: &mut Frame,
     area: Rect,
@@ -469,7 +448,7 @@ fn render_list(
                 .wrap(Wrap { trim: false })
                 .scroll((*scroll, 0))
         } else {
-            Paragraph::new(clipped(&text, title_width)).style(palette.ink)
+            Paragraph::new(clipped(&text, usize::from(title_width))).style(palette.ink)
         };
         frame.render_widget(
             paragraph,

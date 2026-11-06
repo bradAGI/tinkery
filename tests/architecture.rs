@@ -56,6 +56,7 @@ const CONVERSATION_TEST_ACCESSORS: &[&str] = &[
 const MODULES: &[(&str, &str)] = &[
     ("actions", "shared"),
     ("approve", "approve"),
+    ("calendar", "shared"),
     ("goal", "shared"),
     ("measure", "measure"),
     ("menu", "menu"),

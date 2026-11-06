@@ -6,6 +6,9 @@
 //! no phase. `docs/design/architecture.md` has the map and `tests/architecture.rs` enforces it.
 #![deny(missing_docs, unreachable_pub)]
 
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -18,6 +21,7 @@ use ratatui::{
 
 pub mod actions;
 mod approve;
+mod calendar;
 pub mod goal;
 pub mod measure;
 pub mod menu;
@@ -35,6 +39,28 @@ pub mod think_record;
 pub mod voice;
 pub mod watch;
 mod worker;
+
+/// Fit a single-line title into terminal cells, keeping whole graphemes and marking omitted text.
+pub(crate) fn clipped(text: &str, width: usize) -> String {
+    if text.width() <= width {
+        return text.into();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut result = String::new();
+    let mut used = 0;
+    for g in text.graphemes(true) {
+        let cells = g.width();
+        if used + cells > width - 1 {
+            break;
+        }
+        result.push_str(g);
+        used += cells;
+    }
+    result.push('…');
+    result
+}
 
 /// The narrowest terminal any screen draws for. Below it, a screen says what size it needs and
 /// keeps every word; nothing is laid out half-visible.

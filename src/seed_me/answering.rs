@@ -454,7 +454,7 @@ fn rejected(reason: String) -> Refusal {
 /// Check a reply-built `state` against the ledger's rules before any write, so a broken rule is
 /// the reply's and never a storage failure.
 fn reply_fits(state: &Value) -> Result<(), Refusal> {
-    ledger::validate(&ledger_value(state)?)
+    ledger::validate(&ledger::Value::from(state.clone()))
         .map(drop)
         .map_err(rejected)
 }
@@ -466,7 +466,7 @@ fn not_saved(reason: String) -> Refusal {
 fn published(error: ledger::PublishError) -> Refusal {
     let reason = error.reason.lines().next().unwrap_or("");
     match error.save_state {
-        _ if reason.contains("stale publication version") => Refusal::Stale,
+        ledger::SaveState::NotSaved if error.stale() => Refusal::Stale,
         ledger::SaveState::NotSaved => Refusal::Refused(format!("Tinkery refused: {reason}")),
         ledger::SaveState::Unknown => Refusal::Refused(format!(
             "This may or may not have saved ({}). Reopen this session to see what it holds before trying again.",
@@ -509,17 +509,6 @@ fn publish(session: &Path, expected: u64, reason: &str, state: &Value) -> Result
         state,
         &publication_time(SystemTime::now())?,
     )
-}
-
-fn ledger_value(value: &Value) -> Result<ledger::Value, Refusal> {
-    let unusable = || {
-        not_saved(
-            "The question or session could not be read. Reopen the session and retry the step."
-                .into(),
-        )
-    };
-    let text = serde_json::to_string(value).map_err(|_| unusable())?;
-    ledger::Value::parse(&text).map_err(|_| unusable())
 }
 
 fn publish_at(
@@ -569,7 +558,7 @@ fn publication_time(time: SystemTime) -> Result<String, Refusal> {
     };
     Ok(format!(
         "{}T{:02}:{:02}:{:02}{fraction}+00:00",
-        civil(secs as i64),
+        crate::calendar::date((secs / 86_400) as i64),
         rest / 3600,
         rest % 3600 / 60,
         rest % 60
@@ -690,8 +679,8 @@ pub fn ask(session: &Path, expected: u64, ask: &Ask, folder: &Path) -> Result<u6
     if let Some(recommendation) = ask.recommendation().filter(|_| !ask.hard()) {
         node["recommendation"] = recommendation.into();
     }
-    let mut state = ledger_value(&ledger.state)?;
-    ledger::queue_question(&mut state, ledger_value(&node)?).map_err(rejected)?;
+    let mut state = ledger::Value::from(ledger.state);
+    ledger::queue_question(&mut state, ledger::Value::from(node)).map_err(rejected)?;
     ledger.state = json(&state.pretty().map_err(not_saved)?)?;
     let mut assumed = ledger.state["assumed"]
         .as_array()
@@ -720,8 +709,9 @@ pub fn ask(session: &Path, expected: u64, ask: &Ask, folder: &Path) -> Result<u6
 
 fn resolutions(state: &mut Value, links: Option<&Value>) -> Result<(), Refusal> {
     if let Some(links) = links {
-        let mut proposed = ledger_value(state)?;
-        ledger::resolve_unknowns(&mut proposed, &ledger_value(links)?).map_err(rejected)?;
+        let mut proposed = ledger::Value::from(state.clone());
+        ledger::resolve_unknowns(&mut proposed, &ledger::Value::from(links.clone()))
+            .map_err(rejected)?;
         *state = json(&proposed.pretty().map_err(not_saved)?)?;
     }
     Ok(())
@@ -886,7 +876,9 @@ pub fn promote(session: &Path, expected: u64) -> Result<Option<u64>, Refusal> {
     if !ledger.state["current_question"].is_null() {
         return Ok(None);
     }
-    let Some(id) = ledger::next_question(&ledger_value(&ledger.state)?).map_err(not_saved)? else {
+    let Some(id) =
+        ledger::next_question(&ledger::Value::from(ledger.state.clone())).map_err(not_saved)?
+    else {
         return Ok(None);
     };
     let mut state = ledger.state;
@@ -961,7 +953,7 @@ pub fn draft_seed(
         }
         None => 1,
     };
-    let records = ledger::Value::parse(&checks.to_string()).map_err(not_saved)?;
+    let records = ledger::Value::from(checks.clone());
     ledger::validate_goal_checks(ledger.goal().unwrap_or(""), &records).map_err(rejected)?;
     let rendered = ledger::checks_block(&records).map_err(not_saved)?;
     let version = if found.is_empty() && resolves.is_none() {
@@ -1134,7 +1126,7 @@ pub(super) fn now() -> String {
     let rest = secs % 86_400;
     format!(
         "{}T{:02}:{:02}:{:02}+00:00",
-        civil(secs as i64),
+        crate::calendar::date((secs / 86_400) as i64),
         rest / 3600,
         rest % 3600 / 60,
         rest % 60
@@ -1146,7 +1138,7 @@ fn local_date() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs()) as i64;
-    civil(secs + utc_offset(secs))
+    crate::calendar::date((secs + utc_offset(secs)).div_euclid(86_400))
 }
 
 /// The local time zone's offset from UTC at `secs`, in seconds; 0 when it can't be read.
@@ -1166,29 +1158,15 @@ fn utc_offset(_secs: i64) -> i64 {
     0
 }
 
-/// The `YYYY-MM-DD` date of `secs` after 1970-01-01 (Howard Hinnant's algorithm).
-fn civil(secs: i64) -> String {
-    let z = secs.div_euclid(86_400) + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn the_seed_is_dated_where_the_operator_is_and_receipts_stay_utc() {
-        assert_eq!(civil(0), "1970-01-01");
-        assert_eq!(civil(-1), "1969-12-31");
-        assert_eq!(civil(951_782_400), "2000-02-29");
+        assert_eq!(crate::calendar::date(0), "1970-01-01");
+        assert_eq!(crate::calendar::date(-1), "1969-12-31");
+        assert_eq!(crate::calendar::date(11016), "2000-02-29");
         let stamp = now();
         assert!(
             stamp.ends_with("+00:00") && stamp.starts_with("20"),

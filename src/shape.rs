@@ -47,7 +47,6 @@ use std::{
     sync::{Arc, mpsc},
 };
 use step::{Done, Failure, RetryFeedback, Running, Why, Work};
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 use words::Words;
 
@@ -895,7 +894,8 @@ impl Shape {
                         let label = session.stage.label();
                         let mark = if i == self.selected { "› " } else { "  " };
                         let budget = width.saturating_sub(label.width() + 4);
-                        let title = clipped(session.goal.lines().next().unwrap_or(""), budget);
+                        let title =
+                            crate::clipped(session.goal.lines().next().unwrap_or(""), budget);
                         let gap = width.saturating_sub(2 + title.width() + label.width());
                         let style = if i == self.selected {
                             palette.jade
@@ -2411,25 +2411,6 @@ fn standing(shaping: &Shaping, stand: Stand, palette: Palette) -> (Text<'static>
         input.push(Line::styled(next, palette.ink));
     }
     (Text::from(lines), Text::from(input))
-}
-
-fn clipped(text: &str, width: usize) -> String {
-    if text.width() <= width {
-        return text.into();
-    }
-    let mut result = String::new();
-    let mut used = 0;
-    for g in text.graphemes(true) {
-        if used + g.width() + 1 > width {
-            break;
-        }
-        result.push_str(g);
-        used += g.width();
-    }
-    if width > 0 {
-        result.push('…');
-    }
-    result
 }
 
 #[cfg(test)]

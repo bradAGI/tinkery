@@ -222,18 +222,22 @@ fn completion_through_publish_is_refused() {
 #[test]
 fn an_unknown_save_asks_the_operator_to_look() {
     let error = |save_state| ledger::PublishError {
-        reason: "could not save the ledger: TEST disk".into(),
+        reason: "could not save the ledger: TEST disk stale publication version".into(),
         save_state,
     };
     assert_eq!(
         published(error(ledger::SaveState::NotSaved)),
-        Refusal::Refused("Tinkery refused: could not save the ledger: TEST disk".into())
+        Refusal::Refused(
+            "Tinkery refused: could not save the ledger: TEST disk stale publication version"
+                .into()
+        )
     );
     let Refusal::Refused(unknown) = published(error(ledger::SaveState::Unknown)) else {
         panic!("an unknown save must be a refusal with words");
     };
     assert!(
-        unknown.starts_with("This may or may not have saved (TEST disk)."),
+        unknown
+            .starts_with("This may or may not have saved (TEST disk stale publication version)."),
         "{unknown}"
     );
     assert!(unknown.contains("Reopen this session"), "{unknown}");
@@ -464,4 +468,21 @@ fn literal_goal_round_trip(goal: &str) {
         ledger::status(&session).map_or(true, |status| status["handoff"]["verified"]
             != ledger::Value::Bool(true))
     );
+}
+
+#[test]
+fn invalid_node_fields_report_the_validation_error_even_when_they_name_a_conflict() {
+    let root = temp();
+    let session = session(root.path());
+    let path = session.join("ledger.json");
+    let mut saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    saved["nodes"][0]["stale publication version"] = true.into();
+    let bytes = serde_json::to_vec(&saved).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    let error = end(&session, Ending::Stopped, None).unwrap_err();
+    assert!(
+        matches!(error, Refusal::Refused(ref why) if why.contains("invalid node fields")),
+        "{error:?}"
+    );
+    assert_eq!(fs::read(path).unwrap(), bytes);
 }
