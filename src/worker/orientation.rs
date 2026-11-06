@@ -2,13 +2,16 @@
 //! a resume, a different session or a failed tool call cannot establish a first edit.
 
 use super::{Run, identity, read_status};
+use crate::sdlc;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
+    collections::HashMap,
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, Read},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
+    process::Command,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -21,8 +24,7 @@ struct Launch {
     time: u64,
     step: String,
     log: PathBuf,
-    run: Run,
-    stopped_at_cap: bool,
+    slug: String,
 }
 
 enum Observation {
@@ -39,39 +41,46 @@ impl Observation {
     }
 }
 
-/// Advisory only. Read up to five fresh Pi starts in the three most recently updated run
-/// folders. Never inspect Pi's session store, send log contents or alter the worker allowance.
+/// Advisory only. Sample at most five recent Pi launches in the named repository.
+/// Never inspect Pi's session store, send log contents or alter the allowance.
 pub(crate) fn cap_advice(root: &Path, cap: usize, cancel: &AtomicBool) -> String {
-    let mut folders = Vec::new();
-    for entry in entries(&root.join("runs")).unwrap_or_default() {
-        if let Ok(kind) = entry.file_type()
-            && kind.is_dir()
-            && let Ok(modified) = entry.metadata().and_then(|m| m.modified())
-            && let Ok(slug) = entry.file_name().into_string()
-        {
-            folders.push((modified, slug));
-        }
+    let folders = entries(&root.join("runs")).unwrap_or_default();
+    if folders.is_empty() {
+        return NO_SAMPLE.into();
     }
-    folders.sort_unstable_by(|a, b| b.cmp(a));
     let mut logs = Vec::new();
-    for (_, slug) in folders.into_iter().take(3) {
+    let worktrees = build_worktrees(root, cancel);
+    for entry in folders {
         if cancel.load(Ordering::SeqCst) {
             return NO_SAMPLE.into();
         }
-        if let Ok(value) = read_status(root, &slug, cancel, Duration::from_secs(2))
-            && let Ok(run) = identity(root, &slug, &value)
-            && let Some(steps) = value["steps"].as_array()
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let Ok(slug) = entry.file_name().into_string() else {
+            continue;
+        };
+        collect_logs(root, &slug, &mut logs);
+        if let Some(build) = worktrees.get(&slug)
+            && build != root
         {
-            logs.extend(launches(run, steps));
+            collect_logs(build, &slug, &mut logs);
         }
     }
     logs.sort_unstable_by(|a, b| b.time.cmp(&a.time).then_with(|| a.log.cmp(&b.log)));
+    let mut readings = HashMap::new();
     let mut samples = Vec::new();
     for launch in logs.iter().take(5) {
         if cancel.load(Ordering::SeqCst) {
             return NO_SAMPLE.into();
         }
-        if let Some(observation) = observe(launch, cancel) {
+        let source = readings.entry(&launch.slug).or_insert_with(|| {
+            let value = read_status(root, &launch.slug, cancel, Duration::from_secs(1)).ok()?;
+            Some((identity(root, &launch.slug, &value).ok()?, value))
+        });
+        if let Some((run, value)) = source
+            && let Some(observation) = observe(launch, run, value, cancel)
+        {
             samples.push((launch, observation));
         }
     }
@@ -91,7 +100,7 @@ pub(crate) fn cap_advice(root: &Path, cap: usize, cancel: &AtomicBool) -> String
     let noun = if count == 1 { "log" } else { "logs" };
     let mut text = format!(
         "Suggested minimum: {minimum} responses. Based on {count} recent Pi launch {noun}.\n{}/{}: {reason}.",
-        source.run.slug, source.step
+        source.slug, source.step
     );
     if cap < minimum {
         text.push_str(&format!(
@@ -114,39 +123,47 @@ fn entries(path: &Path) -> Option<Vec<fs::DirEntry>> {
     (files.len() <= MAX_ENTRIES).then_some(files)
 }
 
-fn launches(run: Run, steps: &[Value]) -> Vec<Launch> {
-    let directory = run.root.join("runs").join(&run.slug).join("steps");
-    let mut launches = Vec::new();
+// Git locates possible step directories. Only SDLC can identify which checkout owns a run.
+fn build_worktrees(root: &Path, cancel: &AtomicBool) -> HashMap<String, PathBuf> {
+    let mut git = Command::new("git");
+    git.args([
+        "--no-optional-locks",
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+    ]);
+    let listing = sdlc::execute(root, git, cancel, Duration::from_secs(1)).unwrap_or_default();
+    listing
+        .split("\0\0")
+        .filter_map(|block| {
+            let mut fields = block.split('\0');
+            let path = fields.next()?.strip_prefix("worktree ")?;
+            let branch = fields.find_map(|f| f.strip_prefix("branch refs/heads/"))?;
+            Some((branch.to_owned(), PathBuf::from(path)))
+        })
+        .collect()
+}
+
+fn collect_logs(root: &Path, slug: &str, logs: &mut Vec<Launch>) {
+    let directory = root.join("runs").join(slug).join("steps");
     for entry in entries(&directory).unwrap_or_default() {
         let name = entry.file_name();
-        let Some((step, timestamp)) = name
-            .to_str()
-            .and_then(|n| n.strip_suffix(".pi.log"))
-            .and_then(|n| n.rsplit_once(".launch-"))
-        else {
-            continue;
-        };
-        let Some(time) = timestamp.parse().ok() else {
-            continue;
-        };
-        let Some(recorded) = steps.iter().find(|s| {
-            s["name"] == step
-                && matches!(
-                    s["state"].as_str(),
-                    Some("completed" | "stopped" | "active")
-                )
-        }) else {
-            continue;
-        };
-        launches.push(Launch {
-            time,
-            step: step.into(),
-            log: entry.path(),
-            run: run.clone(),
-            stopped_at_cap: recorded["state"] == "stopped" && recorded["stopped_by"] == "cap",
-        });
+        if entry.file_type().is_ok_and(|kind| kind.is_file())
+            && let Some((step, timestamp)) = name
+                .to_str()
+                .and_then(|n| n.strip_suffix(".pi.log"))
+                .and_then(|n| n.rsplit_once(".launch-"))
+            && let Ok(time) = timestamp.parse()
+        {
+            logs.push(Launch {
+                time,
+                step: step.into(),
+                log: entry.path(),
+                slug: slug.into(),
+            });
+        }
     }
-    launches
 }
 
 fn regular(path: &Path) -> Option<File> {
@@ -181,15 +198,30 @@ enum Message {
     Other,
 }
 
-fn observe(launch: &Launch, cancel: &AtomicBool) -> Option<Observation> {
+fn observe(launch: &Launch, run: &Run, value: &Value, cancel: &AtomicBool) -> Option<Observation> {
+    let steps_dir = run.root.join("runs").join(&run.slug).join("steps");
+    if launch.log.parent()? != steps_dir {
+        return None;
+    }
+    let step = value["steps"]
+        .as_array()?
+        .iter()
+        .find(|s| s["name"] == launch.step)?;
+    if !matches!(
+        step["state"].as_str(),
+        Some("active" | "completed" | "stopped")
+    ) {
+        return None;
+    }
+    let stopped_at_cap = step["state"] == "stopped" && step["stopped_by"] == "cap";
     let contract = regular(&launch.log.with_file_name(format!("{}.json", launch.step)))?;
     if contract.metadata().ok()?.len() > 16 * 1024 {
         return None;
     }
     let contract: Value = serde_json::from_reader(contract.take(16 * 1024)).ok()?;
     if contract["schema"] != 1
-        || contract["run_id"] != launch.run.id
-        || contract["checkout"].as_str() != launch.run.root.to_str()
+        || contract["run_id"] != run.id
+        || contract["checkout"].as_str() != run.root.to_str()
     {
         return None;
     }
@@ -215,7 +247,7 @@ fn observe(launch: &Launch, cancel: &AtomicBool) -> Option<Observation> {
             return None;
         }
         let line = line.ok()?;
-        if launch.stopped_at_cap
+        if stopped_at_cap
             && let Some((cap, ref marker)) = cap_stop
             && line.starts_with(marker)
         {

@@ -124,9 +124,10 @@ F2. Read the whole disclosure first. `--worker-model provider/model:thinking` an
 zero and drafting calls never supply it. One response may already be in flight at
 the cap. Configuration is not permission to start on navigation.
 
-With a configured worker allowance, the existing Approve reader looks at up to five
-fresh Pi launch logs from the three most recently updated run folders. It reads
-only the checkout each run reports. A log must match that run's step contract,
+With a configured worker allowance, the existing Approve reader selects up to five
+recent Pi launches by the start time in each log filename. Only runs in the named
+checkout and their matching Git worktrees are considered. Empty run folders add
+no samples. It reads log contents only in the checkout each run reports. A log must match that run's step contract,
 session and checkout. The review names the source step and counts Pi responses up
 to the first successful `edit` or `write` tool result. Shell commands can also change
 files, so this measures only those two tools. The suggested minimum leaves one

@@ -550,7 +550,18 @@ def cap_review(case):
             path.symlink_to(outside)
             record('mismatch', 13, edit=True, match=False)
             record('resumed', 12, edit=True, op='resume')
-        fixture.change(lambda state: state.update(history=[row]))
+        history = [row]
+        if case == 'warn':
+            # Creating intakes does not change which worker steps ran most recently.
+            for index in range(3):
+                pending = f'waiting-{index}'
+                folder = fixture.project / 'runs' / pending
+                folder.mkdir()
+                later = (fixture.project / 'runs' / slug).stat().st_mtime + index + 1
+                os.utime(folder, (later, later))
+                history.append(dict(row, slug=pending, run_id=f'6173fbd4-ff71-4831-9ce8-{index:012d}',
+                                    checkout=str(fixture.project), steps=[]))
+        fixture.change(lambda state: state.update(history=history))
         terminal = Terminal(fixture, 100, 30)
         try:
             open_review(terminal)
@@ -560,6 +571,8 @@ def cap_review(case):
                 assert 'Suggested minimum: 8 responses' in shown and 'Based on 2 recent Pi launch logs' in shown, shown
                 assert 'earlier-build/build: first edit/write at response 7' in shown, shown
                 assert '! Your cap of 7 is below this minimum' in shown, shown
+                assert [c['argv'] for c in fixture.calls() if len(c['argv']) == 3] == [
+                    ['status', slug, '--json']], 'only the run with fresh launches needs a detail read'
                 assert not fixture.mutations()
                 terminal.send(END + F2, 'Read from tink-sdlc.')
                 assert len(fixture.admissions()) == 1 and fixture.read()['step']['max_responses'] == CAP
