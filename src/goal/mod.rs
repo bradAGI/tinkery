@@ -82,6 +82,21 @@ pub(super) fn identity(text: &str) -> String {
         .join(" ")
         .to_lowercase()
 }
+/// The goal already says `phrase` as whole words, so "thermostat works" never states "at work".
+fn states_whole_words(goal: &str, phrase: &str) -> bool {
+    let words = |text: &str| -> Vec<String> {
+        identity(text)
+            .split(' ')
+            .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()).to_owned())
+            .filter(|word| !word.is_empty())
+            .collect()
+    };
+    let (goal, phrase) = (words(goal), words(phrase));
+    !phrase.is_empty()
+        && goal
+            .windows(phrase.len())
+            .any(|window| window == phrase.as_slice())
+}
 /// Constraint identity preserves internal whitespace and case after the first letter.
 /// "Upload logs" matches "upload logs" while "use IT" stays distinct from "use it".
 fn constraint_identity(text: &str) -> String {
@@ -345,7 +360,7 @@ impl GoalParts {
             capitalise(&format!("{who}{separator}{outcome}"))
         };
         if let Some(when) = self.get(Part::When).map(prose)
-            && !identity(&goal).contains(&identity(&when))
+            && !states_whole_words(&goal, &when)
         {
             let join = if when.starts_with(char::is_uppercase) {
                 ". "

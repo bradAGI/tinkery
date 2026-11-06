@@ -85,7 +85,8 @@ statement: `[Outcome], for [who]`, with `I` becoming `me`. Both parts keep their
 spelling; names at the start of an outcome are not lowercased. For example,
 `developers` + `Count words` becomes `Count words, for developers`. A lowercase
 predicate keeps the subject-first composition above. The optional situation follows
-without repeating one already present. When it starts with an uppercase letter,
+without repeating one already present as whole words (`thermostat works` does not
+state `at work`, #717). When it starts with an uppercase letter,
 it becomes its own sentence: `Count words, for me. For the first slice.` A lowercase
 situation keeps the comma join: `Count words, for me, for the first slice.` Its
 spelling stays unchanged; proper nouns are never lowercased to make a join.
