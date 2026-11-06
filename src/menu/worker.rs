@@ -27,6 +27,8 @@ pub(super) struct Panel {
     goal: String,
     disclosure: String,
     start: Option<Start>,
+    /// The start in flight; it comes back for an explicit retry only if nothing was started.
+    starting: Option<Start>,
     run: Option<Run>,
     snapshot: Option<Snapshot>,
     job: Option<Job>,
@@ -80,6 +82,7 @@ impl Panel {
             goal: seed.goal,
             disclosure,
             start,
+            starting: None,
             run: None,
             snapshot: None,
             job: None,
@@ -98,6 +101,7 @@ impl Panel {
             goal: String::new(),
             disclosure: String::new(),
             start: None,
+            starting: None,
             run: Some(run),
             snapshot: None,
             job: Some(job),
@@ -120,6 +124,7 @@ impl Panel {
             return;
         };
         self.job = None;
+        let starting = self.starting.take();
         match result {
             Ok(snapshot) => {
                 self.run = Some(snapshot.run.clone());
@@ -128,11 +133,17 @@ impl Panel {
                     "Read from tink-sdlc. r reads again; nothing resumes automatically.".into();
             }
             Err(failure) => {
-                if let Some(run) = failure.run {
-                    self.run = Some(run);
-                }
                 self.snapshot = None;
                 self.notice = format!("Request refused or uncertain: {}", failure.message);
+                if let Some(run) = failure.run {
+                    self.run = Some(run);
+                } else if self.run.is_none() && starting.is_some() {
+                    // Refused before any run was known: fixing the cause and pressing F2 is safe,
+                    // because a run created meanwhile makes the retry refuse, not start twice.
+                    self.start = starting;
+                    self.notice
+                        .push_str(" Nothing was started; fix that, then F2 tries again.");
+                }
             }
         }
         self.scroll = 0;
@@ -177,6 +188,7 @@ impl Panel {
             }
             KeyCode::F(2) if !self.busy() && self.read_to_end => {
                 if let Some(start) = self.start.take() {
+                    self.starting = Some(start.clone());
                     self.job = Some(Job::start(start));
                     self.notice =
                         "Starting worker… Leaving this screen does not cancel admission.".into();

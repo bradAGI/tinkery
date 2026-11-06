@@ -122,6 +122,8 @@ enum Worker {
     /// Its turn ended: someone has to read the report and complete the step.
     Ended,
     Unknown,
+    /// A launch tink-sdlc couldn't confirm: someone has to inspect it before another starts.
+    Uncertain,
 }
 
 impl Worker {
@@ -131,6 +133,7 @@ impl Worker {
             Self::Running => "worker running",
             Self::Ended => "worker's turn ended",
             Self::Unknown => "worker state unknown",
+            Self::Uncertain => "launch unconfirmed; inspect it before starting another",
         }
     }
 }
@@ -143,7 +146,10 @@ impl Run {
                 .as_ref()
                 .is_some_and(codex::Observation::needs_you)
             || self.attention.as_ref().is_some_and(|a| {
-                a.gate || a.owed > 0 || a.recheck > 0 || a.worker == Some(Worker::Ended)
+                a.gate
+                    || a.owed > 0
+                    || a.recheck > 0
+                    || matches!(a.worker, Some(Worker::Ended | Worker::Uncertain))
             })
     }
 
@@ -213,7 +219,19 @@ fn steps(run: &Value) -> Result<Option<(Vec<String>, Worker)>, String> {
                 }
                 format!(" · {words}")
             }
-            ("prepared" | "completed" | "uncertain" | "unreadable", None) => String::new(),
+            // Only the newest uncertain step owes reconciliation; an older tink-sdlc
+            // doesn't say which is newest, so every uncertain step is treated as owed.
+            ("uncertain", None) => {
+                let owed = match step.get("owed") {
+                    None => true,
+                    Some(owed) => owed.as_bool().ok_or_else(refuse)?,
+                };
+                if owed && worker != Worker::Ended {
+                    worker = Worker::Uncertain;
+                }
+                String::new()
+            }
+            ("prepared" | "completed" | "unreadable", None) => String::new(),
             // A worker stopped before its turn ended is never shown as a finished turn.
             ("stopped", None) => match step["stopped_by"].as_str() {
                 Some("operator") => " by you".into(),
@@ -337,7 +355,15 @@ fn parse_run_detail(run: &Value) -> Result<Detail, String> {
                 .as_bool()
                 .ok_or("A checklist item has an invalid pending flag.")?,
         };
-        if !automatic {
+        // A check the source assigns to the worker stays visible but owes the operator nothing;
+        // an older report without ownership is treated as the operator's.
+        let operator = match item.get("operator_attestation") {
+            None => true,
+            Some(value) => value
+                .as_bool()
+                .ok_or("A checklist item has an invalid operator_attestation flag.")?,
+        };
+        if !automatic && operator {
             attention.owed += usize::from(!pending && status != "passed");
             attention.recheck += usize::from(recheck);
         }
@@ -685,7 +711,7 @@ impl Watch {
             "What Watch does\nIt reads the runs in the tink-sdlc checkout you named with --sdlc-root, ",
             "by running that checkout's own `python3 _system/scripts/sdlc.py status --json` when you open ",
             "Watch or press r. Watch changes nothing. b opens the separate worker controls; only their named action keys execute work.\n\n",
-            "Needs you lists decisions, owed attestations, possible attestation rechecks, workers whose turn ended, ",
+            "Needs you lists decisions, owed attestations, possible attestation rechecks, workers whose turn ended, unconfirmed launches, ",
             "and failed, interrupted or unreadable runs. Opening or refreshing also reads each run's status to determine attention.\n",
             "Checklist counts separate passed results from how each is checked: automated or by you. ",
             "A proof kind does not mean the item passed.\n",

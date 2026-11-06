@@ -70,8 +70,8 @@ seed's H1 title (without `Seed:`): whole lowercase ASCII words joined by hyphens
 at most 40 characters, so folder, Watch and Taste rows stay scannable; only a first
 word longer than that is cut. Paths use the shared canonical
 shell quoting; no placeholder needs replacing. Existing run names still refuse creation.
-Copying runs nothing and grants no approval. Missing checkout, an empty slug or
-unsafe paths leave the verified seed readable with a reason and no copy action.
+Copying runs nothing and grants no approval. Missing checkout, a checkout without
+`_system/scripts/sdlc.py` (#716), an empty slug or unsafe paths leave the verified seed readable with a reason and no copy action.
 A known different repository does the same: a plain reason names both repository
 folders and asks the operator to reopen with `--sdlc-root` naming the seed's origin.
 If the folder names look the same, the message shows both full paths. It offers
@@ -132,6 +132,9 @@ own definition gates, worktree creation, model resolution, launcher hashing,
 session identity and cumulative cap. No copied shell text is executed and no
 approval or worker report is invented. A refusal stops the sequence; there is no
 automatic retry. Partial progress retains the source-owned run for inspection.
+A refusal before any run is known (such as uncommitted source) started nothing, so F2 is
+offered again after the operator fixes the cause; a run created meanwhile makes that retry
+refuse rather than start twice (#738). Interrupted admissions never offer F2 again.
 
 The menu retains this finite request across navigation. Exiting during a request
 waits for it to settle, rather than interrupting admission between records. SDLC

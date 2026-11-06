@@ -518,13 +518,17 @@ def journey(width, height, case, mono=False):
                 elif case == 'dirty-source':
                     context = fixture.project / 'context.md'
                     context.write_text('TEST uncommitted context must not be omitted.\n')
-                    os.write(terminal.master, F2)
-                    terminal.wait(lambda: 'F2 start worker' not in terminal.flat()
-                                  and 'Request in progress' not in terminal.flat())
+                    terminal.send(F2, 'Request refused or uncertain:')
                     terminal.send(END, 'Commit source changes first.')
                     assert not fixture.mutations(), 'uncommitted source created a run or worker'
                     assert not (fixture.project / 'runs').exists()
                     assert context.read_text() == 'TEST uncommitted context must not be omitted.\n'
+                    # #738: nothing started, so fixing the cause and pressing F2 starts it in this session.
+                    terminal.wait(lambda: 'F2 tries again' in terminal.flat() and 'F2 start worker' in terminal.flat())
+                    fixture.git('add', 'context.md')
+                    fixture.git('commit', '-qm', 'TEST commit context')
+                    terminal.send(END + F2, 'Read from tink-sdlc.')
+                    assert len(fixture.admissions()) == 1, fixture.calls()
                 elif case == 'pending-gate':
                     terminal.send(F2, 'Worker result unavailable')
                     terminal.send(END, 'TEST definition approval is pending')
