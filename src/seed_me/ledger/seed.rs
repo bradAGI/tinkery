@@ -545,7 +545,7 @@ pub(super) fn confirmed_as(
     let records = checks::require_seed_checks(directory, ledger, false)?;
     if let Some(statement) = checks::commandless_check(&records) {
         return Err(format!(
-            "Cannot confirm: {statement} has no command. F1: Supply a check command, or Make it a judgment with your how-to-judge words. Nothing was confirmed."
+            "Cannot confirm: \"{statement}\" has no command. F1: Supply a check command, or Make it a judgment with your how-to-judge words. Nothing was confirmed."
         ));
     }
 

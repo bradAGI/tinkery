@@ -87,7 +87,7 @@ pub fn validate_checks(records: &Value) -> Result<()> {
 }
 
 /// The first provisional check needing an operator command or judgment before confirmation.
-pub fn commandless_check(records: &Value) -> Option<&str> {
+pub(crate) fn commandless_check(records: &Value) -> Option<&str> {
     records
         .items()
         .iter()

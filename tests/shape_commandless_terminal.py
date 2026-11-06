@@ -29,7 +29,7 @@ def journey(width, height, agent, repair):
             run.send(b'confirm', 'your words confirm')
             if repair != 'proposed':
                 before = files(session)
-                run.send(F2, 'Cannot confirm: standard library only has no command.')
+                run.send(F2, 'Cannot confirm: "standard library only" has no command.')
                 run.wait('Supply a check command, or Make it a judgment')
                 assert files(session) == before, 'Refusal wrote a skip, receipt or seed'
                 run.choose('Make it a judgment' if repair == 'judge' else 'Supply a check command',
