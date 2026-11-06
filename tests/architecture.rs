@@ -21,6 +21,18 @@ const BRAIN_DUMP_PUB_FIELDS: usize = 0;
 /// live in their own files; what remains is help and display text.
 const LONG_LINES: usize = 6;
 const LONG_LINE: usize = 200;
+/// Most production lines a module may have. Modules already past it are capped at their size in
+/// [`BIG_MODULES`] and may shrink freely; growing one means splitting it first.
+const MODULE_LINES: usize = 1000;
+/// Modules over [`MODULE_LINES`] on 2026-11-06 (#747), with their production line counts.
+const BIG_MODULES: &[(&str, usize)] = &[
+    ("src/shape.rs", 2528),
+    ("src/think/brain_dump.rs", 1714),
+    ("src/menu.rs", 1313),
+    ("src/seed_me/answering.rs", 1210),
+    ("src/seed_me/ledger.rs", 1125),
+    ("src/watch.rs", 1039),
+];
 /// Most calls to the test-only accessors on Think's `Conversation`. Tests that poke private state
 /// break on refactors that keep behavior; new tests drive Think through its real input instead.
 const CONVERSATION_TEST_ACCESS: usize = 77;
@@ -220,6 +232,32 @@ fn long_lines_do_not_grow() {
         ),
         found.len(),
         LONG_LINES,
+    );
+}
+
+#[test]
+fn big_modules_do_not_grow() {
+    let mut files: Vec<_> = production_files().into_iter().map(|(f, _)| f).collect();
+    files.push(root().join("src/main.rs"));
+    let over: Vec<_> = files
+        .iter()
+        .filter_map(|file| {
+            let text = fs::read_to_string(file).unwrap();
+            let tests = test_line_ranges(&syn::parse_file(&text).unwrap());
+            let lines = (1..=text.lines().count())
+                .filter(|n| !tests.iter().any(|r| r.contains(n)))
+                .count();
+            let name = rel(file);
+            let limit = BIG_MODULES
+                .iter()
+                .find(|(big, _)| *big == name)
+                .map_or(MODULE_LINES, |(_, cap)| *cap);
+            (lines > limit).then(|| format!("{name}: {lines} lines, limit {limit}"))
+        })
+        .collect();
+    assert!(
+        over.is_empty(),
+        "Modules over their production line limit; split them before adding more: {over:?}"
     );
 }
 

@@ -24,6 +24,12 @@ Published task scope and status live in GitHub Issues. Measure's former
 [Taste](taste.md) have separate modules. There are no dependency exceptions: Think hands
 saved goals to Tend only through `seed_me`. The menu alone connects Shape and Tend.
 
+## Module size
+
+A module has at most 1000 production lines. The modules already past it are capped at their
+size on 2026-11-06 ([#747](https://github.com/jon-devlapaz/tinkery/issues/747)) and may only
+shrink; to add to one, split it first. `BIG_MODULES` in the check lists them.
+
 ## Factory boundaries
 
 [Factory principles](https://x.com/zachlloydtweets/status/2110505938604134737) are
