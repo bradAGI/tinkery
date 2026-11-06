@@ -215,6 +215,10 @@ fn origin_visit(case: &str, expected_note: Option<&str>, can_copy: bool) {
     let other = root.join("TEST-other");
     fs::create_dir_all(checkout.join(".git")).unwrap();
     fs::create_dir_all(other.join(".git")).unwrap();
+    for repo in [&checkout, &other] {
+        fs::create_dir_all(repo.join("_system/scripts")).unwrap();
+        fs::write(repo.join(crate::sdlc::SCRIPT), "TEST script").unwrap();
+    }
     // Repository contents are irrelevant to attribution.
     fs::write(other.join(".git/TEST-unread"), "TEST not Git data").unwrap();
     let session = root.join("TEST-sessions/TEST-session");
