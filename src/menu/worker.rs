@@ -127,6 +127,7 @@ impl Panel {
             return;
         };
         self.job = None;
+        self.scroll = 0;
         let starting = self.starting.take();
         match result {
             Ok(snapshot) => {
@@ -144,12 +145,13 @@ impl Panel {
                     // Refused before any run was known: fixing the cause and pressing F2 is safe,
                     // because a run created meanwhile makes the retry refuse, not start twice.
                     self.start = starting;
+                    // The operator already read the disclosure. Show why the start failed.
+                    self.scroll = u16::MAX;
                     self.notice
                         .push_str(" Nothing was started; fix that, then F2 tries again.");
                 }
             }
         }
-        self.scroll = 0;
         self.read_to_end = false;
     }
 
