@@ -40,7 +40,7 @@ pub(crate) struct Taste {
     signer: Option<Result<String, String>>,
     signing: Option<Read<String>>,
     labelling: Option<Read<String>>,
-    reading: Option<Read<Vec<ResultRow>>>,
+    reading: Option<Read<(Vec<ResultRow>, usize)>>,
     opening: Option<Read<()>>,
     preview: Option<preview::Preview>,
     rows: Vec<ResultRow>,
@@ -113,7 +113,7 @@ impl Taste {
         if let Some(result) = self.reading.as_ref().and_then(Read::poll) {
             self.reading = None;
             match result {
-                Ok(rows) => {
+                Ok((rows, skipped)) => {
                     let selected = self.selection.as_ref().and_then(|(id, url)| {
                         rows.iter()
                             .position(|r| &r.id == id && r.url.as_ref().ok() == url.as_ref())
@@ -126,6 +126,13 @@ impl Taste {
                     }
                     self.rows = rows;
                     self.at = Some(Instant::now());
+                    if skipped > 0 && self.notice.is_empty() {
+                        self.notice = format!(
+                            "Skipped {skipped} folder{} in runs/ whose name isn't a run name; nothing in {} was read.",
+                            if skipped == 1 { "" } else { "s" },
+                            if skipped == 1 { "it" } else { "them" }
+                        );
+                    }
                 }
                 Err(why) => {
                     self.detail = false;

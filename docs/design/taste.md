@@ -27,6 +27,8 @@ the list. When status reports `pr: null`, an open run can supply a
 [checked local result](#local-preview). An abandoned run instead says that it closed
 without a PR. If status omits the field, Taste directs the operator to a checkout
 that reports this run's PR.
+A listed entry whose name is not a safe run locator (a stray `runs/` folder) is skipped and
+counted in one notice; nothing in it is read and no command names it, while valid results stay (#715).
 If status reports an invalid PR URL, Taste asks the operator to inspect the
 run's PR record outside Tinkery and reread after repair. Malformed or missing PR fields offer no open
 or preview action and never fall back to a local result. Taste accepts only a full `https://github.com/OWNER/REPO/pull/NUMBER`.
