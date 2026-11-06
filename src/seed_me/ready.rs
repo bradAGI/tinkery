@@ -42,16 +42,14 @@ pub(crate) fn path(session: &Path) -> std::path::PathBuf {
     session.join("seed-contract.md")
 }
 
-/// Read the exact goal bound to a verified seed, refusing changed or unconfirmed session files.
+/// Read the confirmed seed from its recorded path, refusing changed or unconfirmed session files.
 /// The caller must separately establish that these seed bytes belong to its run.
-pub(crate) fn goal(seed: &Path) -> Result<String, String> {
+pub(crate) fn confirmed(seed: &Path) -> Result<ReadySeed, String> {
     let session = seed.parent().ok_or("The seed has no session folder.")?;
     if path(session) != seed {
         return Err("The source is not this session's seed.".into());
     }
-    read(session, None)?
-        .map(|ready| ready.goal)
-        .ok_or("The original seed's confirmation cannot be verified.".into())
+    read(session, None)?.ok_or("The original seed's confirmation cannot be verified.".into())
 }
 
 /// Read a confirmed seed without mutation. `None` means not verified ready; errors mean unavailable.

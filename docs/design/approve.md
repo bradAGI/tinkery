@@ -126,7 +126,9 @@ conflicting records keep the seed readable and disable copy and start until insp
 
 The worker start checks the same pin on F2 and before stage 3. Before preparing the worker,
 it checks that the build starts at that commit or its direct child containing only the
-new run’s evidence. Watch and Taste open on the resulting build checkout from the worker
+new run’s evidence. Before preparation and initial launch, including a later launch of
+a prepared step, the working files must still match the candidate. Run records and
+SDLC's generated rules block may change. Watch and Taste open on the resulting build checkout from the worker
 screen. After restarting Tinkery, use `--sdlc-root` with the displayed retry checkout to
 find the new run.
 

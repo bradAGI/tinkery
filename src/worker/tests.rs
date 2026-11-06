@@ -50,6 +50,7 @@ impl Fixture {
             SCRIPT.replace("@STATE@", &serde_json::to_string(&state).unwrap()),
         )
         .unwrap();
+        fs::write(root.join("_system/scripts/pi-launcher"), "TEST adapter").unwrap();
         fs::write(root.join("context.txt"), "TEST committed context\n").unwrap();
         fs::write(root.join("AGENTS.md"), "TEST committed instructions\n").unwrap();
         fs::write(root.join(".gitignore"), "cache/\n").unwrap();
@@ -394,6 +395,49 @@ fn retry_worker_accepts_only_the_candidate_plus_its_new_sdlc_evidence() {
             assert_ne!(built.run.root, fixture.root);
             assert_ne!(built.run.slug, "test");
             assert!(!fixture.root.join("runs").exists());
+        }
+    }
+}
+
+#[test]
+fn retry_worker_refuses_project_edits_after_checkout_and_at_prepared_launch() {
+    for edit_at in ["checkout", "prepare"] {
+        let fixture = Fixture::new();
+        let request = confirmed_retry(&fixture);
+        let base = request.target.retry.as_ref().unwrap();
+        fixture.edit(|s| {
+            s["source"] = json!(base.checkout);
+            s["retry_stage"] = false.into();
+            s["edit_at"] = edit_at.into();
+        });
+        let failure = wait(Job::start(request)).unwrap_err();
+        assert!(
+            failure.message.contains("Local source"),
+            "{}",
+            failure.message
+        );
+        let attempted = |verb| {
+            fixture
+                .commands()
+                .iter()
+                .any(|c| c[0] == "step" && c[3] == verb)
+        };
+        assert_eq!(attempted("prepare"), edit_at == "prepare");
+        assert!(!attempted("launch"));
+        if edit_at == "prepare" {
+            let run = failure.run.unwrap();
+            let prepared = wait(Job::act(run.clone(), Action::Refresh)).unwrap();
+            let launch = || Job::act(run.clone(), Action::Launch(prepared.pin.clone().unwrap()));
+            // The separate "launch prepared worker" key must recheck the same source boundary.
+            assert!(wait(launch()).unwrap_err().message.contains("Local source"));
+            assert!(!attempted("launch"));
+            fs::remove_file(run.root.join("extra-context.txt")).unwrap();
+            assert_eq!(
+                wait(launch()).unwrap().state,
+                State::Active {
+                    turn: Turn::Running
+                }
+            );
         }
     }
 }
@@ -873,6 +917,10 @@ elif args[0]=='stage' and args[2]=='3':
   subprocess.run([*git,'add','-A'],check=True)
   subprocess.run([*git,'commit','-qm','TEST stage 3'],check=True)
   subprocess.run([*git,'worktree','add','-q','--detach',str(build),'HEAD'],check=True)
+  # Stage 3 compiles its rules after checkout and can leave run evidence outside the commit.
+  with (build/'AGENTS.md').open('a') as out: out.write('\n<!-- tink:rules begin -->\nTEST rules\n<!-- tink:rules end -->\n')
+  (build/'runs'/args[1]/'TEST-stage-log').write_text('TEST runtime evidence')
+  if data.get('edit_at') == 'checkout': (build/'context.txt').write_text('TEST post-checkout change')
  else:
   (build/'.git').mkdir(parents=True)
   (build/'_system/scripts').mkdir(parents=True);(build/'runs/test').mkdir(parents=True)
@@ -883,6 +931,7 @@ elif args[0]=='step':
  op=args[3]
  if op=='prepare':
   if data.get('step'):fail('TEST step exists')
+  if data.get('edit_at') == 'prepare': (root/'extra-context.txt').write_text('TEST file created after prepare')
   data['step']={'schema':1,'run_id':data['id'],'checkout':str(root),'state':'prepared',
    'model':args[args.index('--model')+1],'max_responses':int(args[args.index('--max-responses')+1]),
    'report':args[args.index('--report')+1],'launcher':args[args.index('--launcher')+1],

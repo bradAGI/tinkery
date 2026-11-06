@@ -290,9 +290,18 @@ fn current(run: &Run) -> Result<Value, String> {
     Ok(value)
 }
 
-fn require_seed(value: &Value) -> Result<(), String> {
-    if !matches!(sdlc::goal(value), sdlc::Goal::Matched(_)) {
-        return Err("The run's original confirmed seed is unavailable or changed. Recheck it before running work.".into());
+fn require_seed(value: &Value) -> Result<ready::ReadySeed, String> {
+    sdlc::confirmed(value).map_err(|_| "The run's original confirmed seed is unavailable or changed. Recheck it before running work.".into())
+}
+
+// Check both the recorded ancestry and the files a newly launched worker will actually read.
+fn check_retry_source(run: &Run, target: Option<&ready::SeedTarget>) -> Result<(), String> {
+    if let Some(base) = target.and_then(|t| t.retry.as_ref()) {
+        base.check_build(&run.root, &run.slug, &source_head(&run.root)?)
+            .map_err(|_| "The new build did not start at the confirmed candidate. No worker was launched.")?;
+        sdlc::source::check(&run.root, &base.head, |args| git(&run.root, args)).map_err(|why| {
+            format!("{why} Inspect the build checkout before launching a worker.")
+        })?;
     }
     Ok(())
 }
@@ -404,10 +413,7 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             );
         }
         known = Some(build.clone());
-        if let Some(base) = &request.target.retry {
-            base.check_build(&build.root, &build.slug, &source_head(&build.root)?)
-                .map_err(|_| "The new build did not start at the confirmed candidate. No worker was launched.")?;
-        }
+        check_retry_source(&build, Some(&request.target))?;
         let value = current(&build)?;
         require_seed(&value)?;
         ready::execution(&request.target, &intake.root)?;
@@ -445,6 +451,7 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
         let value = current(&build)?;
         require_seed(&value)?;
         ready::execution(&request.target, &intake.root)?;
+        check_retry_source(&build, Some(&request.target))?;
         command(
             &build.root,
             &[
@@ -473,20 +480,18 @@ fn act(run: &Run, action: Action) -> Result<Snapshot, String> {
         return snapshot(&observed);
     }
     let value = current(run)?;
-    if matches!(
-        action,
-        Action::Launch(_) | Action::Resume(_) | Action::Verify
-    ) {
+    if matches!(action, Action::Resume(_) | Action::Verify) {
         require_seed(&value)?;
     }
     let step = |action: &str| vec!["step".into(), run.slug.clone(), STEP.into(), action.into()];
     match action {
         Action::Refresh => {}
         Action::Launch(pin) => {
-            admit(run, pin, true)?;
+            let seed = require_seed(&value)?;
+            admit(run, pin, true, seed.target.as_ref())?;
         }
         Action::Resume(pin) => {
-            admit(run, pin, false)?;
+            admit(run, pin, false, None)?;
         }
         Action::Finish => {
             if value["verification_status"].as_str() != Some("current")
@@ -531,7 +536,12 @@ fn act(run: &Run, action: Action) -> Result<Snapshot, String> {
     snapshot(run)
 }
 
-fn admit(run: &Run, pin: Pin, launch: bool) -> Result<(), String> {
+fn admit(
+    run: &Run,
+    pin: Pin,
+    launch: bool,
+    target: Option<&ready::SeedTarget>,
+) -> Result<(), String> {
     let observed = snapshot(run)?;
     if observed.pin.as_ref() != Some(&pin) {
         return Err("The worker's model, allowance, session or contract changed. Admission refused; inspect it again.".into());
@@ -545,6 +555,7 @@ fn admit(run: &Run, pin: Pin, launch: bool) -> Result<(), String> {
     if !launch && observed.state != (State::Active { turn: Turn::Ended }) {
         return Err("Resume needs an observed ended turn. A running or unknown turn may still own this session.".into());
     }
+    check_retry_source(run, target)?;
     command(
         &run.root,
         &[

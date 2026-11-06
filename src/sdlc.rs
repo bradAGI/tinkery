@@ -153,19 +153,22 @@ pub(crate) enum Goal {
 /// Read the exact goal only for a still-matching, verified seed, on a worker. An explicit null
 /// record means no seed; missing, changed or unverified original session files stay unknown.
 pub(crate) fn goal(run: &Value) -> Goal {
-    let seed = match Seed::parse(run) {
-        Ok(Some(seed)) => seed,
-        Ok(None) => return Goal::NoSeed,
-        Err(_) => return Goal::Unknown,
-    };
+    confirmed(run).map_or_else(|gap| gap, |ready| Goal::Matched(ready.goal))
+}
+
+/// A run may supply the goal and retry base only from its own still-matching confirmed seed.
+pub(crate) fn confirmed(run: &Value) -> Result<crate::seed_me::ready::ReadySeed, Goal> {
+    let seed = Seed::parse(run)
+        .map_err(|_| Goal::Unknown)?
+        .ok_or(Goal::NoSeed)?;
     let matched = || {
         if !seed.matches(&seed.source).ok()? {
             return None;
         }
-        let goal = crate::seed_me::ready::goal(&seed.source).ok()?;
-        seed.matches(&seed.source).ok()?.then_some(goal)
+        let ready = crate::seed_me::ready::confirmed(&seed.source).ok()?;
+        seed.matches(&seed.source).ok()?.then_some(ready)
     };
-    matched().map_or(Goal::Unknown, Goal::Matched)
+    matched().ok_or(Goal::Unknown)
 }
 
 /// Whether a session's current seed was recorded by any run. A changed same-path seed is an
