@@ -336,7 +336,7 @@ fn boundary_keeps_fact_and_history_guards_but_accepts_uncited_and_extra_readings
     skipped.skipped.push(g.questions[0].clone());
     assert!(g.validate(&skipped).is_err());
     let json = serde_json::to_string(&g).unwrap();
-    let narrative = reading::parse(
+    let narrative = Guess::decode(
         &json.replace(
             "\"misfits\":[]",
             "\"misfits\":[\"an inferred relationship\"]",
@@ -348,7 +348,7 @@ fn boundary_keeps_fact_and_history_guards_but_accepts_uncited_and_extra_readings
     assert_eq!(narrative.unresolved_notes, ["an inferred relationship"]);
     assert!(narrative.misfits.is_empty());
     assert!(serde_json::from_str::<Guess>(&(json.clone() + " extra")).is_err());
-    let ignored = reading::parse(
+    let ignored = Guess::decode(
         &json.replace(
             "\"uncertain\":false",
             "\"uncertain\":false,\"confirmed\":true",
@@ -359,7 +359,7 @@ fn boundary_keeps_fact_and_history_guards_but_accepts_uncited_and_extra_readings
     .unwrap();
     assert_eq!(
         serde_json::to_value(ignored).unwrap(),
-        serde_json::to_value(reading::parse(&json, &r, &mut vec![]).unwrap()).unwrap()
+        serde_json::to_value(Guess::decode(&json, &r, &mut vec![]).unwrap()).unwrap()
     );
     assert!(a.handoff.receipt().is_none());
 }

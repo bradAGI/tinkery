@@ -273,7 +273,7 @@ impl Guess {
         request: &BoardRequest,
         normalizations: &mut Vec<String>,
     ) -> Result<Self, String> {
-        parse(raw, request, normalizations)
+        reviewed(raw, None, request, normalizations)
     }
     /// [`decode`](Self::decode), with a decision review joined in: decisions it covers are
     /// replaced, its own are added, and once the required parts are present its question comes
@@ -427,13 +427,6 @@ pub(super) fn draft(raw: &str) -> Option<(serde_json::Value, serde_json::Value)>
     Some((parts, decisions))
 }
 
-pub(super) fn parse(
-    raw: &str,
-    request: &BoardRequest,
-    changes: &mut Vec<String>,
-) -> Result<Guess, String> {
-    reviewed(raw, None, request, changes)
-}
 fn reviewed(
     raw: &str,
     review: Option<&Review>,
