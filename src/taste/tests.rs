@@ -384,10 +384,10 @@ fn selection_is_retained_by_run_and_pr_not_index_and_missing_selection_returns_t
     taste.selection = Some(key);
     let mut rows = taste.rows.clone();
     rows.reverse();
-    taste.reading = Some(Read::task(move |_| Ok(rows)));
+    taste.reading = Some(Read::task(move |_| Ok((rows, 0))));
     settle(&mut taste);
     assert_eq!(taste.rows[taste.selected].id, "TEST-other");
-    taste.reading = Some(Read::task(|_| Ok(vec![row()])));
+    taste.reading = Some(Read::task(|_| Ok((vec![row()], 0))));
     settle(&mut taste);
     assert!(!taste.detail && taste.notice.contains("no longer"));
 }

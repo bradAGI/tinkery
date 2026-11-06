@@ -435,7 +435,8 @@ fn gh(root: &Path, url: &str, stop: &AtomicBool) -> Result<Value, String> {
 }
 
 /// Read API 1 plus each run's recorded PR, serially; cancellation never publishes a late row.
-pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, String> {
+/// Entries whose name is not a safe run locator are skipped and counted, never read or used.
+pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>, usize), String> {
     if !root.join(sdlc::SCRIPT).is_file() {
         return Err("Named checkout has no tink-sdlc status reader.".into());
     }
@@ -449,6 +450,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
         DEADLINE,
     )?)?;
     let mut rows = Vec::new();
+    let mut skipped = 0;
     for summary in value["runs"].as_array().ok_or("Run list unavailable.")? {
         if stop.load(Ordering::SeqCst) {
             return Err("Stopped.".into());
@@ -460,7 +462,8 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
                 .bytes()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
         {
-            return Err("Unsafe run locator; no run files read.".into());
+            skipped += 1;
+            continue;
         }
         let mut row = ResultRow {
             id: summary["run_id"].as_str().unwrap_or("").into(),
@@ -564,7 +567,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<Vec<ResultRow>, 
         }
         rows.push(row);
     }
-    Ok(rows)
+    Ok((rows, skipped))
 }
 
 #[cfg(test)]
