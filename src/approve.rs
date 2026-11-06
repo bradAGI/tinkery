@@ -172,7 +172,11 @@ impl Reader {
                             continue;
                         }
                         let origin_note = root.as_deref().and_then(|root| {
-                            origin_note(&mut seed, origin, repo.as_ref(), root)
+                            if seed.target.as_ref().is_some_and(|target| target.retry.is_some()) {
+                                None // The confirmed retry itself binds its checkout; it did not go through Think.
+                            } else {
+                                origin_note(&mut seed, origin, repo.as_ref(), root)
+                            }
                         });
                         found.seeds.push(Reading { seed, origin_note });
                     }
@@ -470,6 +474,17 @@ impl Approve {
                             "Choose how to start · seed confirmation is not implementation permission",
                             palette.muted,
                         ));
+                        if let Some(base) = seed
+                            .target
+                            .as_ref()
+                            .and_then(|target| target.retry.as_ref())
+                        {
+                            lines.push(Line::raw(display(&format!(
+                                "Retry from {} in {}",
+                                base.head,
+                                base.checkout.display()
+                            ))));
+                        }
                         if let Some(note) = &seed.confirmation_note {
                             lines.push(Line::raw(note.clone()));
                         }
@@ -494,6 +509,8 @@ impl Approve {
                             for line in commands.lines() {
                                 lines.push(Line::raw(line.to_owned()));
                             }
+                        } else if let Some(reason) = &seed.retry_problem {
+                            lines.push(Line::raw(display(reason)));
                         } else if !matches!(reading.origin_note, Some(OriginNote::Different(_))) {
                             lines.push(Line::raw(concat!(
                                 "Cannot copy: name a checkout with tink-sdlc installed using --sdlc-root PATH; ",

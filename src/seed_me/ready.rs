@@ -3,13 +3,17 @@
 
 use std::path::{Path, PathBuf};
 
-use super::shaping::{self, Shaped};
+use super::{
+    retry::Base,
+    shaping::{self, Shaped},
+};
 
 /// The exact verified seed selected for a read-only visit; not copy or execution permission.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeedTarget {
     pub(crate) session: PathBuf,
     pub(crate) session_id: String,
+    pub(crate) retry: Option<Base>,
     pub(crate) version: u64,
     pub(crate) sha256: String,
 }
@@ -27,6 +31,8 @@ pub struct ReadySeed {
     pub acceptance: String,
     /// One combined manual command, or no copy without a safely representable named checkout.
     pub commands: Option<String>,
+    /// Why a confirmed retry cannot use the named checkout for this handoff.
+    pub(crate) retry_problem: Option<String>,
     /// Confirmation attribution and consumer requirements; never implementation permission.
     pub confirmation_note: Option<String>,
 }
@@ -82,6 +88,36 @@ fn read_with(
     let Shaped::Ready { revision, .. } = shaped.stage else {
         return Ok(None);
     };
+    let retry = shaped
+        .ready_target
+        .as_ref()
+        .and_then(|target| target.retry.as_ref());
+    let retry_problem = retry.and_then(|base| {
+        let Some(named) = root else {
+            return Some(format!(
+                "Name this retry’s checkout with --sdlc-root {}.",
+                base.checkout.display()
+            ));
+        };
+        base.check_checkout(named).err()
+    });
+    let commands = if retry_problem.is_none() {
+        root.and_then(|named| {
+            let title = seed.lines().find_map(|line| line.strip_prefix("# "))?;
+            let run = run_name(title, shaped.ready_target.as_ref())?;
+            let checkout = retry.map_or(named, |base| base.checkout.as_path());
+            checkout.join(crate::sdlc::SCRIPT).is_file().then_some(())?;
+            intake(
+                session,
+                &std::env::current_exe().ok()?,
+                &run,
+                checkout,
+                retry.map(|base| (base, named)),
+            )
+        })
+    } else {
+        None
+    };
     Ok(Some(ReadySeed {
         target: shaped.ready_target,
         goal: shaped
@@ -90,25 +126,42 @@ fn read_with(
             .ok_or("The verified seed has no goal.")?,
         revision: revision.ok_or("The verified seed has no revision.")?,
         acceptance: acceptance(&seed)?,
-        // A checkout without its tink-sdlc script cannot run the command, so none is offered.
-        commands: root
-            .filter(|root| root.join(crate::sdlc::SCRIPT).is_file())
-            .and_then(|root| {
-                let title = seed.lines().find_map(|line| line.strip_prefix("# "))?;
-                let run = slug(title.strip_prefix("Seed: ").unwrap_or(title))?;
-                intake(session, &std::env::current_exe().ok()?, &run, root)
-            }),
+        commands,
+        retry_problem,
         confirmation_note: shaped.confirmation_note,
     }))
 }
 
 /// The one shell line that starts a build: change to `root`, create run `run` and import the seed
 /// through `executable`. Paths are canonical and shell-quoted; unsafe paths offer no command.
-fn intake(session: &Path, executable: &Path, run: &str, root: &Path) -> Option<String> {
+fn intake(
+    session: &Path,
+    executable: &Path,
+    run: &str,
+    root: &Path,
+    retry: Option<(&Base, &Path)>,
+) -> Option<String> {
     let intake = Intake::new(session, executable, run, root)?;
     let quote = |path: &Path| format!("'{}'", path.to_str().unwrap().replace('\'', "'\\''"));
+    let guard = if let Some((base, named)) = retry {
+        let named = named.canonicalize().ok()?;
+        if named.to_str()?.chars().any(char::is_control) {
+            return None;
+        }
+        format!(
+            "test \"$(pwd -P)\" = {} && \
+             test \"$(git rev-parse --abbrev-ref HEAD)\" = HEAD && \
+             test \"$(git rev-parse HEAD)\" = '{}' && \
+             test \"$(git rev-parse --path-format=absolute --git-common-dir)\" = \"$(git -C {} rev-parse --path-format=absolute --git-common-dir)\" && ",
+            quote(&intake.root),
+            base.head,
+            quote(&named)
+        )
+    } else {
+        String::new()
+    };
     Some(format!(
-        "cd {} && python3 _system/scripts/sdlc.py new {run} && python3 _system/scripts/sdlc.py stage {run} 1 --seed-contract {} --tinkery {}",
+        "cd {} && {guard}python3 _system/scripts/sdlc.py new {run} && python3 _system/scripts/sdlc.py stage {run} 1 --seed-contract {} --tinkery {}",
         quote(&intake.root),
         quote(&intake.seed),
         quote(&intake.executable),
@@ -148,7 +201,7 @@ impl Intake {
 /// Disk reads belong on an explicitly requested worker, not the input or paint path.
 pub(crate) fn execution(target: &SeedTarget, root: &Path) -> Result<(Intake, String), String> {
     use sha2::{Digest, Sha256};
-    let ready = read(&target.session, Some(root))?
+    let ready = read(&target.session, None)?
         .filter(|ready| ready.target.as_ref() == Some(target))
         .ok_or("The selected seed changed or is no longer confirmed. Reopen Approve.")?;
     let bytes = super::read_seed(&path(&target.session)).map_err(|error| error.to_string())?;
@@ -158,12 +211,72 @@ pub(crate) fn execution(target: &SeedTarget, root: &Path) -> Result<(Intake, Str
     let text = std::str::from_utf8(&bytes).map_err(|error| error.to_string())?;
     let title = text.lines().find_map(|line| line.strip_prefix("# "));
     let run = title
-        .and_then(|title| slug(title.strip_prefix("Seed: ").unwrap_or(title)))
+        .and_then(|title| run_name(title, Some(target)))
         .ok_or("The selected seed has no usable run name.")?;
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-    let intake = Intake::new(&target.session, &executable, &run, root)
+    let checkout = target
+        .retry
+        .as_ref()
+        .map_or(root, |base| base.checkout.as_path());
+    let intake = Intake::new(&target.session, &executable, &run, checkout)
         .ok_or("The checkout, seed or Tinkery executable cannot be resolved safely.")?;
     Ok((intake, ready.goal))
+}
+
+fn run_name(title: &str, target: Option<&SeedTarget>) -> Option<String> {
+    if let Some(target) = target.filter(|target| target.retry.is_some()) {
+        use sha2::{Digest, Sha256};
+        let id = format!("{:x}", Sha256::digest(target.session_id.as_bytes()));
+        return Some(format!("retry-{}", &id[..16]));
+    }
+    slug(title.strip_prefix("Seed: ").unwrap_or(title))
+}
+
+impl Base {
+    /// Require the reviewed candidate to remain a detached checkout of the named project.
+    /// Only Git metadata is read. No script from the candidate is executed.
+    pub(crate) fn check_checkout(&self, named: &Path) -> Result<(), String> {
+        use std::{process::Command, sync::atomic::AtomicBool};
+        let reason = || {
+            format!(
+                "The retry needs its detached checkout at {} on commit {}. Open the matching project and restore that checkout before starting.",
+                self.checkout.display(),
+                self.head
+            )
+        };
+        if self.checkout.canonicalize().ok().as_deref() != Some(&self.checkout) {
+            return Err(reason());
+        }
+        let git = |root: &Path, options: &[&str]| {
+            let mut cmd = Command::new("git");
+            cmd.args(["--no-optional-locks", "rev-parse", "--path-format=absolute"])
+                .args(options);
+            crate::sdlc::execute(root, cmd, &AtomicBool::new(false), crate::sdlc::DEADLINE)
+        };
+        let shared = git(named, &["--git-common-dir"]).map_err(|_| reason())?;
+        let observed = git(
+            &self.checkout,
+            &[
+                "--show-toplevel",
+                "--git-common-dir",
+                "HEAD",
+                "--abbrev-ref",
+                "HEAD",
+            ],
+        )
+        .map_err(|_| reason())?;
+        let expected = format!(
+            "{}\n{}{}\nHEAD\n",
+            self.checkout.display(),
+            shared,
+            self.head
+        );
+        if observed == expected {
+            Ok(())
+        } else {
+            Err(reason())
+        }
+    }
 }
 
 /// Run names stay scannable: whole lowercase ASCII words joined by hyphens, at most
@@ -261,7 +374,7 @@ mod tests {
             )
         };
         assert_eq!(
-            intake(&session, &helper, "test-run", temp.path()),
+            intake(&session, &helper, "test-run", temp.path(), None),
             Some(format!(
                 "cd {} && python3 _system/scripts/sdlc.py new test-run && python3 _system/scripts/sdlc.py stage test-run 1 --seed-contract {} --tinkery {}",
                 quote(temp.path()),
@@ -272,15 +385,16 @@ mod tests {
         let alias = temp.path().join("TEST-linked-executable");
         std::os::unix::fs::symlink(&helper, &alias).unwrap();
         assert_eq!(
-            intake(&session, &alias, "test-run", temp.path()),
-            intake(&session, &helper, "test-run", temp.path())
+            intake(&session, &alias, "test-run", temp.path(), None),
+            intake(&session, &helper, "test-run", temp.path(), None)
         );
         assert_eq!(
             intake(
                 &session,
                 &helper,
                 "test-run",
-                &temp.path().join("TEST-missing")
+                &temp.path().join("TEST-missing"),
+                None
             ),
             None
         );
@@ -306,6 +420,7 @@ mod tests {
                         &std::env::current_exe().unwrap(),
                         "test",
                         &session,
+                        None,
                     )
                     .unwrap()
                 );
@@ -362,7 +477,8 @@ mod tests {
                 &session,
                 &std::env::current_exe().unwrap(),
                 "test",
-                root.path()
+                root.path(),
+                None
             )
             .is_some()
         );
@@ -373,7 +489,8 @@ mod tests {
                 &session,
                 &std::env::current_exe().unwrap(),
                 "test",
-                root.path()
+                root.path(),
+                None
             )
         );
         assert!(

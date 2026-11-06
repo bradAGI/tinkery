@@ -252,6 +252,151 @@ fn ignored_cache_run_records_and_runtime_generated_rules_do_not_block_start() {
     );
 }
 
+fn confirmed_retry(fixture: &Fixture) -> Start {
+    use crate::seed_me::{ledger, retry};
+    let old = &fixture.request.target.session;
+    let checkout = fixture
+        ._temp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("TEST-retry");
+    git_test(
+        &fixture.root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "--detach",
+            checkout.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+    let base = retry::Base {
+        checkout,
+        head: source_head(&fixture.root).unwrap(),
+    };
+    let session = ledger::initialize(old.parent().unwrap(), "2026-11-06T00:00:00+00:00").unwrap();
+    let previous = ledger::load(old).unwrap();
+    retry::prior(&ready::path(old), previous["goal"].string().unwrap())
+        .unwrap()
+        .save(&session, &base, "TEST try with another sample", "TEST-run")
+        .unwrap();
+    ledger::set_checks(&session, &ledger::read_checks(old).unwrap()).unwrap();
+    // Redraft the same TEST checks with the saved retry's own decisions and reviewed base.
+    let new = ledger::load(&session).unwrap();
+    let draft = fs::read_to_string(ready::path(old))
+        .unwrap()
+        .replace(
+            &ledger::decisions_block(&previous).unwrap(),
+            &ledger::decisions_block(&new).unwrap(),
+        )
+        .replace("status: confirmed for intake", "status: draft")
+        .lines()
+        .filter(|line| !line.starts_with("Confirmed by:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(ready::path(&session), format!("{draft}\n")).unwrap();
+    ledger::confirm_seed(
+        &session,
+        "r1",
+        "TEST confirmed retry",
+        "2026-11-06T00:00:00+00:00",
+    )
+    .unwrap();
+    let seed = ready::read(&session, Some(&fixture.root)).unwrap().unwrap();
+    Start {
+        target: seed.target.unwrap(),
+        ..fixture.request.clone()
+    }
+}
+
+#[test]
+fn retry_handoff_requires_the_reviewed_detached_commit_for_both_entry_points() {
+    let fixture = Fixture::new();
+    let request = confirmed_retry(&fixture);
+    let base = request.target.retry.as_ref().unwrap();
+    let ready = |root: &Path| {
+        ready::read(&request.target.session, Some(root))
+            .unwrap()
+            .unwrap()
+    };
+    let copy = ready(&fixture.root).commands.unwrap();
+    let other = fixture._temp.path().join("TEST-unrelated");
+    fs::create_dir(&other).unwrap();
+    git_test(&other, &["init", "-q"]);
+    assert!(ready(&other).commands.is_none());
+    for switch in [
+        vec!["switch", "-q", "-c", "TEST-unexpected-branch"],
+        vec![
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "TEST other hash with identical tree",
+        ],
+    ] {
+        git_test(&base.checkout, &switch);
+        assert!(ready(&fixture.root).commands.is_none());
+        let manual = Command::new("sh").arg("-c").arg(&copy).status().unwrap();
+        assert!(!manual.success());
+        let failure = wait(Job::start(request.clone())).unwrap_err();
+        assert!(
+            failure.message.contains("detached checkout"),
+            "{}",
+            failure.message
+        );
+        assert!(fixture.commands().is_empty());
+        git_test(&base.checkout, &["switch", "-q", "--detach", &base.head]);
+    }
+    assert!(
+        Command::new("sh")
+            .arg("-c")
+            .arg(&copy)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let commands = fixture.commands();
+    assert_eq!(commands[0][0], "new");
+    assert!(commands[0][1].starts_with("retry-"));
+    assert_eq!(commands[1][1], commands[0][1]);
+    assert_eq!(commands.len(), 2);
+    assert!(!fixture.root.join("runs").exists());
+}
+
+#[test]
+fn retry_worker_accepts_only_the_candidate_plus_its_new_sdlc_evidence() {
+    for project_edit in [false, true] {
+        let fixture = Fixture::new();
+        let request = confirmed_retry(&fixture);
+        let base = request.target.retry.as_ref().unwrap();
+        fixture.edit(|state| {
+            state["source"] = json!(base.checkout);
+            state["retry_stage"] = json!(project_edit);
+        });
+        let job = wait(Job::start(request));
+        if project_edit {
+            assert!(
+                job.unwrap_err()
+                    .message
+                    .contains("did not start at the confirmed candidate")
+            );
+            assert!(!fixture.commands().iter().any(|cmd| cmd[0] == "step"));
+        } else {
+            let built = job.unwrap();
+            assert_eq!(
+                built.state,
+                State::Active {
+                    turn: Turn::Running
+                }
+            );
+            assert_ne!(built.run.root, fixture.root);
+            assert_ne!(built.run.slug, "test");
+            assert!(!fixture.root.join("runs").exists());
+        }
+    }
+}
+
 #[test]
 fn source_commit_changed_during_intake_refuses_before_worktree_or_admission() {
     let fixture = Fixture::new();
@@ -691,7 +836,7 @@ def save(): state.write_text(json.dumps(data))
 def fail(text):
  print(text,file=sys.stderr);save();sys.exit(1)
 def view():
- run={'slug':'test','run_id':data['id'],'seed_contract':data.get('seed'),'steps':[],
+ run={'slug':data.get('slug','test'),'run_id':data['id'],'seed_contract':data.get('seed'),'steps':[],
       'verification_status':data['verification'],
       'verification':{'passed':data.get('passed',data['verification']=='current')},'next_action':'TEST next action',
       'actions':{'verify':{'allowed':True,'reason':'','timeout_seconds':5}}}
@@ -708,7 +853,7 @@ if args[0]=='status':
  print(json.dumps(out));sys.exit()
 if args[0]=='new':
  if data['exists']:fail('TEST duplicate run')
- data['exists']=True;(root/'runs/test').mkdir(parents=True)
+ data['slug']=args[1];data['exists']=True;(root/'runs'/args[1]).mkdir(parents=True)
 elif args[0]=='stage' and args[2]=='1':
  seed=pathlib.Path(args[args.index('--seed-contract')+1]);content=seed.read_bytes()
  data['seed']={'path':'runs/test/seed-contract.md','source':str(seed),'sha256':hashlib.sha256(content).hexdigest()}
@@ -718,9 +863,19 @@ elif args[0]=='stage' and args[2]=='1':
   subprocess.run(['git','-c','user.name=TEST Worker','-c','user.email=test@localhost','-c','commit.gpgsign=false',
                   '-c','core.hooksPath=/dev/null','commit','--allow-empty','-qm','TEST concurrent commit'],check=True)
 elif args[0]=='stage' and args[2]=='3':
- build=pathlib.Path(data['build']);(build/'.git').mkdir(parents=True)
- (build/'_system/scripts').mkdir(parents=True);(build/'runs/test').mkdir(parents=True)
- shutil.copy(root/'_system/scripts/sdlc.py',build/'_system/scripts/sdlc.py')
+ build=pathlib.Path(data['build'])
+ if 'retry_stage' in data:
+  # SDLC commits the run's evidence before forking its build. A project edit in that commit is outside the pin.
+  git=['git','-c','user.name=TEST Worker','-c','user.email=test@localhost','-c','commit.gpgsign=false','-c','core.hooksPath=/dev/null']
+  (root/'runs'/args[1]/'TEST-evidence').write_text('TEST only')
+  if data['retry_stage']: (root/'TEST-other-source').write_text('TEST concurrent change')
+  subprocess.run([*git,'add','-A'],check=True)
+  subprocess.run([*git,'commit','-qm','TEST stage 3'],check=True)
+  subprocess.run([*git,'worktree','add','-q','--detach',str(build),'HEAD'],check=True)
+ else:
+  (build/'.git').mkdir(parents=True)
+  (build/'_system/scripts').mkdir(parents=True);(build/'runs/test').mkdir(parents=True)
+  shutil.copy(root/'_system/scripts/sdlc.py',build/'_system/scripts/sdlc.py')
  (build/'_system/scripts/pi-launcher').write_text('TEST adapter')
  data['built']=True
 elif args[0]=='step':

@@ -113,6 +113,20 @@ and how to check. Opening reads only that checkout's status; it discovers no che
 Help retains the bounded reasons. Unknown start classification never conceals a
 verified seed or justifies a complete empty-waiting claim.
 
+## From a rejected local result
+
+A confirmed retry seed records its isolated checkout and the rejected commit. Approve
+shows both. The named checkout must belong to the same Git repository, and the retry
+checkout must still be detached at that exact commit. The copied command checks again
+before creating the run there. A run name derived from the retry session keeps an
+unchanged seed title from colliding with the earlier run.
+
+The worker start checks the same pin on F2 and before stage 3. Before preparing the worker,
+it checks that the build starts at that commit or its direct child containing only the
+new run’s evidence. Watch and Taste open on the resulting build checkout from the worker
+screen. After restarting Tinkery, use `--sdlc-root` with the displayed retry checkout to
+find the new run.
+
 ## Start a worker
 
 `b` opens a review of the selected seed and canonical checkout. It needs a verified

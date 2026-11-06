@@ -49,17 +49,22 @@ impl Panel {
     ) -> Self {
         let (start, disclosure) = match (seed.target, config) {
             (Some(target), Some(config)) => {
+                let checkout = target
+                    .retry
+                    .as_ref()
+                    .map_or(root.as_path(), |base| base.checkout.as_path());
+                let retry = target.retry.as_ref().map(|base| format!("Required starting commit: {}. Use this checkout with --sdlc-root to find the new run.\n", base.head)).unwrap_or_default();
                 let disclosure = format!(
                     "Pi model: {}\nResponse cap: {} (one response may already be in flight).\n\
                      Checkout: {}\n\
-                     F2 uses committed source, creates the run, imports this seed, prepares an isolated build checkout, \
+                     {retry}F2 uses committed source, creates the run, imports this seed, prepares an isolated build checkout, \
                      and launches its bounded worker through tink-sdlc.\n\
                      Your goal, confirmed seed and relevant source files go to that provider. \
                      The worker may edit, run commands and commit inside its build checkout.\n\
                      Commit project changes first. Definition gates still apply; passing checks is not your acceptance.",
                     config.model,
                     config.responses,
-                    root.display(),
+                    checkout.display(),
                 );
                 (
                     Some(Start {

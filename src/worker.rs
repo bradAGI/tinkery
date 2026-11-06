@@ -327,12 +327,49 @@ fn committed_source(root: &Path) -> Result<String, String> {
     Ok(head)
 }
 
+// Stage 3 may commit only the new run's evidence before forking its build checkout.
+fn verify_retry_build(build: &Run, candidate: &str) -> Result<(), String> {
+    let head = source_head(&build.root)?;
+    if head == candidate {
+        return Ok(());
+    }
+    let refused = "The new build did not start at the confirmed candidate. No worker was launched.";
+    if git(&build.root, &["show", "-s", "--format=%P", &head])
+        .map_err(|_| refused)?
+        .trim()
+        != candidate
+    {
+        return Err(refused.into());
+    }
+    let exclude = format!(":(exclude)runs/{}", build.slug);
+    git(
+        &build.root,
+        &[
+            "diff",
+            "--quiet",
+            "--no-ext-diff",
+            "--no-textconv",
+            candidate,
+            &head,
+            "--",
+            ".",
+            &exclude,
+        ],
+    )
+    .map(|_| ())
+    .map_err(|_| refused.into())
+}
+
 fn start(request: Start) -> Result<Snapshot, Failure> {
     let mut known = None;
     let result = (|| {
         request.config.validate()?;
         canonical_root(&request.root)?;
         let (intake, goal) = ready::execution(&request.target, &request.root)?;
+        if let Some(base) = &request.target.retry {
+            base.check_checkout(&request.root)?;
+            canonical_root(&intake.root)?;
+        }
         let origins = request.record_root.as_ref().ok().and_then(|root| {
             think_record::read_origins(root, &[(&request.target.session, goal.as_str())]).ok()
         });
@@ -345,6 +382,14 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             );
         }
         let source_commit = committed_source(&intake.root)?;
+        if request
+            .target
+            .retry
+            .as_ref()
+            .is_some_and(|base| source_commit != base.head)
+        {
+            return Err("The retry checkout moved off its confirmed starting commit.".into());
+        }
         let seeds = sdlc::seeds(&intake.root, &AtomicBool::new(false))?;
         if sdlc::started(&seeds, &intake.seed)? {
             return Err("This exact seed already has a run. Inspect that run instead of starting another worker.".into());
@@ -378,6 +423,9 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             return Err("Intake recorded a different seed; no worker was started.".into());
         }
         ready::execution(&request.target, &intake.root)?;
+        if let Some(base) = &request.target.retry {
+            base.check_checkout(&request.root)?;
+        }
         if source_head(&intake.root)? != source_commit {
             return Err("The selected source commit changed during intake. Inspect the run before starting a worker.".into());
         }
@@ -395,6 +443,9 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             );
         }
         known = Some(build.clone());
+        if let Some(base) = &request.target.retry {
+            verify_retry_build(&build, &base.head)?;
+        }
         let value = current(&build)?;
         require_seed(&value)?;
         ready::execution(&request.target, &intake.root)?;
