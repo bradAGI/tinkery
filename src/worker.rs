@@ -1,7 +1,9 @@
 //! Explicit, bounded worker actions through the named checkout's SDLC runtime. SDLC owns gates,
-//! sessions, caps and detached workers; this module owns only the finite requested transaction.
+//! sessions, caps and detached workers. Recent launch evidence can inform the operator’s cap choice.
 //! It never retries admission, writes workflow records itself, approves work or calls a provider.
 
+mod orientation;
+pub(crate) use orientation::cap_advice;
 #[cfg(test)]
 mod tests;
 
@@ -231,6 +233,15 @@ fn canonical_root(root: &Path) -> Result<(), String> {
 }
 
 fn status(root: &Path, slug: &str) -> Result<Value, String> {
+    read_status(root, slug, &AtomicBool::new(false), sdlc::DEADLINE)
+}
+
+fn read_status(
+    root: &Path,
+    slug: &str,
+    cancel: &AtomicBool,
+    deadline: Duration,
+) -> Result<Value, String> {
     canonical_root(root)?;
     if slug.is_empty()
         || slug.len() > 80
@@ -241,10 +252,11 @@ fn status(root: &Path, slug: &str) -> Result<Value, String> {
     {
         return Err("The run name is not supported; no worker action was taken.".into());
     }
-    let output = command(
+    let output = sdlc::status(
         root,
         &["status".into(), slug.into(), "--json".into()],
-        sdlc::DEADLINE,
+        cancel,
+        deadline,
     )?;
     let value = sdlc::envelope(&output)?;
     let run = &value["run"];

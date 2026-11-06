@@ -65,7 +65,9 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   `b` reviews an explicit bounded Pi start; after the full disclosure, F2 creates and
   imports the run, prepares its isolated build checkout and launches the worker.
   Supply `--worker-model provider/model:thinking --worker-responses N`; the default
-  worker allowance is zero, separate from drafting. The worker screen retains
+  worker allowance is zero, separate from drafting. Recent Pi launch logs show how many
+  responses workers used before editing. The review warns when your cap leaves too little
+  room for an edit and a follow-up. The worker screen retains
   requests across navigation and offers explicit refresh, resume, finish, stop and
   verification. Home `b` reopens it; Watch `b` selects an existing run.
   Intake rechecks the seed through this executable with `--tinkery PATH`.

@@ -3,7 +3,7 @@
 
 use crate::{
     Palette,
-    seed_me::ready::ReadySeed,
+    approve::WorkerReview,
     worker::{Action, Config, Job, Run, Snapshot, Start, State, Turn},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -42,8 +42,11 @@ pub(super) struct Panel {
 impl Panel {
     /// Review the exact seed and separate worker allowance without running anything.
     pub(super) fn review(
-        seed: ReadySeed,
-        root: PathBuf,
+        WorkerReview {
+            seed,
+            root,
+            cap_advice,
+        }: WorkerReview,
         record_root: Result<PathBuf, String>,
         config: Option<Config>,
     ) -> Self {
@@ -55,7 +58,7 @@ impl Panel {
                     .map_or(root.as_path(), |base| base.checkout.as_path());
                 let retry = target.retry.as_ref().map(|base| format!("Required starting commit: {}. Use this checkout with --sdlc-root to find the new run.\n", base.head)).unwrap_or_default();
                 let disclosure = format!(
-                    "Pi model: {}\nResponse cap: {} (one response may already be in flight).\n\
+                    "Pi model: {}\nResponse cap: {} (one response may already be in flight).\n{cap_advice}\n\
                      Checkout: {}\n\
                      {retry}F2 uses committed source, creates the run, imports this seed, prepares an isolated build checkout, \
                      and launches its bounded worker through tink-sdlc.\n\
@@ -129,6 +132,7 @@ impl Panel {
             return;
         };
         self.job = None;
+        self.scroll = 0;
         let starting = self.starting.take();
         match result {
             Ok(snapshot) => {
@@ -146,12 +150,13 @@ impl Panel {
                     // Refused before any run was known: fixing the cause and pressing F2 is safe,
                     // because a run created meanwhile makes the retry refuse, not start twice.
                     self.start = starting;
+                    // The operator already read the disclosure. Show why the start failed.
+                    self.scroll = u16::MAX;
                     self.notice
                         .push_str(" Nothing was started; fix that, then F2 tries again.");
                 }
             }
         }
-        self.scroll = 0;
         self.read_to_end = false;
     }
 
