@@ -30,7 +30,7 @@ use crate::{
     Palette,
     seed_me::{
         Session, Stage,
-        answering::{self, Assumption, Ending, NOTHING_FOUND, OBJECTION, PROBE, Refusal},
+        answering::{self, Assumption, Ending, NOTHING_FOUND, OBJECTION, PROBE, Refusal, SAMPLE},
         shaping::{self, Shaped, Shaping},
     },
 };
@@ -2201,7 +2201,7 @@ fn standing(shaping: &Shaping, stand: Stand, palette: Palette) -> (Text<'static>
             if !calm {
                 lines.push(Line::default());
                 // Tinkery's own probe and objection questions ask for the operator's words, not evidence.
-                if found.is_empty() && id != PROBE.0 && title != OBJECTION {
+                if found.is_empty() && id != PROBE.0 && id != SAMPLE.0 && title != OBJECTION {
                     lines.push(Line::styled(
                         "Nothing found: this question records nothing checked in the repository.",
                         palette.ink,
@@ -2210,6 +2210,12 @@ fn standing(shaping: &Shaping, stand: Stand, palette: Palette) -> (Text<'static>
                 if id == PROBE.0 {
                     lines.push(Line::styled(
                         "Answer in your own words, or type skip and send to skip it.",
+                        palette.ink,
+                    ));
+                }
+                if id == SAMPLE.0 {
+                    lines.push(Line::styled(
+                        "Checks are drafted against this. Paste an excerpt, or type no sample and why.",
                         palette.ink,
                     ));
                 }

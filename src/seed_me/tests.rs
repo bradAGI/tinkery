@@ -126,7 +126,7 @@ fn session_operator_and_answers_share_the_authorized_actor() {
         answering::answer(
             &receipt.session,
             version,
-            answering::PROBE.0,
+            answering::SAMPLE.0,
             "TEST exact answer\r\n ",
             Some(&context),
         )

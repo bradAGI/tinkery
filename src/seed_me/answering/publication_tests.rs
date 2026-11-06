@@ -70,6 +70,8 @@ fn every_shape_ledger_action_works_without_launching_the_helper() {
     let session = session(root.path());
     let version = read(&session).unwrap().version();
     let version = probe(&session, version).unwrap().unwrap();
+    let version = answer(&session, version, SAMPLE.0, "TEST no sample", None).unwrap();
+    let version = probe(&session, version).unwrap().unwrap();
     let version = answer(&session, version, PROBE.0, "TEST exact\r\nanswer", None).unwrap();
     let version = ask(
         &session,
@@ -118,6 +120,8 @@ fn unasked_probe_answers_cannot_be_smuggled_into_seed_prose() {
     let root = temp();
     let session = session(root.path());
     let version = probe(&session, 1).unwrap().unwrap();
+    let version = answer(&session, version, SAMPLE.0, "TEST no sample", None).unwrap();
+    let version = probe(&session, version).unwrap().unwrap();
     let version = answer(&session, version, PROBE.0, "TEST my actual answer", None).unwrap();
     let checks = json!([{"statement":"TEST", "kind":"judge", "source":"TEST"}]);
     let prose =

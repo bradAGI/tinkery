@@ -124,7 +124,9 @@ def shape(root, env):
         wait('3  shape')
         send(b'3', 'enter open')
         send(b'\r', 'F2 look into the next question')
-        # Seed Me's pre-mortem comes first, without a model call.
+        # A real sample, then Seed Me's pre-mortem, come first, without a model call (#740).
+        send(b'\x1bOQ', 'Paste one real example of what this will work on')
+        send(b'no sample: TEST new game', 'no sample: TEST new game')
         send(b'\x1bOQ', 'Imagine this shipped and turned out wrong. What is the most likely reason?')
         send(b'TEST The sounds were missing.', 'TEST The sounds were missing.')
         send(b'\x1bOQ', 'Seed draft r1')

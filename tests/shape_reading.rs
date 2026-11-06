@@ -292,10 +292,10 @@ fn public_shape_status_preserves_seed_and_confirmation_states() {
     let (view, status) = assert_read_only(&session);
     assert_eq!(view.version, Some(version));
     assert!(
-        matches!(view.stage, Shaped::Question { ref id, .. } if id == tinkery::seed_me::answering::PROBE.0)
+        matches!(view.stage, Shaped::Question { ref id, .. } if id == tinkery::seed_me::answering::SAMPLE.0)
     );
     assert_eq!(
         status["current_question"].string(),
-        Some(tinkery::seed_me::answering::PROBE.0)
+        Some(tinkery::seed_me::answering::SAMPLE.0)
     );
 }

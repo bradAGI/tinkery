@@ -38,6 +38,15 @@ pub(super) fn resolved_read_only_step(question_first: bool) {
         .unwrap()
         .session;
     let version = answering::read(&session).unwrap().version();
+    let version = answering::probe(&session, version).unwrap().unwrap();
+    let version = answering::answer(
+        &session,
+        version,
+        answering::SAMPLE.0,
+        "TEST no sample",
+        None,
+    )
+    .unwrap();
     answering::probe(&session, version).unwrap().unwrap();
     // The outside view predates the answer; the fixed pre-mortem cannot link it at question time.
     let saved = ledger::load(&session).unwrap();

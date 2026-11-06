@@ -171,6 +171,15 @@ fn settled_probe_step() {
         .session;
     let version = answering::read(&session).unwrap().version();
     let version = answering::probe(&session, version).unwrap().unwrap();
+    let version = answering::answer(
+        &session,
+        version,
+        answering::SAMPLE.0,
+        "TEST no sample",
+        None,
+    )
+    .unwrap();
+    let version = answering::probe(&session, version).unwrap().unwrap();
     let answer = "TEST Use standard-library Python 3. Reject directories, continue other inputs, exit 1 and omit total on any input failure.\n";
     let version = answering::answer(
         &session,
