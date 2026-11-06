@@ -35,6 +35,7 @@ These dated records are not current behavior or permission to implement:
 | [Think interaction proposal](research/think/interaction-proposal.md) | Dated mockup and audit; unresolved redesign is not accepted. See [#427](https://github.com/jon-devlapaz/tinkery/issues/427) for its disposition |
 | [Question-generation research](research/think/question-generation.md) | Research comparison, not a shipped behavior specification |
 | [Human baseline](research/shared/baseline.md) | A recorded evaluation plan and partial results, not a code-quality score |
+| [Project preparation](research/shared/project-preparation.md) | Research on what a new project needs before a run, and who owns each step; ships nothing |
 | [Dogfood findings](../findings/README.md) | Historical observations and evidence; not a general outcome claim |
 
 For shipped behavior, use the relevant contract above. For proposals, use the linked
