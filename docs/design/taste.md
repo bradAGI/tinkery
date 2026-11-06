@@ -269,6 +269,27 @@ the form, which keeps the words. An `--operator agent` launch refuses `w`: label
 operator's. The label lives in `runs/<slug>/labels.jsonl`, owned by tink-sdlc and
 append-only; Taste stores nothing.
 
+## Shape the next attempt
+
+For a checked local result with a verified original goal, a new fail verdict records
+`taste@<checked commit>` as its source. Taste reads the latest pass/fail from the run’s
+validated, local `labels.jsonl`. A later pass or a rejection bound to another commit
+removes the offer. For a forwarded result, the signer and label write belong to the
+reported build checkout. Saving rechecks the result and refuses a different SDLC script.
+
+`s` opens Shape with the exact goal, rejection words, commit and earlier settled
+decisions. Esc returns to the result. An older Taste rejection without a recorded commit
+shows that gap and the current checked commit. Only a human can pair them when saving.
+Opening this review runs no provider, creates no session and changes no Git reference.
+
+F2 rereads the sources, then saves a separate Shape session and detached checkout at
+that commit under `~/dev/worktrees/<repository>/`. The original goal keeps its
+attribution. Its evidence holds the rejection and selected commit, and the prior decisions
+become provisional assumptions that Shape can reconsider. Review and confirmation of the
+new seed follow the usual Shape flow. Approve checks the saved checkout and commit before
+intake. The [terminal journey](../../tests/taste_retry_terminal.py) exercises current and
+older verdicts, cancellation, a forwarded build and a branch that advanced after verification.
+
 ## After external acceptance
 
 Use `l` from the list or review only after a person has accepted that exact result

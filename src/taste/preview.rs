@@ -128,6 +128,16 @@ impl Local {
         })
     }
 
+    /// The checkout named at launch, whose runtime supplied the local reading.
+    pub(super) fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The run whose result the operator reviewed.
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
     /// The exact checked commit, never a newer checkout HEAD or inferred branch.
     pub(super) fn head(&self) -> &str {
         &self.head
@@ -164,7 +174,8 @@ impl Local {
         Spec::parse(&blob).map(Some)
     }
 
-    fn recheck(&self, stop: &AtomicBool) -> Result<(), String> {
+    /// Recheck the source run and return the matching status for a preview or retry.
+    pub(super) fn recheck(&self, stop: &AtomicBool) -> Result<Value, String> {
         let output = sdlc::status(
             &self.root,
             &["status".into(), self.slug.clone(), "--json".into()],
@@ -174,10 +185,10 @@ impl Local {
         let value = sdlc::envelope(&output)?;
         if Self::read(&self.root, &value["run"], stop)? != *self {
             return Err(
-                "Local result changed since reading. Press r before running its preview.".into(),
+                "Local result changed since reading. Press r before using this result.".into(),
             );
         }
-        Ok(())
+        Ok(value["run"].clone())
     }
 }
 
@@ -350,7 +361,12 @@ impl Drop for Process {
     }
 }
 
-fn git(root: &Path, args: &[&str], github: bool, stop: &AtomicBool) -> Result<String, String> {
+pub(super) fn git(
+    root: &Path,
+    args: &[&str],
+    github: bool,
+    stop: &AtomicBool,
+) -> Result<String, String> {
     let mut command = Command::new("git");
     command.args([
         "-c",

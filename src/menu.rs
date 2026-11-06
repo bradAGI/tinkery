@@ -3,6 +3,7 @@
 //! think · tend · shape · approve · watch · taste · measure. Each place has its own boundary.
 //! Named worker actions use the shared SDLC boundary; navigation never starts work.
 
+mod retry;
 mod worker;
 
 use std::{
@@ -89,6 +90,7 @@ enum View {
     Measure(Box<measure::Measure>),
     Watch(Box<Watch>),
     Taste(Box<Taste>),
+    Retry(Box<retry::Review>, Box<Taste>),
     Soon(usize),
 }
 
@@ -256,6 +258,7 @@ impl Home {
         if let View::Taste(taste) = &mut self.view {
             taste.poll();
         }
+        self.poll_retry();
         if !self.discovery.requested() {
             self.request_sessions();
         }
@@ -750,6 +753,10 @@ impl Home {
             }
             return;
         }
+        if matches!(self.view, View::Retry(..)) {
+            self.retry_key(key);
+            return;
+        }
         if matches!(self.view, View::Shape(..)) {
             self.shape_key(key);
             return;
@@ -887,21 +894,8 @@ impl Home {
                     self.view = View::Menu;
                 }
             }
-            View::Taste(taste) => {
-                if self.help {
-                    if key.code == KeyCode::Char('q') {
-                        self.help = false;
-                        self.view = View::Menu;
-                    }
-                } else if taste.key(key) {
-                    self.view = View::Menu;
-                } else if let Some(draft) = taste.take_draft() {
-                    let mut dump = (self.make_dump)().with_key_bar(self.key_bar);
-                    dump.offer_draft(draft);
-                    self.selected = 0;
-                    self.view = View::Think(Box::new(dump));
-                }
-            }
+            View::Taste(_) => self.taste_key(key),
+            View::Retry(..) => {}
             View::Soon(_) => {
                 if matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter) {
                     self.view = View::Menu;
@@ -1069,7 +1063,7 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
     let title = match &home.view {
         View::Menu => "tinkery".to_string(),
         View::Tend(_) => "tinkery › tend".into(),
-        View::Shape(..) => "tinkery › shape".into(),
+        View::Shape(..) | View::Retry(..) => "tinkery › shape".into(),
         View::Approve(_) => "tinkery › approve".into(),
         View::Worker => "tinkery › worker".into(),
         View::Measure(measure) => measure.title(),
@@ -1115,6 +1109,10 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
                 Rect::new(body.x, body.bottom().saturating_sub(2), body.width, 1),
             );
         }
+        return;
+    }
+    if let View::Retry(view, _) = &mut home.view {
+        view.render(frame, body, palette, !home.agent, home.help);
         return;
     }
     if let View::Approve(view) = &mut home.view {
@@ -1229,7 +1227,7 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
         }
         View::Tend(tend) => tend::render(frame, tend, body, palette),
         View::Shape(shape, _) => shape.render(frame, body, palette),
-        View::Measure(_) => unreachable!(),
+        View::Measure(_) | View::Retry(..) => unreachable!(),
         View::Watch(watch) => watch.render(frame, body, palette),
         View::Taste(taste) => taste.render(frame, body, palette),
         View::Soon(i) => frame.render_widget(

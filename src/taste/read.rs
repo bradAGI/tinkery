@@ -116,6 +116,8 @@ pub(super) struct ResultRow {
     pub(super) gaps: Vec<String>,
     /// Whether tink-sdlc reports an accepted or rejected verdict, when both counts are known.
     pub(super) labelled: Option<bool>,
+    /// Words of the latest rejection only when it identifies this local candidate.
+    pub(super) rejection: Option<super::retry::Verdict>,
 }
 
 impl ResultRow {
@@ -481,6 +483,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             gates: Vec::new(),
             gaps: Vec::new(),
             labelled: None,
+            rejection: None,
         };
         if summary["verification_status"] == "invalid" || !canonical_run_id(&row.id) {
             rows.push(row);
@@ -543,6 +546,12 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             if let Some(local) = row.local() {
                 let head = local.head().to_owned();
                 let declaration = local.declaration(stop);
+                if matches!(row.goal, Goal::Matched(_)) {
+                    match super::retry::words(local, run) {
+                        Ok(words) => row.rejection = words,
+                        Err(why) => row.gaps.push(why),
+                    }
+                }
                 row.head = Some(head);
                 row.preview = declaration;
                 row.items.push(Item {
@@ -626,6 +635,7 @@ mod tests {
             gates: vec![],
             gaps: vec![],
             labelled: None,
+            rejection: None,
         }
     }
 

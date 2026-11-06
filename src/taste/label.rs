@@ -119,23 +119,41 @@ pub(super) fn signer(root: &Path, stop: &AtomicBool) -> Result<String, String> {
 /// A checkout that cannot enforce its identity refuses; there is no unchecked retry.
 pub(super) fn write(
     root: &Path,
-    slug: &str,
-    id: &str,
+    row: &super::read::ResultRow,
     kind: Kind,
     words: &str,
     reviewer: &str,
     stop: &AtomicBool,
 ) -> Result<String, String> {
     // `--flag=value` keeps words such as `-v` or `--no-verify` from reading as options.
+    let slug = &row.slug;
+    let id = &row.id;
+    let mut source = "taste".to_owned();
     let mut label = Command::new("python3");
+    if let Some(local) = row.local() {
+        local.recheck(stop)?;
+        if local.root() != root {
+            let read = |checkout: &Path| crate::seed_me::read_seed(&checkout.join(sdlc::SCRIPT));
+            let named = read(local.root())
+                .map_err(|_| "Cannot read the named checkout’s label command.")?;
+            if !read(root).is_ok_and(|bytes| bytes == named) {
+                return Err("The build checkout has a different label command. Inspect it and reopen Taste with --sdlc-root naming that checkout.".into());
+            }
+            // The candidate's module directory cannot replace Python's standard imports.
+            label.arg("-I");
+        }
+        if kind == Kind::Fail && matches!(row.goal, sdlc::Goal::Matched(_)) {
+            source = format!("taste@{}", local.head());
+        }
+    }
     label.arg(sdlc::SCRIPT).args([
         "label".to_owned(),
-        slug.to_owned(),
+        slug.clone(),
         format!("--expected-run-id={id}"),
         format!("--kind={}", kind.word()),
         format!("--words={words}"),
         format!("--reviewer={reviewer}"),
-        "--source=taste".to_owned(),
+        format!("--source={source}"),
     ]);
     sdlc::execute(root, label, stop, DEADLINE)
         .map(|out| out.trim().to_owned())

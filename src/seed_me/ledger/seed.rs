@@ -205,6 +205,12 @@ fn decisions_lines(ledger: &Value) -> Result<Vec<(String, String)>> {
             ));
         }
     }
+    if let Some(base) = crate::seed_me::retry::base(ledger)? {
+        rows.push((
+            "starting commit".into(),
+            format!("- Starting commit from Taste: {}", base.head),
+        ));
+    }
     rows.extend([
         ("heading".into(), "".into()),
         ("heading".into(), "## Assumed (not confirmed by you)".into()),

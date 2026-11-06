@@ -88,6 +88,8 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   With no such check, it asks “Is this good?” Only a human can press `w` to write a verdict.
   F2 saves pass or fail with their words and the checkout's git name. Saving requires
   tink-sdlc 1.53.0 or later to check that the reviewed run is still the one being labelled.
+  After a failed local result, `s` opens Shape with the confirmed goal, rejection words,
+  checked commit and prior decisions. F2 saves the new attempt in a separate checkout.
   `e` shows checks, owed gates, the whole goal, IDs and evidence. For PR results,
   `o` opens the PR and `a`/`c` copy external review handoffs. Once a person accepts
   the result elsewhere, `l` reports that decision for this view and
