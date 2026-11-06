@@ -18,12 +18,18 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
+# Loading the checkout's Pi adapter must not leave __pycache__ in it: an untracked file there
+# makes Approve refuse the worker start.
+sys.dont_write_bytecode = True
 
 GUIDE = 'docs/first-task.md'
 SETUP_BIN = Path(__file__).resolve().parents[1] / '.cloud-tools/node/bin'
 AGENT_DRAFTING = 'agents name the model at launch: --shape-pi --model MODEL --shape-budget CALLS'
+UNCHECKED = "Pi's model and login are checked once the workflow is connected."
 
 
 def install_pi(pi, step=''):
@@ -66,7 +72,7 @@ def pi_ready(pi, pin, root):
     if not shutil.which(pi):
         return False, install_pi(pi)
     if root is None:
-        return True, None
+        return False, UNCHECKED
     adapter = launcher(root)
     try:
         provider, model_id, thinking = adapter.parse_pin(pin)
@@ -98,7 +104,9 @@ def without_setup(root, agent):
     """Drafting with no saved setup: ready only for an agent, which names its model at launch."""
     if not shutil.which('pi'):
         return False, install_pi('pi', f' ({GUIDE}, step 3)')
-    if root is not None and not pi_logged_in(root):
+    if root is None:
+        return False, UNCHECKED
+    if not pi_logged_in(root):
         return False, f'Log in to Pi: run `pi`, then /login ({GUIDE}, step 3).'
     if agent:
         return True, f'Pi has a login; {AGENT_DRAFTING}'
@@ -149,9 +157,9 @@ def workflow(root):
                          capture_output=True, text=True)
     if git.stdout.strip() != 'true':
         return False, f'{root} is not a Git checkout; run git init and commit the install.'
-    tracked = subprocess.run(['git', '-C', str(root), 'ls-files', '_system/scripts/sdlc.py'],
-                             capture_output=True, text=True)
-    if not tracked.stdout.strip():
+    committed = subprocess.run(['git', '-C', str(root), 'cat-file', '-e', 'HEAD:_system/scripts/sdlc.py'],
+                               capture_output=True)
+    if committed.returncode:
         return False, f'Commit the tink-sdlc install in {root} ({GUIDE}, step 2).'
     result = subprocess.run(['python3', str(runtime), 'capabilities'], cwd=root, capture_output=True,
                             text=True, timeout=30)
