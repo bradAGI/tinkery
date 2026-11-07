@@ -15,9 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 # from wait_output's stop-on-exit semantics. Keys bind both owner and condition so
 # another loop added to the same function cannot silently inherit the exception.
 LOCAL_PUMPS = {
-    ('hangup_terminal.py', 'hangup',
-     "time.monotonic() < deadline and b'1  think' not in output"):
-        'Preserve the byte-for-byte historical hangup reproduction: close the master after menu bytes.',
     ('hidden_review_terminal.py', 'pump',
      'time.monotonic() < end or (run.screen.synchronized and time.monotonic() < end + 3)'):
         'Pump for a fixed duration, extending at most three seconds to finish synchronization.',

@@ -3,7 +3,6 @@ import fcntl
 import os
 from pathlib import Path
 import resource
-import select
 import signal
 import struct
 import tempfile
@@ -12,6 +11,7 @@ import time
 import unittest
 
 import test_launch as subprocess
+from terminal_process import wait_output
 
 BINARY = Path(__file__).resolve().parents[1] / 'target/debug/tinkery'
 
@@ -46,10 +46,8 @@ def hangup(ignore_hup, width, height):
             slave = None
             output = bytearray()
             deadline = time.monotonic() + 5
-            while time.monotonic() < deadline and b'1  think' not in output:
-                if select.select([master], [], [], .05)[0]:
-                    output.extend(os.read(master, 65536))
-                if process.poll() is not None:
+            for returncode in wait_output(master, process, output.extend, deadline):
+                if b'1  think' in output or returncode is not None:
                     break
             assert b'1  think' in output, f'Menu did not draw: {output!r}'
             os.close(master)
