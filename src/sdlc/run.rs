@@ -23,48 +23,6 @@ pub(crate) const DEADLINE: Duration = Duration::from_secs(30);
 const STDOUT_LIMIT: u64 = 4 * 1024 * 1024;
 const STDERR_LIMIT: u64 = 64 * 1024;
 
-/// The caller's command identity and diagnostic format, independent of executable arguments.
-#[derive(Clone, Copy)]
-pub(crate) enum Name<'a> {
-    /// An external program's displayed name and ordinary stderr diagnostics.
-    Program(&'a str),
-    /// An SDLC subcommand's displayed name and preferred `sdlc.py: error:` diagnostic.
-    Sdlc(&'a str),
-}
-
-impl<'a> Name<'a> {
-    fn text(self) -> &'a str {
-        match self {
-            Self::Program(name) | Self::Sdlc(name) => name,
-        }
-    }
-}
-
-enum Failure {
-    Start,
-    Finish,
-    Message(String),
-}
-
-impl Failure {
-    fn describe(self, name: Name<'_>) -> String {
-        let name = name.text();
-        match self {
-            Self::Start => {
-                format!("Couldn't start {name}. Check that it is installed and on PATH.")
-            }
-            Self::Finish => format!("Couldn't finish {name}. Reopen this view to try again."),
-            Self::Message(message) => message,
-        }
-    }
-}
-
-impl From<String> for Failure {
-    fn from(message: String) -> Self {
-        Self::Message(message)
-    }
-}
-
 /// A read in flight. Dropping it cancels, kills and reaps the process before returning.
 pub(crate) struct Read<T> {
     cancel: Arc<AtomicBool>,
@@ -137,13 +95,11 @@ pub(crate) fn run(
 ) -> Result<String, String> {
     let mut command = Command::new("python3");
     command.arg(SCRIPT).args(args);
-    let name = args.first().map_or("status", String::as_str);
-    let identity = Name::Sdlc(name);
-    output(root, command, identity, cancel, deadline).map_err(|failure| match (name, failure) {
-        ("status", Failure::Start) => "Couldn't start reading runs. Check that Python 3 is installed and the tink-sdlc checkout is accessible, then reopen this view to read again.".into(),
-        ("status", Failure::Finish) => "Couldn't finish reading runs. Reopen this view to read again.".into(),
-        (_, failure) => failure.describe(identity),
-    })
+    let name = args.first().map_or_else(
+        || "sdlc.py".to_owned(),
+        |subcommand| format!("sdlc.py {subcommand}"),
+    );
+    execute(root, command, &name, cancel, deadline)
 }
 
 /// Execute one already-constructed read or explicit navigation command without a shell.
@@ -151,22 +107,11 @@ pub(crate) fn run(
 /// use the caller's explicit name, never infer identity from an executable or its arguments.
 pub(crate) fn execute(
     root: &Path,
-    command: Command,
-    name: Name<'_>,
+    mut command: Command,
+    name: &str,
     cancel: &AtomicBool,
     deadline: Duration,
 ) -> Result<String, String> {
-    output(root, command, name, cancel, deadline).map_err(|failure| failure.describe(name))
-}
-
-fn output(
-    root: &Path,
-    mut command: Command,
-    identity: Name<'_>,
-    cancel: &AtomicBool,
-    deadline: Duration,
-) -> Result<String, Failure> {
-    let name = identity.text();
     let mut child = command
         .current_dir(root)
         .stdin(Stdio::null())
@@ -174,7 +119,7 @@ fn output(
         .stderr(Stdio::piped())
         .process_group(0)
         .spawn()
-        .map_err(|_| Failure::Start)?;
+        .map_err(|_| format!("Couldn't start {name}. Check that it is installed and on PATH."))?;
     let drain = |pipe: Box<dyn std::io::Read + Send>, limit: u64| {
         thread::spawn(move || {
             let mut bytes = Vec::new();
@@ -187,20 +132,21 @@ fn output(
     let until = Instant::now() + deadline;
     let result = loop {
         if cancel.load(Ordering::SeqCst) {
-            break Err(Failure::Message("Stopped.".into()));
+            break Err("Stopped.".into());
         }
         if Instant::now() >= until {
             break Err(format!(
                 "{name} took longer than {} s and was stopped.",
                 deadline.as_secs()
-            )
-            .into());
+            ));
         }
         match child.try_wait() {
             Ok(Some(status)) if out.is_finished() && err.is_finished() => break Ok(status),
             Ok(_) => thread::sleep(Duration::from_millis(10)),
             Err(_) => {
-                break Err(Failure::Finish);
+                break Err(format!(
+                    "Couldn't finish {name}. Reopen this view to try again."
+                ));
             }
         }
     };
@@ -209,7 +155,7 @@ fn output(
     let (out_ok, out) = out.join().unwrap_or((false, Vec::new()));
     let (_, err) = err.join().unwrap_or((false, Vec::new()));
     if !out_ok {
-        return Err(format!("{name} printed more than 4 MiB; nothing is shown.").into());
+        return Err(format!("{name} printed more than 4 MiB; nothing is shown."));
     }
     let out =
         String::from_utf8(out).map_err(|_| format!("{name} printed text that isn't UTF-8."))?;
@@ -222,18 +168,14 @@ fn output(
         .and_then(|value| value["error"]["message"].as_str().map(str::to_owned))
         .or_else(|| {
             let stderr = String::from_utf8_lossy(&err);
-            matches!(identity, Name::Sdlc(_))
-                .then(|| {
-                    stderr
-                        .lines()
-                        .find(|line| line.starts_with("sdlc.py: error:"))
-                })
-                .flatten()
+            stderr
+                .lines()
+                .find(|line| line.starts_with("sdlc.py: error:"))
                 .or_else(|| stderr.lines().rev().find(|line| !line.trim().is_empty()))
                 .map(|line| line.trim().to_owned())
         })
         .unwrap_or_else(|| "no details".into());
-    Err(format!("{name} exited with {status}: {message}").into())
+    Err(format!("{name} exited with {status}: {message}"))
 }
 
 /// Kill the owned process group, then reap the child; never leave a status command running.

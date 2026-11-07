@@ -107,7 +107,7 @@ pub(super) fn signer(root: &Path, stop: &AtomicBool) -> Result<String, String> {
     name.args(["config", "user.name"]);
     // git config exits 1 when the name is unset; any other failure is reported as itself.
     let unset = "No name to sign with. Set one in this checkout (git config user.name \"Your Name\"), then press F2.";
-    match sdlc::execute(root, name, sdlc::Name::Program("git"), stop, DEADLINE) {
+    match sdlc::execute(root, name, "git", stop, DEADLINE) {
         Ok(out) if !out.trim().is_empty() => Ok(out.trim().to_owned()),
         Ok(_) => Err(unset.into()),
         Err(why) if why.starts_with("git exited with exit status: 1") => Err(unset.into()),
@@ -155,7 +155,7 @@ pub(super) fn write(
         format!("--reviewer={reviewer}"),
         format!("--source={source}"),
     ]);
-    sdlc::execute(root, label, sdlc::Name::Sdlc("label"), stop, DEADLINE)
+    sdlc::execute(root, label, "sdlc.py label", stop, DEADLINE)
         .map(|out| out.trim().to_owned())
         .map_err(|why| {
             if why.contains("unrecognized arguments: --expected-run-id") {
