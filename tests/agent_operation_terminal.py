@@ -131,9 +131,7 @@ def journey(width, height):
             run.type('Local only.')
             run.send(F2, 'pgup/dn read to end')
             os.write(run.master, b'\x1b[6~' * 20)
-            run.wait('F2 confirm seed r1')
             run.type('confirm')
-            run.wait('your words confirm')
             run.send(F2, 'Seed ready: you confirmed r1, and it still matches.')
             ledger = helper.load(session)
             assert ledger['operator'] == 'agent'

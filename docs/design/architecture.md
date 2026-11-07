@@ -49,7 +49,7 @@ unconfirmed sessions or complete factory telemetry. The read-only
 
 | Module | Owns |
 | --- | --- |
-| `main.rs`, `main/input.rs` | Command-line options, the terminal loop and bounded ordered input. Mouse input after resize waits for a source-level drain acknowledgement for that resize, never an empty transfer queue. Input and read completions wake the UI without shortening its heartbeat. Unix input waits outside crossterm and checks terminal hangup before nonblocking reads; a hangup between check and call remains exposed to crossterm#793. Wires the menu or think to a real or practice host. |
+| `main.rs`, `main/input.rs` | Command-line options, the terminal loop and bounded ordered input. Mouse input after resize waits for a source-level drain acknowledgement for that resize, never an empty transfer queue. Input and read completions wake the UI without shortening its heartbeat. Wires the menu or think to a real or practice host. |
 | `lib.rs` | The palette (one job per colour) in light or dark, the header's light/dark switch and the model label's room, the minimum terminal size, paging, grapheme-safe list titles and the clipped-view `more` cue. |
 | `calendar.rs` | Converts epoch days to the calendar date used by Think records and ledger writers. Each writer owns its timestamp format. |
 | `model_setup.rs`, `model_setup/panel.rs` | The saved model setup's one parser (file and flags), atomic save, header label and Model panel; the terminal loop owns when it shows (shared). |
