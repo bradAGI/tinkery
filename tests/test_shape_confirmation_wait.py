@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 import shape_answer_terminal as journey
+import agent_operation_terminal as agent_journey
 
 
 class ConfirmationWaitTests(unittest.TestCase):
@@ -43,6 +44,53 @@ class ConfirmationWaitTests(unittest.TestCase):
              mock.patch.object(journey.Run, 'close', close), \
              mock.patch.dict(os.environ, NO_COLOR='1'):
             journey.case('confirmation hint', 80, 24)
+        self.assertEqual(len(resumed), 1)
+        self.assertFalse(paused)
+
+    def test_agent_seed_confirmation_waits_for_echo_before_f2(self):
+        original_type = journey.Run.type
+        original_wait = journey.Run.wait
+        original_send = journey.Run.send
+        original_close = journey.Run.close
+        paused = set()
+        resumed = []
+
+        def type_while_stopped(run, words):
+            if words == 'confirm' and len(run.calls()) == 2:
+                original_wait(run, 'F2 confirm seed r1')
+                os.kill(run.process.pid, signal.SIGSTOP)
+                _, status = os.waitpid(run.process.pid, os.WUNTRACED)
+                self.assertTrue(os.WIFSTOPPED(status))
+                self.assertIn('type confirm, then F2', run.flat())
+                self.assertNotIn('your words confirm', run.flat())
+                paused.add(run.process.pid)
+            return original_type(run, words)
+
+        def wait_for_echo(run, text, *args, **kwargs):
+            if text == 'your words confirm' and run.process.pid in paused:
+                self.assertNotIn(text, run.flat())
+                os.kill(run.process.pid, signal.SIGCONT)
+                paused.remove(run.process.pid)
+                resumed.append(run.process.pid)
+            return original_wait(run, text, *args, **kwargs)
+
+        def send(run, data, text):
+            if data == journey.F2:
+                self.assertNotIn(run.process.pid, paused,
+                                 'F2 attempted before waiting for the confirmation echo')
+            return original_send(run, data, text)
+
+        def close(run):
+            if run.process.pid in paused:
+                os.kill(run.process.pid, signal.SIGCONT)
+                paused.remove(run.process.pid)
+            return original_close(run)
+
+        with mock.patch.object(journey.Run, 'type', type_while_stopped), \
+             mock.patch.object(journey.Run, 'wait', wait_for_echo), \
+             mock.patch.object(journey.Run, 'send', send), \
+             mock.patch.object(journey.Run, 'close', close):
+            agent_journey.journey(100, 30)
         self.assertEqual(len(resumed), 1)
         self.assertFalse(paused)
 
