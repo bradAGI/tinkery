@@ -260,9 +260,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let host = match &launch {
         Some(launch) => Some(Arc::new(
-            ModelHost::new(launch.harness, program.clone(), launch.model.clone())?
-                .with_thinking(&launch.thinking)?
-                .with_budget(call_budget.clone()),
+            ModelHost::new(
+                launch.harness,
+                program.clone(),
+                launch.model.clone(),
+                call_budget.clone(),
+            )?
+            .with_thinking(&launch.thinking)?,
         )),
         None => None,
     };

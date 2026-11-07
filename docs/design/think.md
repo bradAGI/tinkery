@@ -8,7 +8,8 @@ Below 80×24, the size warning holds F2 for typed and dictated drafts. Resizing 
 retains the words and requires a fresh F2 press before sending.
 One “I think you mean…” reading and at most one focused question sit on the right.
 Competing interpretations get a disambiguating question, not a second reading.
-The app shares one launch allowance across Think and Shape, defaulting to zero;
+Model-host construction and every model call require an explicit budget. The app
+shares one launch allowance across Think and Shape, defaulting to zero;
 [terminal setup](../terminal-setup.md#launch) defines what it counts.
 
 ### Questions

@@ -42,7 +42,7 @@ impl BoardHost for ModelHost {
         Some(Arc::new(ModelHost::new_session(self)))
     }
     fn calls_left(&self) -> Option<String> {
-        self.budget().map(crate::pi::CallBudget::left)
+        Some(self.budget().left())
     }
     fn origin(&self) -> record::Origin {
         record::Origin {

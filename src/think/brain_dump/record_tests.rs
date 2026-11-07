@@ -422,8 +422,15 @@ if marker=='TEST-BAD':print('TEST not a reading');sys.exit(0)
 print(json.dumps(dict(parts=dict(who='I',outcome='finish TEST-GOOD-REPLY',why='the work is stuck',done_when='tests pass'),questions=[])))
 "#).unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let host =
-        Arc::new(ModelHost::new(crate::pi::Harness::Pi, program, "test/model".into()).unwrap());
+    let host = Arc::new(
+        ModelHost::new(
+            crate::pi::Harness::Pi,
+            program,
+            "test/model".into(),
+            crate::pi::CallBudget::new(3),
+        )
+        .unwrap(),
+    );
     let root = dir.path().join("TEST-records");
     let mut a = BrainDump::with_host(host)
         .with_sessions(None)
@@ -474,8 +481,15 @@ marker=r['sources'][0]['text']
 print(json.dumps(dict(parts=dict(who='I',outcome='finish '+marker,why='the work is stuck',done_when='tests pass for '+marker),questions=[])))
 "#).unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let host =
-        Arc::new(ModelHost::new(crate::pi::Harness::Pi, program, "test/model".into()).unwrap());
+    let host = Arc::new(
+        ModelHost::new(
+            crate::pi::Harness::Pi,
+            program,
+            "test/model".into(),
+            crate::pi::CallBudget::new(8),
+        )
+        .unwrap(),
+    );
     let root = dir.path().join("TEST-records");
     let mut first = BrainDump::with_host(host.clone())
         .with_sessions(None)
@@ -625,6 +639,7 @@ print(json.dumps(dict(type='result',is_error=False,result=json.dumps(reply),mode
             crate::pi::Harness::ClaudeCode,
             program,
             "claude-opus-5-5".into(),
+            crate::pi::CallBudget::new(2),
         )
         .unwrap()
         .with_thinking("xhigh")
@@ -651,7 +666,8 @@ print(json.dumps(dict(type='result',is_error=False,result=json.dumps(reply),mode
         ModelHost::new(
             crate::pi::Harness::ClaudeCode,
             "claude".into(),
-            "opus".into()
+            "opus".into(),
+            crate::pi::CallBudget::new(0),
         )
         .is_err(),
         "an alias that changes meaning is never recorded as the model"

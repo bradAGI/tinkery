@@ -368,11 +368,20 @@ fn listed_models(table: &str) -> Vec<String> {
 
 impl Call {
     /// Run the host once with `prompt` as its system prompt and `input` on stdin. Refuses oversized
-    /// input before starting; counts against `budget` (when given) before anything starts. Blocks
+    /// input before starting; counts against the required `budget` before anything starts. Blocks
     /// until the host answers, fails, times out or `cancelled` is set; run it off the paint path.
+    ///
+    /// A call cannot omit its budget:
+    /// ```compile_fail,E0308
+    /// use std::sync::atomic::AtomicBool;
+    /// use tinkery::pi::{Call, Request};
+    /// fn unbudgeted(call: Call) {
+    ///     let _ = call.complete(None, Request::Shaping, vec![], "TEST".into(), &AtomicBool::new(false));
+    /// }
+    /// ```
     pub fn complete(
         &self,
-        budget: Option<&CallBudget>,
+        budget: &CallBudget,
         kind: Request,
         input: Vec<u8>,
         prompt: String,
@@ -386,9 +395,6 @@ impl Call {
         if cancelled.load(Ordering::Relaxed) {
             return Err("Request cancelled.".into());
         }
-        let Some(budget) = budget else {
-            return self.run(input, prompt, cancelled);
-        };
         let slot = budget.reserve(kind)?;
         let result = self.run(input, prompt, cancelled);
         budget.finish(slot, &result);
@@ -755,7 +761,7 @@ mod tests {
         };
         let budget = CallBudget::new(1);
         let result = call.complete(
-            Some(&budget),
+            &budget,
             Request::Shaping,
             b" TEST exact input\n ".to_vec(),
             "TEST instructions".into(),
@@ -798,7 +804,7 @@ mod tests {
         let words = vec![b'x'; REQUEST_LIMIT + 1];
         let error = call
             .complete(
-                Some(&budget),
+                &budget,
                 Request::SeedStep,
                 words.clone(),
                 "TEST instructions".into(),
@@ -890,13 +896,8 @@ time.sleep(10)
             };
             let budget = CallBudget::new(1);
             let started = Instant::now();
-            let result = call.complete(
-                Some(&budget),
-                Request::Shaping,
-                vec![],
-                "TEST".into(),
-                &cancelled,
-            );
+            let result =
+                call.complete(&budget, Request::Shaping, vec![], "TEST".into(), &cancelled);
             let returned = Instant::now();
             let elapsed = returned.duration_since(started);
             let ready = ready.join().unwrap().unwrap_or_else(|| {
@@ -1012,7 +1013,7 @@ sys.exit({exit})
 
         fn complete(&self, read_only_tools: bool) -> Result<String, String> {
             self.call(read_only_tools).complete(
-                None,
+                &CallBudget::new(1),
                 Request::Shaping,
                 b"TEST words".to_vec(),
                 "TEST prompt".into(),
@@ -1046,7 +1047,7 @@ sys.exit({exit})
         let fake = FakeClaude::new(&reply(" TEST reply café \n"), 0);
         let budget = CallBudget::new(1);
         let result = fake.call(false).complete(
-            Some(&budget),
+            &budget,
             Request::Shaping,
             b"TEST words".to_vec(),
             "TEST prompt".into(),
@@ -1174,7 +1175,7 @@ sys.exit({exit})
         let budget = CallBudget::new(1);
         let error = missing
             .complete(
-                Some(&budget),
+                &budget,
                 Request::Shaping,
                 vec![],
                 "TEST".into(),

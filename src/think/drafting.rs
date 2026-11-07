@@ -3,7 +3,7 @@
 //! A request runs the host with no tools, session, extensions or context files, so the model sees
 //! only the prompt and the words sent. The process boundary (caps, timeout, cancellation) and the
 //! call budget are shared in [`crate::pi`]; this module adds think's instructions and settings.
-//! The app and evaluations attach a [`CallBudget`]; no request starts once its limit is reached.
+//! Construction requires a [`CallBudget`]; no request starts once its limit is reached.
 //! Bundled guidance is verbatim from Seed Me c9d766760dbeac0c05c92108165f9e968bec0a66,
 //! between its title and Size gate; no installed skill is read.
 
@@ -45,15 +45,26 @@ pub struct ModelHost {
     pub(super) model: String,
     pub(super) thinking: String,
     timeout: Duration,
-    budget: Option<Arc<CallBudget>>,
+    budget: Arc<CallBudget>,
     pub(super) brain_history: std::sync::Mutex<Vec<String>>,
     pub(super) active_call: std::sync::Mutex<Option<Request>>,
 }
 
 impl ModelHost {
-    /// `harness` at `program` with a model it accepts and bundled working-draft guidance. Starts
-    /// nothing.
-    pub fn new(harness: Harness, program: PathBuf, model: String) -> Result<Self, String> {
+    /// `harness` at `program` with a model it accepts, bundled working-draft guidance and the
+    /// authorized allowance. Starts nothing; zero refuses every request before the host starts.
+    ///
+    /// An unbudgeted host cannot be constructed:
+    /// ```compile_fail,E0061
+    /// use tinkery::{pi::Harness, think::drafting::ModelHost};
+    /// let host = ModelHost::new(Harness::Pi, "TEST-pi".into(), "TEST/stub".into());
+    /// ```
+    pub fn new(
+        harness: Harness,
+        program: PathBuf,
+        model: String,
+        budget: Arc<CallBudget>,
+    ) -> Result<Self, String> {
         harness.check_model(&model)?;
         Ok(Self {
             harness,
@@ -61,7 +72,7 @@ impl ModelHost {
             model,
             thinking: "low".into(),
             timeout: Duration::from_secs(90),
-            budget: None,
+            budget,
             brain_history: std::sync::Mutex::new(Vec::new()),
             active_call: std::sync::Mutex::new(None),
         })
@@ -97,15 +108,8 @@ impl ModelHost {
             .1
     }
 
-    /// Counts every request against `budget`, refusing any past its limit before the host starts.
-    /// Callers must supply the authorized allowance; the app defaults it to zero.
-    pub fn with_budget(mut self, budget: Arc<CallBudget>) -> Self {
-        self.budget = Some(budget);
-        self
-    }
-
-    pub(super) fn budget(&self) -> Option<&CallBudget> {
-        self.budget.as_deref()
+    pub(super) fn budget(&self) -> &CallBudget {
+        &self.budget
     }
 
     /// Leaves the thinking level to the host's own default.
@@ -131,7 +135,7 @@ impl ModelHost {
             folder: None,
             timeout: self.timeout,
         }
-        .complete(self.budget.as_deref(), kind, input, prompt, cancelled);
+        .complete(&self.budget, kind, input, prompt, cancelled);
         *self.active_call.lock().unwrap() = None;
         result
     }

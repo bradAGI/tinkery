@@ -21,7 +21,13 @@ if kind=='decision-review':print(json.dumps(dict(decisions=[])));sys.exit(0)
 print(json.dumps(dict(parts=dict(who='I',outcome='judge the result',why='it matters',done_when='a judged result exists'),questions=[])))
 "#).unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let pi = ModelHost::new(crate::pi::Harness::Pi, program, "test/model".into()).unwrap();
+    let pi = ModelHost::new(
+        crate::pi::Harness::Pi,
+        program,
+        "test/model".into(),
+        crate::pi::CallBudget::new(2),
+    )
+    .unwrap();
     let request = BoardRequest {
         ask_counts: Default::default(),
         sources: vec![Source {
@@ -109,7 +115,13 @@ else:print(pathlib.Path(__file__).with_name('reply').read_text())
     )
     .unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let pi = ModelHost::new(crate::pi::Harness::Pi, program, "test/model".into()).unwrap();
+    let pi = ModelHost::new(
+        crate::pi::Harness::Pi,
+        program,
+        "test/model".into(),
+        crate::pi::CallBudget::new(4),
+    )
+    .unwrap();
     let words = fixture["words"].as_str().unwrap();
     let request = BoardRequest {
         ask_counts: Default::default(),
@@ -285,7 +297,13 @@ if r.get('kind')=='decision-review':print(json.dumps(dict(decisions=[dict(part='
 print('{"parts":{"who":"I","outcome":"judge the result","why":"it matters","done_when":"a judged result exists"},"questions":[]}')
 "#).unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let pi = ModelHost::new(crate::pi::Harness::Pi, program, "test/model".into()).unwrap();
+    let pi = ModelHost::new(
+        crate::pi::Harness::Pi,
+        program,
+        "test/model".into(),
+        crate::pi::CallBudget::new(2),
+    )
+    .unwrap();
     let request = BoardRequest {
         ask_counts: Default::default(),
         sources: vec![Source {
