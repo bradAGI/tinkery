@@ -94,10 +94,45 @@ fn settle(h: &mut Home) {
     });
 }
 #[test]
+fn place_indices_are_checked_before_opening() {
+    for (index, (name, _)) in PLACES.iter().enumerate() {
+        let mut h = home(Arc::new(|_| found(vec![])));
+        h.open(Place::at(index).unwrap());
+        let frame = screen(&mut h);
+        let heading = if *name == "think" {
+            "What's on your mind?"
+        } else {
+            name
+        };
+        assert!(frame.contains(heading), "{name}: {frame}");
+    }
+    for index in [PLACES.len(), PLACES.len() + 1, 100, usize::MAX] {
+        assert_eq!(Place::at(index), None, "accepted invalid place {index}");
+    }
+}
+
+#[test]
+fn tend_ignores_clipboard_results_in_garden_and_detail() {
+    let mut h = garden(1);
+    for detail in [false, true] {
+        if detail {
+            h.handle_key(key(KeyCode::Enter));
+        }
+        let before = screen(&mut h);
+        h.handle_key(key(KeyCode::Char('c')));
+        assert!(h.take_copy_request().is_none());
+        for sent in [true, false] {
+            h.copy_result(sent);
+            assert_eq!(screen(&mut h), before);
+        }
+    }
+}
+
+#[test]
 fn watch_f10_returns_home_from_help_without_quitting() {
     for help in [true, false] {
         let mut h = home(Arc::new(|_| found(vec![])));
-        h.open(4);
+        h.open(Place::at(4).unwrap());
         if help {
             h.handle_key(key(KeyCode::F(1)));
         }
@@ -114,7 +149,7 @@ fn watch_f10_returns_home_from_help_without_quitting() {
             KeyEvent::new(KeyCode::F(10), KeyModifiers::ALT),
         ] {
             let mut h = home(Arc::new(|_| found(vec![])));
-            h.open(4);
+            h.open(Place::at(4).unwrap());
             if help {
                 h.handle_key(key(KeyCode::F(1)));
             }
@@ -687,9 +722,9 @@ fn many_requests_while_blocked_stay_bounded_to_one_worker() {
     h.tick();
     wait_until("start", || gate.entered.load(SeqCst) == 1);
     for _ in 0..20 {
-        h.open(1);
+        h.open(Place::at(1).unwrap());
         h.handle_key(key(KeyCode::Esc));
-        h.open(0);
+        h.open(Place::at(0).unwrap());
         h.handle_key(key(KeyCode::F(10)));
         h.tick();
     }
@@ -793,7 +828,7 @@ fn a_slow_read_changes_one_quiet_line_and_starts_nothing() {
     h.handle_key(key(KeyCode::Esc));
     assert!(matches!(h.view, View::Menu), "Esc still goes back");
     // The wait belongs to the read, not the visit: reopening meets the same slow read.
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     h.tick_at(since + threshold);
     let reopened = screen(&mut h);
     assert!(
@@ -846,7 +881,7 @@ fn a_slow_reread_leaves_a_list_already_on_screen_alone() {
     let mut h = home(gate.source());
     settle(&mut h);
     // Reopening reads again, and this read gets no permit: the last result shows meanwhile.
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     wait_until("the second read", || gate.entered.load(SeqCst) == 2);
     let since = h
         .discovery
@@ -874,7 +909,7 @@ fn a_slow_reread_behind_an_empty_list_never_says_no_sessions() {
         Stage::GoalSaved,
         "2026-10-09T10:00:00Z",
     )]));
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     let frame = screen(&mut h);
     assert!(
         frame.contains("Reading your sessions. Esc goes back."),
@@ -914,7 +949,7 @@ fn late_results_keep_the_selected_session_by_identity_and_do_not_replace_detail(
     gate.release(1);
     let mut h = home(gate.source());
     settle(&mut h);
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     gate.release(1);
     settle(&mut h);
     h.handle_key(key(KeyCode::Down));
@@ -925,7 +960,7 @@ fn late_results_keep_the_selected_session_by_identity_and_do_not_replace_detail(
     let mut newer = vec![sess("n", Stage::GoalSaved, "2026-10-10T10:00:00Z")];
     newer.extend(old.clone());
     gate.set(found(newer.clone()));
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     gate.release(1);
     settle(&mut h);
     h.handle_key(key(KeyCode::Down));
@@ -966,7 +1001,7 @@ fn shape_return_waits_for_fresh_discovery_and_cannot_reopen_exited_detail() {
         let gate = Gate::new(found(vec![sess("a", Stage::GoalSaved, "")]));
         gate.release(1);
         let mut h = home(gate.source());
-        h.open(1);
+        h.open(Place::at(1).unwrap());
         settle(&mut h);
         h.handle_key(key(KeyCode::Enter));
         h.handle_key(key(KeyCode::Char('s')));
@@ -1012,7 +1047,7 @@ fn landed_discovery_does_not_cancel_or_redirect_link_picking() {
     gate.release(4);
     let mut h = home(gate.source());
     h.link_root = Ok(tmp.path().join("TEST-links"));
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     settle(&mut h);
     h.handle_key(key(KeyCode::Char('l')));
     h.handle_key(key(KeyCode::Right));
@@ -1100,7 +1135,7 @@ fn a_late_receipt_target_does_not_resurrect_an_exited_visit() {
     gate.release(4);
     settle(&mut h);
     assert!(matches!(h.view, View::Menu));
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     let View::Tend(tend) = &h.view else { panic!() };
     assert!(
         tend.want.is_none() && !tend.detail,
@@ -1137,7 +1172,7 @@ fn counts_are_exact_only_after_complete_current_reads() {
         failures: Vec::new(),
     }));
     gate.release(1);
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     settle(&mut h);
     assert_eq!(h.count(1), None, "incomplete is not an exact result");
     let frame = screen(&mut h);
@@ -1152,14 +1187,14 @@ fn counts_are_exact_only_after_complete_current_reads() {
     // A failed root is not "no sessions" and not a count.
     gate.set(Err("Cannot read /TEST: boom".into()));
     gate.release(1);
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     settle(&mut h);
     assert_eq!(h.count(1), None);
     assert!(!screen(&mut h).contains("No saved sessions"));
     // Complete and empty is the only way to "no sessions".
     gate.set(found(vec![]));
     gate.release(1);
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     settle(&mut h);
     assert!(screen(&mut h).contains("No saved sessions yet"));
     assert_eq!(h.count(1), None, "zero is never printed");
@@ -1174,7 +1209,7 @@ fn only_unreadable_records_never_read_as_no_sessions() {
     }));
     gate.release(2);
     let mut h = home(gate.source());
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     settle(&mut h);
     let frame = screen(&mut h);
     assert!(
@@ -1195,7 +1230,7 @@ fn returning_from_think_and_reopening_tend_read_again_and_hide_a_stale_count() {
     );
     settle(&mut h);
     assert_eq!(h.count(1), Some("1".into()));
-    h.open(0);
+    h.open(Place::at(0).unwrap());
     write_session(tmp.path(), "saved-in-think", "2026-10-10T10:00:00Z");
     if let View::Think(dump) = &mut h.view {
         dump.handle_key(key(KeyCode::Esc));
@@ -1210,7 +1245,7 @@ fn returning_from_think_and_reopening_tend_read_again_and_hide_a_stale_count() {
     settle(&mut h);
     assert_eq!(h.count(1), Some("2".into()), "count refreshed after saving");
     write_session(tmp.path(), "later", "2026-10-11T10:00:00Z");
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     settle(&mut h);
     let View::Tend(tend) = &h.view else { panic!() };
     assert_eq!(tend.sessions.len(), 3, "deliberate reopening reads again");
@@ -1384,7 +1419,7 @@ fn unavailable_session_root_never_scans_or_claims_an_empty_list() {
     assert!(!h.discovery.running());
     assert_eq!(h.count(1), None);
     for _ in 0..2 {
-        h.open(1);
+        h.open(Place::at(1).unwrap());
         h.tick();
         let View::Tend(tend) = &mut h.view else {
             panic!()
@@ -1429,7 +1464,7 @@ fn links_destination_survives_menu_reopening_and_standalone_receipt_handoff() {
             )
         };
         for _ in 0..2 {
-            h.open(1);
+            h.open(Place::at(1).unwrap());
             settle(&mut h);
             let View::Tend(tend) = &h.view else { panic!() };
             assert_eq!(tend.sessions.len(), 1);
@@ -1450,7 +1485,7 @@ fn unavailable_linking_does_not_stop_tend_reading_sessions() {
         found(vec![sess("goal", Stage::GoalSaved, "")])
     }));
     h.link_root = Err(reason.into());
-    h.open(1);
+    h.open(Place::at(1).unwrap());
     settle(&mut h);
     let View::Tend(tend) = &h.view else { panic!() };
     assert_eq!(tend.sessions.len(), 1);

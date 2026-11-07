@@ -19,7 +19,7 @@ const BRAIN_DUMP_FIELDS: usize = 13;
 const BRAIN_DUMP_PUB_FIELDS: usize = 0;
 /// Most non-test source lines longer than [`LONG_LINE`] characters. Since #38 the model prompts
 /// live in their own files; what remains is help and display text.
-const LONG_LINES: usize = 6;
+const LONG_LINES: usize = 5;
 const LONG_LINE: usize = 200;
 /// Most production lines a module may have. Modules already past it are capped at their size in
 /// [`BIG_MODULES`] and may shrink freely; growing one means splitting it first.
@@ -28,7 +28,7 @@ const MODULE_LINES: usize = 1000;
 const BIG_MODULES: &[(&str, usize)] = &[
     ("src/shape.rs", 2528),
     ("src/think/brain_dump.rs", 1714),
-    ("src/menu.rs", 1313),
+    ("src/menu.rs", 1297),
     ("src/seed_me/answering.rs", 1210),
     ("src/seed_me/ledger.rs", 1125),
     ("src/watch.rs", 1039),
@@ -50,8 +50,8 @@ const CONVERSATION_TEST_ACCESSORS: &[&str] = &[
     "ask_counts",
 ];
 
-/// Every top-level module and its area. Each phase has its own module; the menu (which also lists
-/// the unbuilt places) is the only one that knows every phase; `shared` is code any phase may use.
+/// Every top-level module and its area. Each phase has its own module; the menu is the only one
+/// that knows every phase; `shared` is code any phase may use.
 /// A new module must be listed here, so a new phase can't count as shared code by default.
 const MODULES: &[(&str, &str)] = &[
     ("actions", "shared"),

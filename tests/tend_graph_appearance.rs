@@ -64,7 +64,7 @@ fn warmed_garden_matches_fresh_colors_after_theme_source_and_graph_changes() {
         )
         .with_record_root(dir.path().join("records"))
         .with_discovery_source(Arc::new(move |_| Ok(source.lock().unwrap().clone())));
-        home.open(1);
+        home.open(tinkery::menu::Place::at(1).unwrap());
         settle(&mut home);
         home
     };
