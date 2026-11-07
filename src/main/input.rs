@@ -1,6 +1,7 @@
 //! Ordered terminal input that wakes its owning UI thread. The bounded queue preserves events;
 //! mouse input stays held after resize until the source acknowledges that resize's drain.
-//! Dropping the reader stops and joins its worker before terminal mode is restored.
+//! A hangup-only watchdog reports terminal loss without touching key readiness. Drop joins the
+//! workers on normal shutdown, but detaches a reader trapped in crossterm after terminal loss.
 
 use std::{
     io,
@@ -14,6 +15,11 @@ use std::{
 };
 
 use crossterm::event::{self, Event};
+
+#[cfg(unix)]
+type Terminal = std::os::fd::OwnedFd;
+#[cfg(not(unix))]
+type Terminal = ();
 
 enum Message {
     Event(io::Result<Event>),
@@ -33,7 +39,23 @@ pub(super) struct Input {
 impl Input {
     /// Read terminal events in order, waking the caller without shortening its heartbeat.
     pub(super) fn new() -> io::Result<Self> {
-        Self::start(|timeout| {
+        #[cfg(unix)]
+        let terminal = {
+            use std::{io::IsTerminal, os::fd::AsFd};
+            let stdin = io::stdin();
+            Some(if stdin.is_terminal() {
+                stdin.as_fd().try_clone_to_owned()?
+            } else {
+                std::fs::File::options()
+                    .read(true)
+                    .write(true)
+                    .open("/dev/tty")?
+                    .into()
+            })
+        };
+        #[cfg(not(unix))]
+        let terminal = None;
+        Self::start(terminal, |timeout| {
             if event::poll(timeout)? {
                 event::read().map(Some)
             } else {
@@ -43,14 +65,19 @@ impl Input {
     }
 
     fn start(
+        terminal: Option<Terminal>,
         mut read: impl FnMut(Duration) -> io::Result<Option<Event>> + Send + 'static,
     ) -> io::Result<Self> {
         let (send, events) = mpsc::sync_channel(64);
+        #[cfg(unix)]
+        let failure = send.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let cancelled = stop.clone();
         let drain = Arc::new(AtomicU64::new(0));
         let requested = drain.clone();
         let owner = thread::current();
+        #[cfg(unix)]
+        let watchdog_owner = owner.clone();
         let worker = thread::Builder::new()
             .name("terminal-input".into())
             .spawn(move || {
@@ -83,14 +110,29 @@ impl Input {
                     }
                 }
             })?;
-        Ok(Self {
+        let mut input = Self {
             events: Some(events),
             pending: None,
             drain,
             mouse_ready: true,
             stop,
             worker: Some(worker),
-        })
+        };
+        #[cfg(unix)]
+        if let Some(terminal) = terminal {
+            let worker = input.worker.take().unwrap();
+            let stop = input.stop.clone();
+            input.worker = Some(
+                thread::Builder::new()
+                    .name("terminal-hangup".into())
+                    .spawn(move || {
+                        watch_terminal(terminal, worker, failure, stop, watchdog_owner)
+                    })?,
+            );
+        }
+        #[cfg(not(unix))]
+        let _ = terminal;
+        Ok(input)
     }
 
     /// Hold mouse coordinates until the source drains input after this resize request.
@@ -149,6 +191,47 @@ impl Input {
     }
 }
 
+#[cfg(unix)]
+fn watch_terminal(
+    terminal: Terminal,
+    worker: JoinHandle<()>,
+    send: mpsc::SyncSender<Message>,
+    stop: Arc<AtomicBool>,
+    owner: thread::Thread,
+) {
+    use std::os::fd::AsRawFd;
+    let mut descriptor = libc::pollfd {
+        fd: terminal.as_raw_fd(),
+        events: libc::POLLHUP,
+        revents: 0,
+    };
+    while !worker.is_finished() {
+        let result = unsafe { libc::poll(&mut descriptor, 1, 100) };
+        let error = if result < 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            Some(error)
+        } else if descriptor.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+            Some(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "Terminal input hung up.",
+            ))
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            stop.store(true, Ordering::SeqCst);
+            owner.unpark();
+            let _ = send.send(Message::Event(Err(error)));
+            owner.unpark();
+            return;
+        }
+    }
+    let _ = worker.join();
+}
+
 fn disconnected() -> io::Error {
     io::Error::new(io::ErrorKind::BrokenPipe, "Terminal input stopped.")
 }
@@ -177,11 +260,12 @@ mod tests {
     fn input_wakes_the_owner_and_preserves_event_order() {
         thread::spawn(|| {
             let (send, receive) = mpsc::channel();
-            let mut input = Input::start(move |timeout| match receive.recv_timeout(timeout) {
-                Ok(event) => Ok(Some(event)),
-                Err(_) => Ok(None),
-            })
-            .unwrap();
+            let mut input =
+                Input::start(None, move |timeout| match receive.recv_timeout(timeout) {
+                    Ok(event) => Ok(Some(event)),
+                    Err(_) => Ok(None),
+                })
+                .unwrap();
             let producer = thread::spawn(move || {
                 thread::sleep(Duration::from_millis(30));
                 send.send(key('a')).unwrap();
@@ -202,7 +286,8 @@ mod tests {
 
     #[test]
     fn input_errors_reach_the_owner() {
-        let mut input = Input::start(|_| Err(io::Error::other("TEST input failure"))).unwrap();
+        let mut input =
+            Input::start(None, |_| Err(io::Error::other("TEST input failure"))).unwrap();
         assert_eq!(input.read().unwrap_err().to_string(), "TEST input failure");
     }
 
@@ -224,7 +309,7 @@ mod tests {
     fn controlled_source() -> (Input, SourceBarrier) {
         let (entered, observation) = mpsc::channel();
         let (release, source) = mpsc::channel();
-        let input = Input::start(move |timeout| {
+        let input = Input::start(None, move |timeout| {
             entered.send(timeout).map_err(|_| disconnected())?;
             source
                 .recv_timeout(Duration::from_secs(2))
@@ -318,9 +403,96 @@ mod tests {
         drop(input);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn hangup_wakes_the_owner_and_drop_detaches_a_stuck_reader() {
+        use std::os::unix::net::UnixStream;
+        thread::spawn(|| {
+            let (terminal, peer) = UnixStream::pair().unwrap();
+            let (entered, reading) = mpsc::channel();
+            let (release, blocked) = mpsc::channel();
+            let mut input = Input::start(Some(terminal.into()), move |_| {
+                entered.send(()).unwrap();
+                blocked
+                    .recv_timeout(Duration::from_secs(2))
+                    .map_err(|_| disconnected())
+            })
+            .unwrap();
+            reading.recv_timeout(Duration::from_secs(2)).unwrap();
+            let closer = thread::spawn(move || {
+                thread::sleep(Duration::from_millis(30));
+                drop(peer);
+            });
+            let started = std::time::Instant::now();
+            thread::park_timeout(Duration::from_secs(2));
+            assert!(started.elapsed() < Duration::from_secs(1));
+            assert_eq!(input.read().unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+            let started = std::time::Instant::now();
+            drop(input);
+            assert!(started.elapsed() < Duration::from_secs(1));
+            release.send(None).unwrap();
+            closer.join().unwrap();
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hangup_during_drop_does_not_wait_for_the_reader() {
+        use std::os::unix::net::UnixStream;
+        let (terminal, peer) = UnixStream::pair().unwrap();
+        let (entered, reading) = mpsc::channel();
+        let (release, blocked) = mpsc::channel();
+        let input = Input::start(Some(terminal.into()), move |_| {
+            entered.send(()).unwrap();
+            blocked
+                .recv_timeout(Duration::from_secs(2))
+                .map_err(|_| disconnected())
+        })
+        .unwrap();
+        reading.recv_timeout(Duration::from_secs(2)).unwrap();
+        let closer = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            drop(peer);
+        });
+        let started = std::time::Instant::now();
+        drop(input);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        release.send(None).unwrap();
+        closer.join().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn watchdog_ignores_readability_and_normal_drop_joins_the_reader() {
+        use std::{io::Write, os::unix::net::UnixStream};
+        let (mut terminal, mut peer) = UnixStream::pair().unwrap();
+        let (send, receive) = mpsc::channel();
+        let mut input =
+            Input::start(
+                Some(terminal.try_clone().unwrap().into()),
+                move |timeout| match receive.recv_timeout(timeout) {
+                    Ok(event) => Ok(Some(event)),
+                    Err(_) => Ok(None),
+                },
+            )
+            .unwrap();
+        peer.write_all(b"key").unwrap();
+        thread::sleep(Duration::from_millis(150));
+        assert!(!input.poll());
+        send.send(key('a')).unwrap();
+        assert_eq!(input.read().unwrap(), key('a'));
+        let mut bytes = [0; 3];
+        io::Read::read_exact(&mut terminal, &mut bytes).unwrap();
+        assert_eq!(&bytes, b"key");
+        drop(input);
+        assert!(send.send(key('b')).is_err());
+    }
+
     #[test]
     fn dropping_a_full_input_queue_stops_and_joins_the_reader() {
-        let input = Input::start(|_| Ok(Some(key('x')))).unwrap();
+        let input = Input::start(None, |_| Ok(Some(key('x')))).unwrap();
         thread::sleep(Duration::from_millis(30));
         let started = std::time::Instant::now();
         drop(input);
