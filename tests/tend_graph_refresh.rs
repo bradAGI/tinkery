@@ -20,7 +20,7 @@ fn refresh(home: &mut Home) {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         home.tick();
-        if home.count(1).is_some() {
+        if home.count(tinkery::menu::Place::Tend).is_some() {
             break;
         }
         assert!(
@@ -71,7 +71,7 @@ fn public_refresh_updates_labels_and_links_but_keeps_an_unchanged_view() {
     )
     .with_record_root(dir.path().join("records"))
     .with_discovery_source(Arc::new(move |_| Ok(source.lock().unwrap().clone())));
-    home.open(tinkery::menu::Place::at(1).unwrap());
+    home.open(tinkery::menu::Place::Tend);
     refresh(&mut home);
     let initial = paint(&mut home);
     assert!(text(&initial).contains("Goal 0"));

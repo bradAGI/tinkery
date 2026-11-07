@@ -132,9 +132,9 @@ fn public_order_and_age_preserve_offsets_calendar_boundaries_and_existing_syntax
             Ok(dir.path().join("links")),
         )
         .with_record_root(dir.path().join("records"));
-        home.open(tinkery::menu::Place::at(1).unwrap());
+        home.open(tinkery::menu::Place::Tend);
         let deadline = Instant::now() + Duration::from_secs(5);
-        while home.count(1).is_none() {
+        while home.count(tinkery::menu::Place::Tend).is_none() {
             home.tick();
             assert!(Instant::now() < deadline, "discovery did not settle");
             std::thread::sleep(Duration::from_millis(1));

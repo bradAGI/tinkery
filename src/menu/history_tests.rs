@@ -39,7 +39,7 @@ fn home() -> (tempfile::TempDir, Home, PathBuf, Vec<u8>) {
     )
     .with_record_root(records);
     home.discover_for_snapshot(Duration::from_secs(3));
-    home.open(Place::at(1).unwrap());
+    home.open(Place::Tend);
     (dir, home, path, bytes)
 }
 

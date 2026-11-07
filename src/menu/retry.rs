@@ -152,7 +152,7 @@ impl Home {
             KeyCode::Esc if key.kind == KeyEventKind::Press => {
                 if let View::Retry(_, back) = std::mem::replace(&mut self.view, View::Menu) {
                     self.view = View::Taste(back);
-                    self.selected = 5;
+                    self.selected = Place::Taste;
                 }
             }
             KeyCode::F(10) if key.kind == KeyEventKind::Press => {
@@ -206,12 +206,12 @@ impl Home {
             let View::Taste(back) = std::mem::replace(&mut self.view, View::Menu) else {
                 unreachable!()
             };
-            self.selected = 2;
+            self.selected = Place::Shape;
             self.view = View::Retry(Box::new(Review::new(rejected)), back);
         } else if let Some(draft) = taste.take_draft() {
             let mut dump = (self.make_dump)().with_key_bar(self.key_bar);
             dump.offer_draft(draft);
-            self.selected = 0;
+            self.selected = Place::Think;
             self.view = View::Think(Box::new(dump));
         }
     }

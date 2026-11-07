@@ -75,9 +75,9 @@ fn fixture(original: &str, size: (u16, u16)) -> Fixture {
         Ok(dir.path().join("links")),
     )
     .with_record_root(records);
-    home.open(tinkery::menu::Place::at(1).unwrap());
+    home.open(tinkery::menu::Place::Tend);
     let deadline = Instant::now() + Duration::from_secs(5);
-    while home.count(1).is_none() {
+    while home.count(tinkery::menu::Place::Tend).is_none() {
         home.tick();
         assert!(
             Instant::now() < deadline,
