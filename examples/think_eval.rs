@@ -344,9 +344,9 @@ fn run(options: &Options) -> Result<Value, String> {
                     tinkery::pi::Harness::Pi,
                     live.pi_command.clone(),
                     live.model.clone(),
+                    budget.clone(),
                 )?
-                .with_thinking(&live.thinking)?
-                .with_budget(budget.clone()),
+                .with_thinking(&live.thinking)?,
             ),
             // Two 90-second Pi calls per send, plus room to settle.
             Duration::from_secs(200),

@@ -6,7 +6,7 @@ fn input(text: &str) -> Vec<u8> {
 }
 
 #[cfg(unix)]
-fn host(script: &str) -> (tempfile::TempDir, ModelHost) {
+fn host(script: &str, budget: Arc<CallBudget>) -> (tempfile::TempDir, ModelHost) {
     use std::os::unix::fs::PermissionsExt;
     let directory = tempfile::tempdir().unwrap();
     let program = directory.path().join("pi");
@@ -16,6 +16,7 @@ fn host(script: &str) -> (tempfile::TempDir, ModelHost) {
         crate::pi::Harness::Pi,
         program,
         "anthropic/claude-haiku-4-5".into(),
+        budget,
     )
     .unwrap();
     (directory, host)
@@ -40,12 +41,13 @@ assert data['words'] == ['I want a graph, so I can find reasons.']
 assert not any('I want a graph' in arg for arg in sys.argv)
 print('done')
 "#;
-    let (directory, host) = host(script);
+    let (directory, host) = host(script, CallBudget::new(1));
     assert!(
         ModelHost::new(
             crate::pi::Harness::Pi,
             directory.path().join("pi"),
-            "test/model".into()
+            "test/model".into(),
+            CallBudget::new(0),
         )
         .unwrap()
         .with_thinking("automatic")
@@ -76,15 +78,17 @@ fn failures_timeout_overflow_and_cancellation_never_return_output() {
         "print('x' * 40000)",
         "import time; time.sleep(10)",
     ] {
-        let (_directory, mut host) = host(script);
+        let (_directory, mut host) = host(script, CallBudget::new(1));
         host.timeout = Duration::from_millis(100);
         assert!(
             call(&host, "words", &AtomicBool::new(false)).is_err(),
             "Accepted {script}"
         );
     }
-    let (_directory, limited) =
-        host("import sys; print('429 rate_limit_error', file=sys.stderr); sys.exit(1)");
+    let (_directory, limited) = host(
+        "import sys; print('429 rate_limit_error', file=sys.stderr); sys.exit(1)",
+        CallBudget::new(1),
+    );
     assert!(
         call(&limited, "words", &AtomicBool::new(false))
             .unwrap_err()
@@ -99,7 +103,7 @@ fn failures_timeout_overflow_and_cancellation_never_return_output() {
         .unwrap_err()
         .contains("This is too much to send at once.")
     );
-    let (_directory, host) = host("import time; time.sleep(10)");
+    let (_directory, host) = host("import time; time.sleep(10)", CallBudget::new(1));
     let job = Job::launch(move |cancelled| call(&host, "words", cancelled));
     thread::sleep(Duration::from_millis(50));
     let started = Instant::now();
@@ -113,12 +117,18 @@ fn failures_timeout_overflow_and_cancellation_never_return_output() {
 /// A Pi that leaves one file per start in the returned folder, then prints `reply`, or exits
 /// with 3 when `reply` is empty. The files show exactly how many processes ran.
 #[cfg(unix)]
-fn counting_host(reply: &str) -> (tempfile::TempDir, ModelHost, tempfile::TempDir) {
+fn counting_host(
+    reply: &str,
+    budget: Arc<CallBudget>,
+) -> (tempfile::TempDir, ModelHost, tempfile::TempDir) {
     let starts = tempfile::tempdir().unwrap();
-    let (directory, host) = host(&format!(
-        "import os, sys, uuid\nopen(os.path.join({:?}, uuid.uuid4().hex), 'w').close()\nprint({reply:?}) if {reply:?} else sys.exit(3)",
-        starts.path().display().to_string()
-    ));
+    let (directory, host) = host(
+        &format!(
+            "import os, sys, uuid\nopen(os.path.join({:?}, uuid.uuid4().hex), 'w').close()\nprint({reply:?}) if {reply:?} else sys.exit(3)",
+            starts.path().display().to_string()
+        ),
+        budget,
+    );
     (directory, host, starts)
 }
 
@@ -139,9 +149,8 @@ fn a_budget_refuses_before_pi_starts_and_counts_failures_and_retries() {
         )
     };
     for limit in [0, 1, 2] {
-        let (_directory, pi, starts) = counting_host("done");
         let budget = CallBudget::new(limit);
-        let pi = pi.with_budget(budget.clone());
+        let (_directory, pi, starts) = counting_host("done", budget.clone());
         // One send is a shaping call then a review; a third request is a retry.
         let results = [
             call(&pi, Request::Shaping),
@@ -159,9 +168,8 @@ fn a_budget_refuses_before_pi_starts_and_counts_failures_and_retries() {
         assert_eq!(attempts[1].kind, Request::DecisionReview);
     }
     // A failed call still spends its unit, so a retry after it is refused.
-    let (_directory, pi, starts) = counting_host("");
     let budget = CallBudget::new(1);
-    let pi = pi.with_budget(budget.clone());
+    let (_directory, pi, starts) = counting_host("", budget.clone());
     assert!(call(&pi, Request::Shaping).is_err());
     assert!(
         call(&pi, Request::Shaping)
@@ -175,9 +183,8 @@ fn a_budget_refuses_before_pi_starts_and_counts_failures_and_retries() {
 #[cfg(unix)]
 #[test]
 fn a_new_session_shares_its_budget_and_cancellation_is_counted_only_once_started() {
-    let (_directory, first, starts) = counting_host("done");
     let budget = CallBudget::new(1);
-    let first = first.with_budget(budget.clone());
+    let (_directory, first, starts) = counting_host("done", budget.clone());
     let other = first.new_session();
     let cancelled = AtomicBool::new(true);
     assert_eq!(
@@ -207,9 +214,8 @@ fn a_new_session_shares_its_budget_and_cancellation_is_counted_only_once_started
     );
     assert_eq!(started(&starts), 1, "a new session can't reset the budget");
 
-    let (_directory, slow) = host("import time; time.sleep(10)");
     let budget = CallBudget::new(2);
-    let slow = slow.with_budget(budget.clone());
+    let (_directory, slow) = host("import time; time.sleep(10)", budget.clone());
     let job = Job::launch(move |cancelled| {
         slow.complete(Request::Shaping, input("words"), "prompt".into(), cancelled)
     });

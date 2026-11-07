@@ -753,7 +753,13 @@ fn board_process_uses_only_shaping_guidance_and_disabled_resources() {
     let program = dir.path().join("pi");
     std::fs::write(&program,format!("#!/usr/bin/env python3\nimport sys,json,os\nr=json.load(sys.stdin)\nif r.get('kind')=='meaning-preservation': print('{{\"missing\":[],\"false_choice\":false}}');sys.exit(0)\np=sys.argv[sys.argv.index('--system-prompt')+1]\nassert 'Distill whatever arrived' in p\nassert 'FAKE_LEDGER_REPLY_RULE' not in p and 'DO_NOT_RUN_LATER_GATE' not in p\nassert 'Proposed mechanisms remain candidates' in p\nassert 'preserve compatible aims rather than forcing a choice' in p\nassert 'No research, tools, execution, approvals, ledger' in p\nassert 'Never invent properties of unknown names' in p\nassert 'only when its answer matters to the next useful step' in p\nassert 'Fill missing required parts FIRST' not in p\nassert 'never leaving it only in unresolved_notes' in p and 'that is when questions stop' in p\nassert 'decisions (open choices only the person can make' in p\nassert 'never status notes, disclaimers' in p\nassert 'Put each answer in the one part it answers' in p and 'edit that line instead of adding another' in p\nassert 'existing source ID' in p and 'whole Unicode graphemes' in p\nassert not any(example in p for example in ['went well','way off','usual week','no targets','no dashboard','five emails','phones','no gamification','Kirra','restaurateur'])\nassert 'never field definitions' in p and 'never facts an agent could find out' in p\nassert 'know, decide, or do' not in p\nassert 'two to four' not in p and 'EXACT keys' not in p and 'at most 45' not in p\nassert all(x in sys.argv for x in ['--no-tools','--no-session','--no-extensions','--no-mcp','--no-context-files'])\nassert 'PI_SESSION_FILE' not in os.environ\nassert r['sources'][0]['text']=='My exact words.'\nprint({response:?})\n")).unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let pi = ModelHost::new(crate::pi::Harness::Pi, program, "test/model".into()).unwrap();
+    let pi = ModelHost::new(
+        crate::pi::Harness::Pi,
+        program,
+        "test/model".into(),
+        crate::pi::CallBudget::new(2),
+    )
+    .unwrap();
     let actual = pi.reshape(r, &AtomicBool::new(false)).unwrap();
     assert_eq!(actual.parts, guess(&host.requests.lock().unwrap()[0]).parts);
 }

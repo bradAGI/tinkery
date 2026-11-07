@@ -560,7 +560,7 @@ fn look(
     let instructions = format!("{}\n\nSeed reply guidance for Shape:\n{contract}", prompt());
     let reply = call
         .complete(
-            Some(&agent.budget),
+            &agent.budget,
             Request::SeedStep,
             serde_json::to_vec(&input).unwrap_or_default(),
             instructions,
