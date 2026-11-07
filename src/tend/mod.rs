@@ -1,7 +1,7 @@
 //! Tend: the saved goals garden and one goal's detail, read from saved sessions.
 //!
 //! Shows what discovery has landed, says plainly when that is unknown, incomplete or failed,
-//! and offers explicit needs links and a continuation prompt to copy; it never edits a session,
+//! and offers explicit needs links and saved Think history; it never edits a session,
 //! starts an agent or guesses a stage. Everything about session files comes from `seed_me`.
 
 pub mod discovery;
@@ -62,7 +62,6 @@ pub(super) struct Tend {
     pub how: bool,
     pub help_scroll: u16,
     pub notice: String,
-    pub copy: Option<String>,
     pub history: Option<history::View>,
     graph: graph::GraphView,
     last_press: Option<(PathBuf, Instant)>,
@@ -98,7 +97,6 @@ impl Tend {
             how: false,
             help_scroll: 0,
             notice: String::new(),
-            copy: None,
             history: None,
             graph: graph::GraphView::default(),
             last_press: None,

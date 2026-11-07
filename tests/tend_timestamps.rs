@@ -132,7 +132,7 @@ fn public_order_and_age_preserve_offsets_calendar_boundaries_and_existing_syntax
             Ok(dir.path().join("links")),
         )
         .with_record_root(dir.path().join("records"));
-        home.open(1);
+        home.open(tinkery::menu::Place::at(1).unwrap());
         let deadline = Instant::now() + Duration::from_secs(5);
         while home.count(1).is_none() {
             home.tick();

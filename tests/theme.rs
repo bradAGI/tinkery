@@ -60,9 +60,9 @@ fn click(column: u16, row: u16) -> MouseEvent {
 /// The menu and every place, opened fresh.
 fn every_screen(root: &std::path::Path) -> Vec<(String, Home)> {
     let mut screens = vec![("menu".to_string(), home(root))];
-    for (index, (name, _, _)) in PLACES.iter().enumerate() {
+    for (index, (name, _)) in PLACES.iter().enumerate() {
         let mut place = home(root);
-        place.open(index);
+        place.open(tinkery::menu::Place::at(index).unwrap());
         screens.push((name.to_string(), place));
     }
     screens
@@ -132,7 +132,7 @@ fn dark_keeps_jade_for_where_you_are_and_rust_for_consequence() {
     );
 
     let mut think = home(tmp.path());
-    think.open(0);
+    think.open(tinkery::menu::Place::at(0).unwrap());
     draw(&mut think, &switch, 80, 24);
     think.paste("TEST words I would lose");
     think.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));

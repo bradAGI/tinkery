@@ -30,16 +30,31 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
 };
 
-/// Name, one-line purpose, and whether the place exists yet.
-pub const PLACES: [(&str, &str, bool); 7] = [
-    ("think", "Clarify a goal", true),
-    ("tend", "Open saved goals", true),
-    ("shape", "Prepare a brief", true),
-    ("approve", "Prepare work for approval", true),
-    ("watch", "See work status", true),
-    ("taste", "Review a result", true),
-    ("measure", "Browse recent pull requests", true),
+/// Name and one-line purpose of each place.
+pub const PLACES: [(&str, &str); 7] = [
+    ("think", "Clarify a goal"),
+    ("tend", "Open saved goals"),
+    ("shape", "Prepare a brief"),
+    ("approve", "Prepare work for approval"),
+    ("watch", "See work status"),
+    ("taste", "Review a result"),
+    ("measure", "Browse recent pull requests"),
 ];
+
+/// A checked index into [`PLACES`]; callers cannot construct an out-of-range place.
+///
+/// ```compile_fail
+/// let invalid = tinkery::menu::Place(7);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Place(usize);
+
+impl Place {
+    /// The place at `index`, or `None` when no such place exists.
+    pub fn at(index: usize) -> Option<Self> {
+        PLACES.get(index).map(|_| Self(index))
+    }
+}
 
 const FIRST_ROW: u16 = 4;
 const ROW_GAP: u16 = 2;
@@ -91,7 +106,6 @@ enum View {
     Watch(Box<Watch>),
     Taste(Box<Taste>),
     Retry(Box<retry::Review>, Box<Taste>),
-    Soon(usize),
 }
 
 /// Only the deliberate Shape-to-Approve visit returns here; F10 discards it for Home.
@@ -413,7 +427,7 @@ impl Home {
     }
 
     fn open_tend_session(&mut self, path: &Path) {
-        self.open(1);
+        self.open(Place::at(1).unwrap());
         if let View::Tend(tend) = &mut self.view {
             // One stat of a path the handoff just wrote; matching is otherwise by identity.
             tend.want = Some((path.to_path_buf(), path.canonicalize().ok()));
@@ -454,7 +468,6 @@ impl Home {
     pub fn take_copy_request(&mut self) -> Option<String> {
         match &mut self.view {
             View::Think(dump) => dump.take_copy_request(),
-            View::Tend(tend) => tend.copy.take(),
             View::Approve(view) => view.take_copy_request(),
             View::Taste(view) => view.take_copy_request(),
             _ => None,
@@ -478,21 +491,12 @@ impl Home {
             View::Think(dump) => dump.copy_result(sent),
             View::Approve(view) => view.copy_result(sent),
             View::Taste(view) => view.copy_result(sent),
-            View::Tend(tend) => {
-                tend.notice = if sent {
-                    "Copied."
-                } else {
-                    "Couldn't copy; try again."
-                }
-                .into()
-            }
             _ => {}
         }
     }
 
-    /// Opens the place at `index` in [`PLACES`]. Opening tend asks for a fresh scan; an
-    /// unbuilt place says so. Opening never starts an agent.
-    pub fn open(&mut self, index: usize) {
+    /// Opens a checked place. Opening tend asks for a fresh scan; opening never starts an agent.
+    pub fn open(&mut self, Place(index): Place) {
         if self.quit {
             return;
         }
@@ -528,7 +532,7 @@ impl Home {
             )),
             5 => View::Taste(Box::new(Taste::open(self.sdlc_root.clone(), self.agent))),
             6 => View::Measure(Box::new(measure::Measure::open(self.repo.clone()))),
-            other => View::Soon(other),
+            _ => unreachable!("Place is checked against PLACES"),
         };
         self.sync_tend();
         self.sync_shape();
@@ -800,14 +804,16 @@ impl Home {
         }
         match &mut self.view {
             View::Menu => match key.code {
-                KeyCode::Char(c @ '1'..='7') => self.open(c as usize - '1' as usize),
+                KeyCode::Char(c @ '1'..='7') => {
+                    self.open(Place::at(c as usize - '1' as usize).unwrap())
+                }
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.selected = (self.selected + 1) % PLACES.len()
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.selected = (self.selected + PLACES.len() - 1) % PLACES.len()
                 }
-                KeyCode::Enter => self.open(self.selected),
+                KeyCode::Enter => self.open(Place::at(self.selected).unwrap()),
                 KeyCode::Char('q') => self.quit = true,
                 KeyCode::Char('m') => self.model_request = true,
                 KeyCode::Char('b')
@@ -896,11 +902,6 @@ impl Home {
             }
             View::Taste(_) => self.taste_key(key),
             View::Retry(..) => {}
-            View::Soon(_) => {
-                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter) {
-                    self.view = View::Menu;
-                }
-            }
             View::Think(_) | View::Shape(..) | View::Approve(_) | View::Worker => {}
         }
     }
@@ -1020,7 +1021,7 @@ impl Home {
         if let Some(index) =
             (0..PLACES.len()).find(|i| event.row == FIRST_ROW + *i as u16 * ROW_GAP)
         {
-            self.open(index);
+            self.open(Place::at(index).unwrap());
         }
     }
 
@@ -1069,7 +1070,6 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
         View::Measure(measure) => measure.title(),
         View::Watch(_) => "tinkery › watch".into(),
         View::Taste(_) => "tinkery › taste".into(),
-        View::Soon(i) => format!("tinkery › {}", PLACES[*i].0),
         View::Think(_) => unreachable!(),
     };
     let mut title = vec![Span::styled(title, palette.ink)];
@@ -1157,29 +1157,18 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
             frame.render_widget(p.scroll((tend.help_scroll, 0)), body);
             return;
         }
-        // Unbuilt places use the shared help; q goes back.
-        let help = "Right now\nq goes back to the menu · ? closes help\n\nPlaces\nthink   brain dump → readings → one question → confirm a goal\ntend    your saved goals, needs and Think history\nshape   answer Shape's questions and confirm a seed\nmeasure this repo's pull requests\napprove  verified seeds and manual intake commands\nwatch    runs in your tink-sdlc checkout (read-only)\ntaste    results and external review handoffs\n\nInside think, Esc returns here (it asks first if you'd lose work).\nEsc goes back from tend, shape, measure and unbuilt places.";
-        frame.render_widget(
-            Paragraph::new(help)
-                .style(palette.ink)
-                .wrap(Wrap { trim: false }),
-            body,
-        );
-        return;
     }
     match &mut home.view {
         View::Menu => {
-            for (i, (name, description, built)) in PLACES.iter().enumerate() {
+            for (i, (name, description)) in PLACES.iter().enumerate() {
                 let y = FIRST_ROW + i as u16 * ROW_GAP;
                 if y >= area.height.saturating_sub(2) {
                     break;
                 }
                 let style = if i == home.selected {
                     palette.jade
-                } else if *built {
-                    palette.ink
                 } else {
-                    palette.muted
+                    palette.ink
                 };
                 let mut spans = vec![Span::styled(format!("{}  {name}", i + 1), style)];
                 spans.push(Span::styled(
@@ -1230,11 +1219,6 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
         View::Measure(_) | View::Retry(..) => unreachable!(),
         View::Watch(watch) => watch.render(frame, body, palette),
         View::Taste(taste) => taste.render(frame, body, palette),
-        View::Soon(i) => frame.render_widget(
-            Paragraph::new(format!("{}\n\nNot built yet. Esc goes back.", PLACES[*i].1))
-                .style(palette.muted),
-            body,
-        ),
         View::Think(_) | View::Approve(_) | View::Worker => {}
     }
 }
@@ -1419,7 +1403,7 @@ mod tests {
                 h.handle_key(key(KeyCode::F(1)));
                 let screen = snapshot(width, height, &mut h, no_color).unwrap();
                 let rows: Vec<_> = screen.split('\n').collect();
-                for (index, (name, _, _)) in PLACES.iter().enumerate() {
+                for (index, (name, _)) in PLACES.iter().enumerate() {
                     assert!(rows[4 + index * 2].starts_with(&format!("  {}  {name}", index + 1)));
                 }
                 assert!(rows[19].is_empty());
@@ -1667,7 +1651,7 @@ mod tests {
             session(tmp.path(), id, "active", "2026-10-17T00:00:00Z", None);
         }
         let mut h = home(tmp.path());
-        h.open(1);
+        h.open(Place::at(1).unwrap());
         settle(&mut h);
         let View::Tend(tend) = &mut h.view else {
             panic!()
@@ -1708,7 +1692,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         session(tmp.path(), "a", "active", "2026-10-09T10:00:00Z", None);
         let mut h = home(tmp.path());
-        h.open(1);
+        h.open(Place::at(1).unwrap());
         settle(&mut h);
         h.handle_key(key(KeyCode::Char('s')));
         assert!(matches!(h.view, View::Tend(_)), "the garden has no s");
@@ -1737,7 +1721,7 @@ mod tests {
         assert!(tend.current().unwrap().path.ends_with("a"));
         fs::write(tmp.path().join("a/ledger.json"), r#"{"status": "active"}"#).unwrap();
         h.handle_key(key(KeyCode::Esc));
-        h.open(1);
+        h.open(Place::at(1).unwrap());
         settle(&mut h);
         h.handle_key(key(KeyCode::Enter));
         h.handle_key(key(KeyCode::Char('s')));
@@ -1764,7 +1748,7 @@ mod tests {
             let tmp = tempfile::tempdir().unwrap();
             session(tmp.path(), "a", "active", "2026-10-09T10:00:00Z", None);
             let mut h = home(tmp.path());
-            h.open(1);
+            h.open(Place::at(1).unwrap());
             settle(&mut h);
             h.handle_key(key(KeyCode::Enter));
             h.handle_key(key(KeyCode::Char('s')));
@@ -1801,7 +1785,6 @@ mod tests {
         assert!(matches!(h.view, View::Approve(_)));
         let shown = snapshot(100, 30, &mut h, true).unwrap();
         assert!(shown.contains("tinkery › approve") && shown.contains("esc back"));
-        assert!(!shown.contains("Not built yet"));
         assert!(h.take_copy_request().is_none());
         h.handle_key(key(KeyCode::Esc));
         assert!(matches!(h.view, View::Menu));
@@ -1813,7 +1796,7 @@ mod tests {
     fn leaving_think_returns_home_not_out_of_the_app() {
         let tmp = tempfile::tempdir().unwrap();
         let mut h = home(tmp.path());
-        h.open(0);
+        h.open(Place::at(0).unwrap());
         if let View::Think(dump) = &mut h.view {
             dump.handle_key(key(KeyCode::Esc));
         }
@@ -1826,7 +1809,7 @@ mod tests {
     fn key_bar_preference_lasts_across_visits_to_think() {
         let tmp = tempfile::tempdir().unwrap();
         let mut h = home(tmp.path());
-        h.open(0);
+        h.open(Place::at(0).unwrap());
         if let View::Think(dump) = &mut h.view {
             assert!(dump.key_bar_on(), "on by default");
             dump.handle_key(key(KeyCode::F(1)));
@@ -1836,7 +1819,7 @@ mod tests {
         }
         h.tick();
         assert!(matches!(h.view, View::Menu));
-        h.open(0);
+        h.open(Place::at(0).unwrap());
         let View::Think(dump) = &h.view else { panic!() };
         assert!(!dump.key_bar_on(), "turned off stays off");
     }
@@ -1885,7 +1868,7 @@ mod tests {
         let path = tmp.path().join("old");
         let before = fs::read(path.join("ledger.json")).unwrap();
         let mut h = home(tmp.path());
-        h.open(0);
+        h.open(Place::at(0).unwrap());
         let View::Think(dump) = &mut h.view else {
             panic!()
         };
@@ -1987,7 +1970,7 @@ mod tests {
         );
         for (w, height) in [(80, 24), (100, 30), (160, 40), (320, 40)] {
             let mut h = home(tmp.path());
-            h.open(1);
+            h.open(Place::at(1).unwrap());
             settle(&mut h);
             let screen = snapshot(w, height, &mut h, false).unwrap();
             assert!(
