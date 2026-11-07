@@ -24,6 +24,7 @@ fn completed_command(exit: u8) {
     let result = run::execute(
         fixture.root(),
         std::process::Command::new(fixture.program()),
+        fixture.program().to_str().unwrap(),
         &AtomicBool::new(false),
         std::time::Duration::from_secs(10),
     );
@@ -258,14 +259,14 @@ fn a_failed_reader_start_says_what_to_check_without_os_internals() {
         .unwrap();
     let why = run::run(
         &root.path().join("TEST-missing-checkout"),
-        &[],
+        &["status".into(), "--json".into()],
         &AtomicBool::new(false),
         DEADLINE,
     )
     .unwrap_err();
     assert_eq!(
         why,
-        "Couldn't start reading runs. Check that Python 3 is installed and the tink-sdlc checkout is accessible, then reopen this view to read again."
+        "Couldn't start sdlc.py status. Check that it is installed and on PATH."
     );
 }
 
@@ -276,19 +277,113 @@ fn other_commands_name_themselves_when_they_fail_never_python_or_status() {
         .tempdir()
         .unwrap();
     let missing = std::process::Command::new("tinkery-TEST-missing-gh");
-    let why = run::execute(root.path(), missing, &AtomicBool::new(false), DEADLINE).unwrap_err();
+    let why = run::execute(
+        root.path(),
+        missing,
+        "tinkery-TEST-missing-gh",
+        &AtomicBool::new(false),
+        DEADLINE,
+    )
+    .unwrap_err();
     assert_eq!(
         why,
         "Couldn't start tinkery-TEST-missing-gh. Check that it is installed and on PATH."
     );
     let mut failing = std::process::Command::new("sh");
     failing.args(["-c", "echo 'fatal: TEST remote ref' >&2; exit 3"]);
-    let why = run::execute(root.path(), failing, &AtomicBool::new(false), DEADLINE).unwrap_err();
+    let why = run::execute(
+        root.path(),
+        failing,
+        "sh",
+        &AtomicBool::new(false),
+        DEADLINE,
+    )
+    .unwrap_err();
     assert!(
         why.starts_with("sh exited with") && why.ends_with("fatal: TEST remote ref"),
         "{why}"
     );
     assert!(!why.contains("Python"), "{why}");
+}
+
+#[test]
+fn isolated_label_failure_names_label_not_the_script() {
+    let root = tempfile::Builder::new()
+        .prefix("tinkery-TEST-label-command-")
+        .tempdir()
+        .unwrap();
+    let scripts = root.path().join("_system/scripts");
+    fs::create_dir_all(&scripts).unwrap();
+    fs::write(
+        scripts.join("sdlc.py"),
+        "import sys\nassert sys.argv[1] == 'label'\nprint('Error: TEST label refused', file=sys.stderr)\nsys.exit(3)\n",
+    )
+    .unwrap();
+    for isolated in [true, false] {
+        let mut command = std::process::Command::new("python3");
+        if isolated {
+            command.arg("-I");
+        }
+        command.args([SCRIPT, "label"]);
+        let why = run::execute(
+            root.path(),
+            command,
+            "sdlc.py label",
+            &AtomicBool::new(false),
+            DEADLINE,
+        )
+        .unwrap_err();
+        assert_eq!(
+            why, "sdlc.py label exited with exit status: 3: Error: TEST label refused",
+            "isolated: {isolated}"
+        );
+    }
+}
+
+#[test]
+fn every_command_prefers_json_then_sdlc_error_then_last_stderr_line() {
+    let root = tempfile::Builder::new()
+        .prefix("tinkery-TEST-command-diagnostics-")
+        .tempdir()
+        .unwrap();
+    for (output, stderr, expected) in [
+        (
+            "",
+            "sdlc.py: error: TEST option refused\nTEST last diagnostic\n",
+            "sdlc.py: error: TEST option refused",
+        ),
+        (
+            "",
+            "TEST first diagnostic\nTEST last diagnostic\n\n",
+            "TEST last diagnostic",
+        ),
+        (
+            "{\"error\":{\"message\":\"TEST refusal\"}}",
+            "sdlc.py: error: TEST option refused\n",
+            "TEST refusal",
+        ),
+    ] {
+        let mut command = std::process::Command::new("sh");
+        command.args([
+            "-c",
+            "printf '%s' \"$1\"; printf '%s' \"$2\" >&2; exit 3",
+            "TEST-command",
+            output,
+            stderr,
+        ]);
+        let why = execute(
+            root.path(),
+            command,
+            "TEST command",
+            &AtomicBool::new(false),
+            DEADLINE,
+        )
+        .unwrap_err();
+        assert_eq!(
+            why,
+            format!("TEST command exited with exit status: 3: {expected}")
+        );
+    }
 }
 
 #[test]

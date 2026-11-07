@@ -18,7 +18,7 @@ use std::{
 pub(crate) fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let mut command = std::process::Command::new("git");
     command.arg("--no-optional-locks").args(args);
-    execute(root, command, &AtomicBool::new(false), DEADLINE)
+    execute(root, command, "git", &AtomicBool::new(false), DEADLINE)
 }
 
 /// A source-owned intake record, not permission to launch or approve anything.

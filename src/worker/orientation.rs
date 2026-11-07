@@ -133,7 +133,8 @@ fn build_worktrees(root: &Path, cancel: &AtomicBool) -> HashMap<String, PathBuf>
         "--porcelain",
         "-z",
     ]);
-    let listing = sdlc::execute(root, git, cancel, Duration::from_secs(1)).unwrap_or_default();
+    let listing =
+        sdlc::execute(root, git, "git", cancel, Duration::from_secs(1)).unwrap_or_default();
     listing
         .split("\0\0")
         .filter_map(|block| {

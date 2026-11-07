@@ -251,7 +251,7 @@ pub(super) fn declaration(
         "Accept: application/vnd.github.raw+json",
         &format!("repos/{repo}/contents/tinkery.preview?ref={head}"),
     ]);
-    match sdlc::execute(root, command, stop, DEADLINE) {
+    match sdlc::execute(root, command, "gh", stop, DEADLINE) {
         Ok(source) => Spec::parse(&source).map(Some),
         Err(why) if why.contains("HTTP 404") => Ok(None),
         Err(_) => {
@@ -342,7 +342,7 @@ pub(super) fn git(
     ] {
         command.env_remove(key);
     }
-    sdlc::execute(root, command, stop, DEADLINE)
+    sdlc::execute(root, command, "git", stop, DEADLINE)
 }
 
 fn run(
@@ -435,13 +435,14 @@ fn run(
     if stop.load(Ordering::SeqCst) {
         return Ok(());
     }
-    let mut opener = Command::new(if cfg!(target_os = "macos") {
+    let program = if cfg!(target_os = "macos") {
         "open"
     } else {
         "xdg-open"
-    });
+    };
+    let mut opener = Command::new(program);
     opener.arg(&spec.url);
-    sdlc::execute(root, opener, stop, DEADLINE)
+    sdlc::execute(root, opener, program, stop, DEADLINE)
         .map_err(|_| "Couldn't open browser; check the default opener.".to_owned())?;
     *progress.lock().unwrap() = format!("Local URL answered; sent {} to browser.", spec.url);
     while !stop.load(Ordering::SeqCst) {

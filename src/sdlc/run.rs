@@ -1,4 +1,4 @@
-//! One bounded `sdlc.py status` read off the paint path. It promises a deadline, bounded output and
+//! Bounded commands named by their callers, off the paint path, with a deadline, bounded output and
 //! that every completed or cancelled read stops its process group and reaps the direct child.
 //! Descendants that leave that group are outside this ownership; a late result is never delivered.
 
@@ -95,30 +95,23 @@ pub(crate) fn run(
 ) -> Result<String, String> {
     let mut command = Command::new("python3");
     command.arg(SCRIPT).args(args);
-    execute(root, command, cancel, deadline)
+    let name = args.first().map_or_else(
+        || "sdlc.py".to_owned(),
+        |subcommand| format!("sdlc.py {subcommand}"),
+    );
+    execute(root, command, &name, cancel, deadline)
 }
 
 /// Execute one already-constructed read or explicit navigation command without a shell.
 /// Output, cancellation and process lifetime have the same bounds as status reads; failures
-/// name the command that failed, so a `gh` or `git` failure never blames Python or tink-sdlc.
+/// use the caller's explicit name, never infer identity from an executable or its arguments.
 pub(crate) fn execute(
     root: &Path,
     mut command: Command,
+    name: &str,
     cancel: &AtomicBool,
     deadline: Duration,
 ) -> Result<String, String> {
-    let program = command.get_program().to_string_lossy().into_owned();
-    // An sdlc.py failure names its subcommand (status, label), never Python.
-    let subcommand = (program == "python3").then(|| {
-        command
-            .get_args()
-            .nth(1)
-            .map_or("status".to_owned(), |arg| {
-                arg.to_string_lossy().into_owned()
-            })
-    });
-    let status_read = subcommand.as_deref() == Some("status");
-    let name = subcommand.as_deref().unwrap_or(&program);
     let mut child = command
         .current_dir(root)
         .stdin(Stdio::null())
@@ -126,11 +119,7 @@ pub(crate) fn execute(
         .stderr(Stdio::piped())
         .process_group(0)
         .spawn()
-        .map_err(|_| if status_read {
-            "Couldn't start reading runs. Check that Python 3 is installed and the tink-sdlc checkout is accessible, then reopen this view to read again.".to_owned()
-        } else {
-            format!("Couldn't start {name}. Check that it is installed and on PATH.")
-        })?;
+        .map_err(|_| format!("Couldn't start {name}. Check that it is installed and on PATH."))?;
     let drain = |pipe: Box<dyn std::io::Read + Send>, limit: u64| {
         thread::spawn(move || {
             let mut bytes = Vec::new();
@@ -155,11 +144,9 @@ pub(crate) fn execute(
             Ok(Some(status)) if out.is_finished() && err.is_finished() => break Ok(status),
             Ok(_) => thread::sleep(Duration::from_millis(10)),
             Err(_) => {
-                break Err(if status_read {
-                    "Couldn't finish reading runs. Reopen this view to read again.".into()
-                } else {
-                    format!("Couldn't finish {name}. Reopen this view to try again.")
-                });
+                break Err(format!(
+                    "Couldn't finish {name}. Reopen this view to try again."
+                ));
             }
         }
     };
@@ -181,13 +168,9 @@ pub(crate) fn execute(
         .and_then(|value| value["error"]["message"].as_str().map(str::to_owned))
         .or_else(|| {
             let stderr = String::from_utf8_lossy(&err);
-            subcommand
-                .as_ref()
-                .and_then(|_| {
-                    stderr
-                        .lines()
-                        .find(|line| line.starts_with("sdlc.py: error:"))
-                })
+            stderr
+                .lines()
+                .find(|line| line.starts_with("sdlc.py: error:"))
                 .or_else(|| stderr.lines().rev().find(|line| !line.trim().is_empty()))
                 .map(|line| line.trim().to_owned())
         })
