@@ -72,7 +72,7 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `approve.rs` | One verified seed at a time, read-only commands, a retained verifier and navigation to worker-start review; no execution on navigation or copying. |
 | `seed_me/retry.rs` | A new attempt's starting checkout and commit, pinned in the goal's evidence; carries the prior goal unchanged and its decisions as assumptions. Only the operator's save creates the session. |
 | `seed_me/ready.rs` | Consistent verified goal/acceptance snapshots and typed intake shared by copying and explicit execution; no mutation. |
-| `worker.rs`, `worker/orientation.rs` | Bounded intake, stage and worker actions through SDLC. Recent Pi launch logs inform the operator’s cap choice. Only the explicitly configured allowance can reach the worker. |
+| `worker.rs`, `worker/orientation.rs` | Bounded intake, stage and worker actions through SDLC, including whether a failed start permits retry or requires inspection. Recent Pi launch logs inform the operator’s cap choice. Only the explicitly configured allowance can reach the worker. |
 | `shape.rs` | Goals awaiting seeds; each session's confirmed goal, stage, folder, words, draft reading and next step. Reads and steps stay off the paint path. |
 | `shape/forms.rs` | Unsaved deferral and replacement-answer fields, navigation and cancellation; no validation or publication policy. |
 | `shape/words.rs` | Shape's in-memory textarea adapter: editing, selection, cursor-following and original line-ending provenance; no save or agent policy. |

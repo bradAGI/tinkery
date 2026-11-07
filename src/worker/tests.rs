@@ -228,7 +228,7 @@ fn authored_source_changes_refuse_before_run_creation_or_admission() {
         }
         let failure = wait(Job::start(fixture.request.clone())).unwrap_err();
         assert!(failure.message.contains("Commit source changes first"));
-        assert!(failure.run.is_none());
+        assert!(matches!(failure.recovery, Recovery::Retry));
         assert!(fixture.commands().is_empty());
         assert!(!fixture.root.join("runs").exists());
     }
@@ -425,7 +425,9 @@ fn retry_worker_refuses_project_edits_after_checkout_and_at_prepared_launch() {
         assert_eq!(attempted("prepare"), edit_at == "prepare");
         assert!(!attempted("launch"));
         if edit_at == "prepare" {
-            let run = failure.run.unwrap();
+            let Recovery::Run(run) = failure.recovery else {
+                panic!("{failure:?}");
+            };
             let prepared = wait(Job::act(run.clone(), Action::Refresh)).unwrap();
             let launch = || Job::act(run.clone(), Action::Launch(prepared.pin.clone().unwrap()));
             // The separate "launch prepared worker" key must recheck the same source boundary.
@@ -448,7 +450,7 @@ fn source_commit_changed_during_intake_refuses_before_worktree_or_admission() {
     fixture.edit(|value| value["advance_head"] = true.into());
     let failure = wait(Job::start(fixture.request.clone())).unwrap_err();
     assert!(failure.message.contains("source commit changed"));
-    assert!(failure.run.is_some());
+    assert!(matches!(failure.recovery, Recovery::Run(_)));
     assert!(
         !fixture
             .commands()
@@ -532,7 +534,7 @@ fn source_change_after_intake_stops_before_stage_three_or_provider() {
     let fixture = Fixture::new();
     fixture.edit(|value| value["change_seed"] = true.into());
     let failure = wait(Job::start(fixture.request.clone())).unwrap_err();
-    assert!(failure.run.is_some());
+    assert!(matches!(failure.recovery, Recovery::Run(_)));
     assert!(
         !fixture
             .commands()
@@ -547,7 +549,9 @@ fn refused_admission_keeps_known_run_and_never_retries() {
         let fixture = Fixture::new();
         fixture.edit(|value| value["refusal"] = refusal.into());
         let failure = wait(Job::start(fixture.request.clone())).unwrap_err();
-        let run = failure.run.unwrap();
+        let Recovery::Run(run) = failure.recovery else {
+            panic!("{failure:?}");
+        };
         let refreshed = wait(Job::act(run, Action::Refresh)).unwrap();
         assert_eq!(
             refreshed.state,
@@ -573,10 +577,10 @@ fn explicit_launch_recovers_prepared_step_but_never_uncertain_or_changed_contrac
     for refusal in ["gate", "uncertain"] {
         let fixture = Fixture::new();
         fixture.edit(|value| value["refusal"] = refusal.into());
-        let run = wait(Job::start(fixture.request.clone()))
-            .unwrap_err()
-            .run
-            .unwrap();
+        let failure = wait(Job::start(fixture.request.clone())).unwrap_err();
+        let Recovery::Run(run) = failure.recovery else {
+            panic!("{failure:?}");
+        };
         let observed = wait(Job::act(run.clone(), Action::Refresh)).unwrap();
         fixture.edit(|value| {
             value.as_object_mut().unwrap().remove("refusal");

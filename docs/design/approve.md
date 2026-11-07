@@ -165,9 +165,13 @@ own definition gates, worktree creation, model resolution, launcher hashing,
 session identity and cumulative cap. No copied shell text is executed and no
 approval or worker report is invented. A refusal stops the sequence; there is no
 automatic retry. Partial progress retains the source-owned run for inspection.
-A refusal before any run is known (such as uncommitted source) started nothing, so F2 is
-offered again after the operator fixes the cause; a run created meanwhile makes that retry
-refuse rather than start twice (#738). Interrupted admissions never offer F2 again.
+Only a refusal before run creation is attempted (such as uncommitted source) offers F2
+again after the operator fixes the cause; a run created meanwhile makes that retry
+refuse rather than start twice (#738). Once creation is attempted, a failed command or
+identity read cannot establish that nothing was saved. The transaction names the attempted
+run and checkout, says creation may have happened, and directs the operator to read it
+in Watch with that `--sdlc-root`. It never invents a stable identity or offers a blind F2 retry
+(#780). Interrupted admissions never offer F2 again.
 
 The menu retains this finite request across navigation. Exiting during a request
 waits for it to settle, rather than interrupting admission between records. SDLC
@@ -209,5 +213,7 @@ These prove mechanics, not operator acceptance or real-work benefit.
 
 [Worker terminal journeys](../../tests/worker_terminal.py) cover explicit admission,
 separate allowance, source changes, retained requests and truthful completion states
-with temporary TEST storage and fake providers. Architecture diagnostics 2, 3, 6 and
+with temporary TEST storage and fake providers. The [partial-start journeys](../../tests/worker_partial_start_terminal.py)
+cover persisted creation followed by command, status and identity failures, read-only Watch
+recovery, blocked blind retries and the unchanged pre-creation F2 retry. Architecture diagnostics 2, 3, 6 and
 7 apply: the screen requests typed actions while SDLC owns durable work records.
