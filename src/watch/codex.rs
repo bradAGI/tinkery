@@ -21,7 +21,7 @@ impl CodexReport {
         let run = parts.next().unwrap_or("");
         let chat = parts.next().unwrap_or("");
         let path = parts.next().unwrap_or("");
-        if !uuid(run) || run.as_bytes()[14] != b'4' || !uuid(chat) || path.is_empty() {
+        if !crate::sdlc::canonical_run_id(run) || !uuid(chat) || path.is_empty() {
             return Err("--codex-report needs RUN_UUID:CHAT_ID:PATH with canonical UUIDs".into());
         }
         let path = std::env::current_dir()

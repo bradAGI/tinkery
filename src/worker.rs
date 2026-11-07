@@ -269,18 +269,7 @@ fn read_status(
 fn identity(root: &Path, slug: &str, value: &Value) -> Result<Run, String> {
     let id = value["run_id"]
         .as_str()
-        .filter(|id| {
-            id.len() == 36
-                && id.as_bytes()[14] == b'4'
-                && matches!(id.as_bytes()[19], b'8' | b'9' | b'a' | b'b')
-                && id.bytes().enumerate().all(|(index, byte)| {
-                    if [8, 13, 18, 23].contains(&index) {
-                        byte == b'-'
-                    } else {
-                        byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
-                    }
-                })
-        })
+        .filter(|id| sdlc::canonical_run_id(id))
         .ok_or("The run has no stable identity.")?;
     let root = match value.get("checkout") {
         Some(value) => PathBuf::from(value.as_str().ok_or("The build checkout is unreadable.")?),
