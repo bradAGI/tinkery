@@ -8,7 +8,7 @@ fn home(root: &Path) -> Home {
         Ok(root.join("TEST-sessions")),
         Ok(root.join("TEST-links")),
     );
-    home.open(Place::at(6).unwrap());
+    home.open(Place::Measure);
     home
 }
 
@@ -22,7 +22,7 @@ fn measure_names_the_repo_once_in_its_heading() {
     let repo = root.path().join("TEST-measure-header");
     std::fs::create_dir_all(repo.join(".git")).unwrap();
     let mut h = home(root.path()).with_repo(crate::repo::Repo::enclosing(&repo));
-    h.open(Place::at(6).unwrap());
+    h.open(Place::Measure);
     let text = snapshot(80, 24, &mut h, true).unwrap();
     assert!(text.contains("measure · TEST-measure-header"), "{text}");
     assert_eq!(text.matches("TEST-measure-header").count(), 1);
@@ -43,7 +43,7 @@ fn measure_opens_unknown_at_supported_sizes_without_creating_records() {
                     !text.contains("unavailable") && !text.contains("Reading"),
                     "{text}"
                 );
-                h.open(Place::at(6).unwrap());
+                h.open(Place::Measure);
             }
         }
     }
@@ -124,7 +124,7 @@ fn measure_help_ignores_menu_shortcuts_and_releases() {
 fn help_away_from_the_menu_says_q_goes_back() {
     let root = tempfile::tempdir().unwrap();
     let mut h = home(root.path());
-    h.open(Place::at(5).unwrap());
+    h.open(Place::Taste);
     press(&mut h, KeyCode::Char('?'));
     let help = snapshot(80, 24, &mut h, true).unwrap();
     assert!(help.contains("q goes back to the menu"), "{help}");

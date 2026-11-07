@@ -3,8 +3,11 @@
 //! think · tend · shape · approve · watch · taste · measure. Each place has its own boundary.
 //! Named worker actions use the shared SDLC boundary; navigation never starts work.
 
+mod place;
 mod retry;
 mod worker;
+
+pub use place::{PLACES, Place};
 
 use std::{
     path::{Path, PathBuf},
@@ -30,32 +33,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
 };
 
-/// Name and one-line purpose of each place.
-pub const PLACES: [(&str, &str); 7] = [
-    ("think", "Clarify a goal"),
-    ("tend", "Open saved goals"),
-    ("shape", "Prepare a brief"),
-    ("approve", "Prepare work for approval"),
-    ("watch", "See work status"),
-    ("taste", "Review a result"),
-    ("measure", "Browse recent pull requests"),
-];
-
-/// A checked index into [`PLACES`]; callers cannot construct an out-of-range place.
-///
-/// ```compile_fail
-/// let invalid = tinkery::menu::Place(7);
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Place(usize);
-
-impl Place {
-    /// The place at `index`, or `None` when no such place exists.
-    pub fn at(index: usize) -> Option<Self> {
-        PLACES.get(index).map(|_| Self(index))
-    }
-}
-
 const FIRST_ROW: u16 = 4;
 const ROW_GAP: u16 = 2;
 
@@ -68,7 +45,7 @@ pub struct Home {
     make_dump: Box<dyn Fn() -> BrainDump>,
     sessions_root: Option<PathBuf>,
     link_root: Result<PathBuf, String>,
-    selected: usize,
+    selected: Place,
     view: View,
     help: bool,
     /// The muted key bar preference lasts the session, across visits to think.
@@ -112,7 +89,7 @@ enum View {
 struct ApproveOrigin {
     shape: Box<Shape>,
     tend: Option<Box<Tend>>,
-    selected: usize,
+    selected: Place,
 }
 
 impl Home {
@@ -133,7 +110,7 @@ impl Home {
             make_dump,
             sessions_root,
             link_root,
-            selected: 0,
+            selected: Place::Think,
             view: View::Menu,
             help: false,
             key_bar: true,
@@ -427,7 +404,7 @@ impl Home {
     }
 
     fn open_tend_session(&mut self, path: &Path) {
-        self.open(Place::at(1).unwrap());
+        self.open(Place::Tend);
         if let View::Tend(tend) = &mut self.view {
             // One stat of a path the handoff just wrote; matching is otherwise by identity.
             tend.want = Some((path.to_path_buf(), path.canonicalize().ok()));
@@ -495,24 +472,24 @@ impl Home {
         }
     }
 
-    /// Opens a checked place. Opening tend asks for a fresh scan; opening never starts an agent.
-    pub fn open(&mut self, Place(index): Place) {
+    /// Opens a place. Opening tend asks for a fresh scan; opening never starts an agent.
+    pub fn open(&mut self, place: Place) {
         if self.quit {
             return;
         }
         self.history_reader.cancel();
         self.approve_reader.cancel();
         self.approve_origin = None;
-        self.selected = index;
+        self.selected = place;
         self.help = false;
-        self.view = match index {
-            0 => View::Think(Box::new((self.make_dump)().with_key_bar(self.key_bar))),
-            1 => {
+        self.view = match place {
+            Place::Think => View::Think(Box::new((self.make_dump)().with_key_bar(self.key_bar))),
+            Place::Tend => {
                 // Deliberate reopening reads again; the last result shows meanwhile.
                 self.request_sessions();
                 View::Tend(Box::new(Tend::new(self.link_root.clone())))
             }
-            2 => {
+            Place::Shape => {
                 self.request_sessions();
                 View::Shape(
                     Box::new(
@@ -523,16 +500,15 @@ impl Home {
                     None,
                 )
             }
-            3 => {
+            Place::Approve => {
                 self.request_sessions();
                 View::Approve(Box::new(approve::Approve::open(self.sdlc_root.clone())))
             }
-            4 => View::Watch(Box::new(
+            Place::Watch => View::Watch(Box::new(
                 Watch::open(self.sdlc_root.clone()).with_codex_report(self.codex_report.clone()),
             )),
-            5 => View::Taste(Box::new(Taste::open(self.sdlc_root.clone(), self.agent))),
-            6 => View::Measure(Box::new(measure::Measure::open(self.repo.clone()))),
-            _ => unreachable!("Place is checked against PLACES"),
+            Place::Taste => View::Taste(Box::new(Taste::open(self.sdlc_root.clone(), self.agent))),
+            Place::Measure => View::Measure(Box::new(measure::Measure::open(self.repo.clone()))),
         };
         self.sync_tend();
         self.sync_shape();
@@ -552,7 +528,7 @@ impl Home {
         self.history_reader.cancel();
         self.approve_reader.cancel();
         self.request_sessions();
-        self.selected = 3;
+        self.selected = Place::Approve;
         self.help = false;
         self.view = View::Approve(Box::new(
             approve::Approve::open(self.sdlc_root.clone()).for_seed(target),
@@ -804,16 +780,20 @@ impl Home {
         }
         match &mut self.view {
             View::Menu => match key.code {
-                KeyCode::Char(c @ '1'..='7') => {
-                    self.open(Place::at(c as usize - '1' as usize).unwrap())
+                KeyCode::Char(c @ '1'..='7') => self.open(PLACES[c as usize - '1' as usize]),
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Up | KeyCode::Char('k') => {
+                    let index = PLACES
+                        .iter()
+                        .position(|place| *place == self.selected)
+                        .unwrap();
+                    let step = if matches!(key.code, KeyCode::Down | KeyCode::Char('j')) {
+                        1
+                    } else {
+                        PLACES.len() - 1
+                    };
+                    self.selected = PLACES[(index + step) % PLACES.len()];
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.selected = (self.selected + 1) % PLACES.len()
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.selected = (self.selected + PLACES.len() - 1) % PLACES.len()
-                }
-                KeyCode::Enter => self.open(Place::at(self.selected).unwrap()),
+                KeyCode::Enter => self.open(self.selected),
                 KeyCode::Char('q') => self.quit = true,
                 KeyCode::Char('m') => self.model_request = true,
                 KeyCode::Char('b')
@@ -1018,10 +998,12 @@ impl Home {
         if self.help {
             return;
         }
-        if let Some(index) =
-            (0..PLACES.len()).find(|i| event.row == FIRST_ROW + *i as u16 * ROW_GAP)
+        if let Some((_, place)) = PLACES
+            .iter()
+            .enumerate()
+            .find(|(i, _)| event.row == FIRST_ROW + *i as u16 * ROW_GAP)
         {
-            self.open(Place::at(index).unwrap());
+            self.open(*place);
         }
     }
 
@@ -1042,8 +1024,8 @@ impl Home {
 
     /// Memory only: an exact count of active sessions once a complete, current read has
     /// landed. Unknown, partial or failed reads show nothing, never zero.
-    pub fn count(&self, index: usize) -> Option<String> {
-        if index != 1 {
+    pub fn count(&self, place: Place) -> Option<String> {
+        if place != Place::Tend {
             return None;
         }
         self.discovery
@@ -1160,12 +1142,13 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
     }
     match &mut home.view {
         View::Menu => {
-            for (i, (name, description)) in PLACES.iter().enumerate() {
+            for (i, place) in PLACES.iter().enumerate() {
+                let (name, description) = place.label();
                 let y = FIRST_ROW + i as u16 * ROW_GAP;
                 if y >= area.height.saturating_sub(2) {
                     break;
                 }
-                let style = if i == home.selected {
+                let style = if *place == home.selected {
                     palette.jade
                 } else {
                     palette.ink
@@ -1174,7 +1157,7 @@ pub fn render(frame: &mut Frame, home: &mut Home, palette: Palette) {
                 spans.push(Span::styled(
                     format!(
                         "{:>width$}  {description}",
-                        home.count(i).unwrap_or_default(),
+                        home.count(*place).unwrap_or_default(),
                         width = 15 - name.len()
                     ),
                     palette.muted,
@@ -1357,8 +1340,8 @@ mod tests {
             assert!(screen.contains(name), "{name} missing:\n{screen}");
         }
         assert!(screen.contains("tinkery"));
-        assert_eq!(h.count(1), Some("1".into()));
-        assert_eq!(h.count(0), None);
+        assert_eq!(h.count(Place::Tend), Some("1".into()));
+        assert_eq!(h.count(Place::Think), None);
     }
 
     #[test]
@@ -1403,7 +1386,8 @@ mod tests {
                 h.handle_key(key(KeyCode::F(1)));
                 let screen = snapshot(width, height, &mut h, no_color).unwrap();
                 let rows: Vec<_> = screen.split('\n').collect();
-                for (index, (name, _)) in PLACES.iter().enumerate() {
+                for (index, place) in PLACES.iter().enumerate() {
+                    let (name, _) = place.label();
                     assert!(rows[4 + index * 2].starts_with(&format!("  {}  {name}", index + 1)));
                 }
                 assert!(rows[19].is_empty());
@@ -1529,7 +1513,9 @@ mod tests {
                 },
                 Rect::new(0, 0, 80, 24),
             );
-            assert!(h.help && matches!(h.view, View::Menu) && h.selected == 0 && !h.quit);
+            assert!(
+                h.help && matches!(h.view, View::Menu) && h.selected == Place::Think && !h.quit
+            );
         }
         for close in [KeyCode::Esc, KeyCode::F(1), KeyCode::Char('?')] {
             let mut h = home(tmp.path());
@@ -1651,7 +1637,7 @@ mod tests {
             session(tmp.path(), id, "active", "2026-10-17T00:00:00Z", None);
         }
         let mut h = home(tmp.path());
-        h.open(Place::at(1).unwrap());
+        h.open(Place::Tend);
         settle(&mut h);
         let View::Tend(tend) = &mut h.view else {
             panic!()
@@ -1692,7 +1678,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         session(tmp.path(), "a", "active", "2026-10-09T10:00:00Z", None);
         let mut h = home(tmp.path());
-        h.open(Place::at(1).unwrap());
+        h.open(Place::Tend);
         settle(&mut h);
         h.handle_key(key(KeyCode::Char('s')));
         assert!(matches!(h.view, View::Tend(_)), "the garden has no s");
@@ -1721,7 +1707,7 @@ mod tests {
         assert!(tend.current().unwrap().path.ends_with("a"));
         fs::write(tmp.path().join("a/ledger.json"), r#"{"status": "active"}"#).unwrap();
         h.handle_key(key(KeyCode::Esc));
-        h.open(Place::at(1).unwrap());
+        h.open(Place::Tend);
         settle(&mut h);
         h.handle_key(key(KeyCode::Enter));
         h.handle_key(key(KeyCode::Char('s')));
@@ -1748,7 +1734,7 @@ mod tests {
             let tmp = tempfile::tempdir().unwrap();
             session(tmp.path(), "a", "active", "2026-10-09T10:00:00Z", None);
             let mut h = home(tmp.path());
-            h.open(Place::at(1).unwrap());
+            h.open(Place::Tend);
             settle(&mut h);
             h.handle_key(key(KeyCode::Enter));
             h.handle_key(key(KeyCode::Char('s')));
@@ -1796,7 +1782,7 @@ mod tests {
     fn leaving_think_returns_home_not_out_of_the_app() {
         let tmp = tempfile::tempdir().unwrap();
         let mut h = home(tmp.path());
-        h.open(Place::at(0).unwrap());
+        h.open(Place::Think);
         if let View::Think(dump) = &mut h.view {
             dump.handle_key(key(KeyCode::Esc));
         }
@@ -1809,7 +1795,7 @@ mod tests {
     fn key_bar_preference_lasts_across_visits_to_think() {
         let tmp = tempfile::tempdir().unwrap();
         let mut h = home(tmp.path());
-        h.open(Place::at(0).unwrap());
+        h.open(Place::Think);
         if let View::Think(dump) = &mut h.view {
             assert!(dump.key_bar_on(), "on by default");
             dump.handle_key(key(KeyCode::F(1)));
@@ -1819,7 +1805,7 @@ mod tests {
         }
         h.tick();
         assert!(matches!(h.view, View::Menu));
-        h.open(Place::at(0).unwrap());
+        h.open(Place::Think);
         let View::Think(dump) = &h.view else { panic!() };
         assert!(!dump.key_bar_on(), "turned off stays off");
     }
@@ -1868,7 +1854,7 @@ mod tests {
         let path = tmp.path().join("old");
         let before = fs::read(path.join("ledger.json")).unwrap();
         let mut h = home(tmp.path());
-        h.open(Place::at(0).unwrap());
+        h.open(Place::Think);
         let View::Think(dump) = &mut h.view else {
             panic!()
         };
@@ -1970,7 +1956,7 @@ mod tests {
         );
         for (w, height) in [(80, 24), (100, 30), (160, 40), (320, 40)] {
             let mut h = home(tmp.path());
-            h.open(Place::at(1).unwrap());
+            h.open(Place::Tend);
             settle(&mut h);
             let screen = snapshot(w, height, &mut h, false).unwrap();
             assert!(

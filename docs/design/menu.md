@@ -10,7 +10,9 @@
 | 6 | taste | Review an exact result against its unchanged goal; open its PR or copy an external review handoff ([Taste](taste.md)). |
 | 7 | measure | This repo's recent pull requests, read from GitHub only on explicit request; no metrics or acceptance claims. |
 
-Each place shows its one-line purpose beside its name; [menu.rs](../../src/menu.rs) owns the copy.
+Each place shows its one-line purpose beside its name; [the place enum](../../src/menu/place.rs)
+owns the closed set, copy and navigation order. Home stores and opens variants; only digit,
+arrow and row mapping uses their positions.
 Name the purpose without borrowing another place's name. Taste can explicitly open
 one [unsent next-dump draft](taste.md#after-external-acceptance) in a fresh Think
 visit; the menu alone connects those phases, and starts no request. [Tend](shape-and-handoff.md)

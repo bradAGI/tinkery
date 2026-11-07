@@ -28,7 +28,7 @@ const MODULE_LINES: usize = 1000;
 const BIG_MODULES: &[(&str, usize)] = &[
     ("src/shape.rs", 2528),
     ("src/think/brain_dump.rs", 1714),
-    ("src/menu.rs", 1297),
+    ("src/menu.rs", 1278),
     ("src/seed_me/answering.rs", 1210),
     ("src/seed_me/ledger.rs", 1125),
     ("src/watch.rs", 1039),

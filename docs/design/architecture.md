@@ -55,7 +55,8 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `model_setup.rs`, `model_setup/panel.rs` | The saved model setup's one parser (file and flags), atomic save, header label and Model panel; the terminal loop owns when it shows (shared). |
 | `pi.rs` | The one place a model host starts, Pi or Claude Code: which models and levels each accepts, a bounded, cancellable request with or without read-only tools held inside one folder ([`pi/folder.mjs`](../../pi/folder.mjs) for Pi, `dontAsk` for Claude Code), the call budget and prompt-file assembly (shared). |
 | `repo.rs` | Finding the Git repository Tinkery was started in, by looking for `.git` only (shared). |
-| `menu.rs`, `menu/worker.rs`, `menu/retry.rs` | The seven places and navigation, plus the explicit worker-action screen and its retained finite request, and the hand-off of one reviewed Taste rejection to a saved Shape attempt. |
+| `menu.rs`, `menu/worker.rs`, `menu/retry.rs` | Navigation through the seven place variants, plus the explicit worker-action screen and its retained finite request, and the hand-off of one reviewed Taste rejection to a saved Shape attempt. |
+| `menu/place.rs` | The seven-place enum, display names and purposes, and ordered navigation list; no routing or actions. |
 | `measure.rs` | Recent PR list, details and evidence limits; explicit reads only, no writes or providers. |
 | `measure/read.rs` | Bounded, cancellable `gh` reads scoped to the launch repo; no shell or retries. |
 | `tend/mod.rs` | The saved-goal garden's discovery states, selection and detail, with navigation to Shape and saved Think history. |
