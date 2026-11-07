@@ -355,16 +355,8 @@ fn parse_run_detail(run: &Value) -> Result<Detail, String> {
                 .as_bool()
                 .ok_or("A checklist item has an invalid pending flag.")?,
         };
-        // A check the source assigns to the worker stays visible but owes the operator nothing;
-        // an older report without ownership is treated as the operator's.
-        let operator = match item.get("operator_attestation") {
-            None => true,
-            Some(value) => value
-                .as_bool()
-                .ok_or("A checklist item has an invalid operator_attestation flag.")?,
-        };
-        if !automatic && operator {
-            attention.owed += usize::from(!pending && status != "passed");
+        if let sdlc::Attestation::Operator { owed, recheck } = sdlc::Attestation::read(item)? {
+            attention.owed += usize::from(owed);
             attention.recheck += usize::from(recheck);
         }
         let suffix = if pending {

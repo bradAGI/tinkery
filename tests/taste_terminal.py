@@ -434,8 +434,8 @@ def journey(width, height, no_color, mapping_case='valid', next_case=None, empty
             # Among several human checks, show the first active, pending one.
             checklist = state['detail']['run']['checklist']
             automatic, human = checklist
-            worker = {**human, 'id': 'TEST-worker', 'verify': 'TEST worker smoke check'}
-            del worker['operator_attestation']
+            worker = {**human, 'id': 'TEST-worker', 'verify': 'TEST worker smoke check',
+                      'operator_attestation': False}
             checklist[:] = [automatic, worker,
                             {**human, 'id': 'TEST-passed', 'verify': 'TEST previous observation',
                              'status': 'passed', 'mark': {'evidence': 'TEST checked'}, 'needs_recheck': True},

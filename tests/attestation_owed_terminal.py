@@ -10,7 +10,7 @@ import tempfile
 import time
 
 import test_launch as subprocess
-from taste_label_terminal import checkout, sdlc, F10, ESC
+from taste_label_terminal import checkout, sdlc, F10
 from terminal_process import TerminalProcess, wait_output
 
 REPO = Path(__file__).resolve().parents[1]
@@ -83,9 +83,13 @@ else:
             send(F10, '1  think')
             send(b'6', 'Press r to read results')
             send(b'r', 'TEST older result')
-            send(b'\r', 'Is this good?')
-            send(b'e', 'No source gate owed.')
+            assert 'You owe 1' in shown(), terminal.screen.text()
+            send(b'\r', 'What to judge')
             assert CRITERION in shown(), terminal.screen.text()
+            send(b'e', 'You owe')
+            assert CRITERION in shown(), terminal.screen.text()
+            assert 'No source gate owed.' not in shown(), terminal.screen.text()
+            wait('older record, no sign-off recorded')
             assert {str(p.relative_to(run)): p.read_bytes() for p in run.rglob('*') if p.is_file()} == original
             sdlc(root, env, 'mark', 'test-label', 'test-manual', 'passed',
                  '--evidence', f'TEST {resolution} explicitly; synthetic fixture, not operator acceptance')

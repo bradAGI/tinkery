@@ -759,7 +759,7 @@ fn handoff(row: &ResultRow, action: char) -> Result<String, &'static str> {
             .collect::<Vec<_>>()
             .join("; "),
         if row.receipts_missing {
-            read::MISSING_RECEIPTS.into()
+            read::Check::ReceiptsMissing.to_string()
         } else {
             row.gates.join("; ")
         },

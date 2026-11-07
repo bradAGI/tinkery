@@ -114,6 +114,52 @@ pub(crate) fn envelope(output: &str) -> Result<Value, String> {
     Ok(value)
 }
 
+/// A checklist item's operator obligation, independent of result revision or screen state.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Attestation {
+    /// Automatic or explicitly worker-owned checks owe the operator nothing.
+    Worker,
+    /// Missing ownership on an older manual item fails closed; recheck is not a failed sign-off.
+    Operator { owed: bool, recheck: bool },
+}
+
+impl Attestation {
+    /// Read API 1 ownership and obligation; malformed flags or states never mean nothing is owed.
+    pub(crate) fn read(item: &Value) -> Result<Self, String> {
+        let flag = |key: &str| {
+            item[key]
+                .as_bool()
+                .ok_or_else(|| format!("A checklist item has no readable {key} flag."))
+        };
+        let automatic = flag("automatic")?;
+        let operator = match item.get("operator_attestation") {
+            None => true,
+            Some(value) => value
+                .as_bool()
+                .ok_or("A checklist item has an invalid operator_attestation flag.")?,
+        };
+        let pending = match item.get("pending") {
+            None => false,
+            Some(value) => value
+                .as_bool()
+                .ok_or("A checklist item has an invalid pending flag.")?,
+        };
+        let recheck = flag("needs_recheck")?;
+        let status = item["status"]
+            .as_str()
+            .filter(|status| matches!(*status, "passed" | "pending" | "failed" | "unknown"))
+            .ok_or("A checklist item has no readable status.")?;
+        Ok(if automatic || !operator {
+            Self::Worker
+        } else {
+            Self::Operator {
+                owed: !pending && status != "passed",
+                recheck,
+            }
+        })
+    }
+}
+
 /// Read the named checkout once with the shared deadline and cancellation; missing records or
 /// unreadable runs refuse the whole start classification, never conceal any seed.
 pub(crate) fn seeds(root: &Path, cancel: &AtomicBool) -> Result<Vec<Seed>, String> {
