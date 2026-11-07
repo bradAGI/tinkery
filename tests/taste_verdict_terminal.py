@@ -1,4 +1,4 @@
-"""Taste keeps its human-verdict reminder after notes and corrections (#714).
+"""Taste keeps its human-verdict reminder after notes, corrections and unbound verdicts (#714, #781).
 
 Synthetic API 1 records exercise the public reader, including unavailable verdict counts.
 Every app launch uses an isolated TEST home and an agent role; no providers or labels run.
@@ -26,7 +26,7 @@ print(json.dumps(state['list'] if len(sys.argv) == 3 else state['detail']))
 def cases():
     for kind in (None, 'none', 'correction', 'accepted', 'rejected'):
         counts = {name: int(name == kind) for name in ('none', 'correction', 'accepted', 'rejected')}
-        yield kind or 'empty', {'count': sum(counts.values()), 'kinds': counts}, kind not in ('accepted', 'rejected')
+        yield kind or 'empty', {'count': sum(counts.values()), 'kinds': counts}, True
     yield 'labels unavailable', None, False
     yield 'older count-only report', {'count': 0}, False
     for kind in ('accepted', 'rejected'):
@@ -60,6 +60,11 @@ def journey(width, height, no_color):
             state['detail']['run']['labels'] = labels
             statefile = base / 'TEST-checkout/TEST-state.json'
             statefile.write_text(json.dumps(state))
+            records = base / 'TEST-checkout/runs/TEST-result/labels.jsonl'
+            records.parent.mkdir(parents=True, exist_ok=True)
+            records.write_text(''.join(json.dumps(dict(kind=kind, source='taste', words='TEST legacy words')) + '\n'
+                                       for kind, count in (labels or {}).get('kinds', {}).items()
+                                       if count == 1 and kind in ('accepted', 'rejected')))
             before = statefile.read_bytes()
             terminal = TerminalProcess(
                 [str(REPO / 'target/debug/tinkery'), '--operator', 'agent', '--home',

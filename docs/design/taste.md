@@ -39,9 +39,12 @@ Only `r` reads result metadata from GitHub, via `gh pr view <recorded URL> --jso
 login. Read the title, current head, state and PR-head checks. The title is display text only;
 the list uses the goal when the title is missing, and the review uses the recorded URL.
 Per-run status also reports label counts by kind. When both `accepted` and `rejected`
-are valid nonnegative integers, the reminder stays visible when both are zero,
-including after notes and corrections. Either positive count clears it. Missing or malformed verdict counts
-leave the verdict state unknown and the list omits the reminder. Recorded open and
+are valid nonnegative integers, Taste reads any verdicts from the source-validated
+`labels.jsonl` in the reported checkout (or the named root). Only a verdict bound to
+the exact displayed head clears the reminder. Notes, corrections, other-head verdicts
+and legacy verdicts with no head do not. Earlier verdicts without a matching head
+show “stale” under Checks and satisfy nothing for this result. Missing or malformed
+counts, or unreadable verdict records, leave the state unknown; the list omits the reminder. Recorded open and
 merged PRs stay listed, including green PRs with no source gates owed: checks never
 remove the need for human review. Merged results are marked “merged” in the list
 and review; neither merge state nor green checks imply acceptance. Closed-unmerged
@@ -62,7 +65,7 @@ without a checked local result shows “no recorded PR”. Other unresolved resu
 title the goal uses the whole available space. Both excerpts share one line and use an ellipsis
 when shortened. The next line shows counts for passed, waiting, stale, failed and
 unknown observations, plus
-“You owe N” when gates are owed and “awaiting human verdict” when the run has none. No check sentences, PR URLs, paths, hashes, run IDs
+“You owe N” when gates are owed and “awaiting human verdict” when this head has none. No check sentences, PR URLs, paths, hashes, run IDs
 or commands appear in the list. Jade marks selection; the goal remains ink.
 Counts are observations, never an aggregate done/approved verdict.
 
@@ -260,7 +263,9 @@ no Tinkery setting. Only that shown name signs: with none, F2 reads it again and
 shows the result before another F2 can save. Esc cancels and leaves the run waiting for its
 label; leaving discards, but F10 waits while a save runs. Only a pressed F2 saves, by
 running the checkout's own `sdlc.py label <slug> --expected-run-id <reviewed ID> --kind …
---words … --reviewer <shown name> --source taste`. tink-sdlc checks that identity while
+--words … --reviewer <shown name> --source taste@<reviewed head>`. The label owner binds
+both pass and fail to the snapshot head, not a head reread at save time. An unknown
+result revision refuses the write. tink-sdlc checks the run identity while
 holding its write locks, so reusing a run name cannot redirect the verdict. This needs
 tink-sdlc 1.53.0 or later; older checkouts refuse and keep the words, with no unchecked retry.
 Words pass through unchanged. Success says “Saved your label.”; a refusal
@@ -271,9 +276,8 @@ append-only; Taste stores nothing.
 
 ## Shape the next attempt
 
-For a checked local result with a verified original goal, a new fail verdict records
-`taste@<checked commit>` as its source. Taste reads the latest pass/fail from the run’s
-validated, local `labels.jsonl`. A later pass or a rejection bound to another commit
+For a checked local result with a verified original goal, Taste offers the latest
+rejection from the label owner's revision-bound reading. A later pass or a rejection bound to another commit
 removes the offer. For a forwarded result, the signer and label write belong to the
 reported build checkout. Saving rechecks the result and refuses a different SDLC script.
 

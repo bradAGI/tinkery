@@ -163,7 +163,7 @@ impl Taste {
                                     && row.local().is_some()
                                     && matches!(row.goal, Goal::Matched(_))
                             })
-                            .map(|(_, words)| retry::Verdict {
+                            .map(|(_, words)| label::Verdict {
                                 words,
                                 pinned: true,
                             });
