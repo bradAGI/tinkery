@@ -94,6 +94,58 @@ fn settle(h: &mut Home) {
     });
 }
 #[test]
+fn places_keep_digit_arrow_alias_and_row_navigation() {
+    for (index, name) in [
+        "think", "tend", "shape", "approve", "watch", "taste", "measure",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut direct = home(Arc::new(|_| found(vec![])));
+        direct.open(Place::at(index).unwrap());
+        let expected = screen(&mut direct);
+        let heading = if name == "think" {
+            "What's on your mind?"
+        } else {
+            name
+        };
+        assert!(expected.contains(heading), "{name}: {expected}");
+        let mut digit = home(Arc::new(|_| found(vec![])));
+        digit.handle_key(key(KeyCode::Char(char::from(b'1' + index as u8))));
+        assert_eq!(screen(&mut digit), expected, "digit for {name}");
+        for code in [
+            KeyCode::Down,
+            KeyCode::Char('j'),
+            KeyCode::Up,
+            KeyCode::Char('k'),
+        ] {
+            let steps = if matches!(code, KeyCode::Down | KeyCode::Char('j')) {
+                PLACES.len() + index
+            } else {
+                PLACES.len() - index
+            };
+            let mut arrows = home(Arc::new(|_| found(vec![])));
+            for _ in 0..steps {
+                arrows.handle_key(key(code));
+            }
+            arrows.handle_key(key(KeyCode::Enter));
+            assert_eq!(screen(&mut arrows), expected, "{code:?} for {name}");
+        }
+        let mut mouse = home(Arc::new(|_| found(vec![])));
+        mouse.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 5,
+                row: FIRST_ROW + index as u16 * ROW_GAP,
+                modifiers: KeyModifiers::NONE,
+            },
+            Rect::new(0, 0, 100, 30),
+        );
+        assert_eq!(screen(&mut mouse), expected, "row for {name}");
+    }
+}
+
+#[test]
 fn place_indices_are_checked_before_opening() {
     for (index, (name, _)) in PLACES.iter().enumerate() {
         let mut h = home(Arc::new(|_| found(vec![])));
