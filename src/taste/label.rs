@@ -1,11 +1,16 @@
-//! The operator's label for one run: their answer to "Is this good?", pass or fail in their own
+//! The operator's label for one exact head: their answer to "Is this good?", pass or fail in their own
 //! words, written only by tink-sdlc's own `sdlc.py label` after an explicit F2. The label is the
 //! operator's verdict on the result; it approves, merges and gates nothing. The words are passed
 //! through verbatim, never trimmed or rewritten, and signed with the name the form showed.
 
+use super::read::{Check, commit};
 use crate::sdlc::{self, DEADLINE};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use std::{path::Path, process::Command, sync::atomic::AtomicBool};
+use serde_json::Value;
+use std::{
+    fs, io::Read, os::unix::fs::OpenOptionsExt, path::Path, process::Command,
+    sync::atomic::AtomicBool,
+};
 
 /// The operator's answer, on keys 1 and 2. Taste offers only these two of tink-sdlc's kinds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,13 +38,111 @@ impl Kind {
         }
     }
 
-    /// tink-sdlc's existing label kind.
-    pub(super) fn word(self) -> &'static str {
+    fn word(self) -> &'static str {
         match self {
             Kind::Pass => "accepted",
             Kind::Fail => "rejected",
         }
     }
+}
+
+/// Words of the latest rejection and whether that verdict recorded this commit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Verdict {
+    pub(super) words: String,
+    pub(super) pinned: bool,
+}
+
+/// Revision-bound verdict status and the latest usable rejection, from source-validated labels.
+/// Unbound legacy labels remain readable but cannot cover a head; missing counts stay unknown.
+pub(super) fn read(
+    root: &Path,
+    run: &Value,
+    head: Option<&str>,
+) -> Result<(Option<Check>, Option<Verdict>), String> {
+    let kinds = &run["labels"]["kinds"];
+    let Some((accepted, rejected)) = kinds["accepted"].as_u64().zip(kinds["rejected"].as_u64())
+    else {
+        return Ok((None, None));
+    };
+    if accepted == 0 && rejected == 0 {
+        return Ok((Some(Check::AwaitingHuman), None));
+    }
+    let count = run["labels"]["count"]
+        .as_u64()
+        .ok_or("Unreadable label count.")?;
+    let checkout = match run.get("checkout") {
+        None => root,
+        Some(value) => Path::new(value.as_str().ok_or("Verdict checkout is invalid.")?),
+    };
+    if !checkout.is_absolute() {
+        return Err("Verdict checkout must be absolute.".into());
+    }
+    let path = checkout
+        .join("runs")
+        .join(run["slug"].as_str().ok_or("Run name missing.")?)
+        .join("labels.jsonl");
+    if path.canonicalize().ok().as_ref() != Some(&path) {
+        return Err("Cannot read this run's verdict words in its checkout.".into());
+    }
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+        .open(&path)
+        .map_err(|error| error.to_string())?;
+    if !file.metadata().is_ok_and(|m| m.is_file()) {
+        return Err("The verdict words are not in a regular file.".into());
+    }
+    const LIMIT: u64 = 4 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    file.take(LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > LIMIT || !bytes.ends_with(b"\n") {
+        return Err("The verdict record is too large or incomplete.".into());
+    }
+    let mut status = Check::Stale;
+    let mut latest = None;
+    let mut total = 0;
+    let (mut passes, mut failures) = (0, 0);
+    for line in bytes[..bytes.len() - 1].split(|&byte| byte == b'\n') {
+        let record: Value =
+            serde_json::from_slice(line).map_err(|_| "Unreadable verdict record.")?;
+        let judged = record["source"]
+            .as_str()
+            .and_then(|s| s.strip_prefix("taste@"));
+        let judged = judged.and_then(commit);
+        let exact = judged.is_some() && judged == head;
+        match record["kind"].as_str() {
+            Some("accepted" | "rejected") => {
+                let pass = record["kind"] == "accepted";
+                passes += u64::from(pass);
+                failures += u64::from(!pass);
+                if exact {
+                    status = if pass { Check::Pass } else { Check::Fail };
+                }
+                latest = if !pass && (exact || record["source"] == "taste") {
+                    Some(Verdict {
+                        words: record["words"]
+                            .as_str()
+                            .filter(|s| !s.trim().is_empty())
+                            .ok_or("Verdict words missing.")?
+                            .to_owned(),
+                        pinned: exact,
+                    })
+                } else {
+                    None
+                };
+            }
+            Some("correction" | "none") => {}
+            _ => return Err("Unrecognized verdict record.".into()),
+        }
+        total += 1;
+    }
+    if total != count || passes != accepted || failures != rejected {
+        return Err("The verdict changed while reading. Press r.".into());
+    }
+    Ok((Some(status), latest))
 }
 
 /// An unsent label. Dropping it records nothing.
@@ -115,8 +218,8 @@ pub(super) fn signer(root: &Path, stop: &AtomicBool) -> Result<String, String> {
     }
 }
 
-/// Ask the checkout to label only the reviewed run, signed with the name the form showed.
-/// A checkout that cannot enforce its identity refuses; there is no unchecked retry.
+/// Label only the reviewed run and head, signed with the name the form showed.
+/// Unknown heads and checkouts that cannot enforce run identity refuse; no unchecked retry.
 pub(super) fn write(
     root: &Path,
     row: &super::read::ResultRow,
@@ -128,7 +231,11 @@ pub(super) fn write(
     // `--flag=value` keeps words such as `-v` or `--no-verify` from reading as options.
     let slug = &row.slug;
     let id = &row.id;
-    let mut source = "taste".to_owned();
+    let head = row
+        .head
+        .as_ref()
+        .ok_or("Result revision unknown; press r before writing a verdict.")?;
+    let source = format!("taste@{head}");
     let mut label = Command::new("python3");
     if let Some(local) = row.local() {
         local.recheck(stop)?;
@@ -141,9 +248,6 @@ pub(super) fn write(
             }
             // The candidate's module directory cannot replace Python's standard imports.
             label.arg("-I");
-        }
-        if kind == Kind::Fail && matches!(row.goal, sdlc::Goal::Matched(_)) {
-            source = format!("taste@{}", local.head());
         }
     }
     label.arg(sdlc::SCRIPT).args([
@@ -179,6 +283,88 @@ mod tests {
     fn typed(form: &mut Form, text: &str) {
         for c in text.chars() {
             form.key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT));
+        }
+    }
+
+    fn recorded(records: &[Value], head: Option<&str>) -> (Option<Check>, Option<Verdict>) {
+        let dir = tempfile::Builder::new()
+            .prefix("tinkery-TEST-labels-")
+            .tempdir()
+            .unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let path = root.join("runs/TEST-label");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(
+            path.join("labels.jsonl"),
+            records
+                .iter()
+                .map(|record| format!("{record}\n"))
+                .collect::<String>(),
+        )
+        .unwrap();
+        let run = serde_json::json!({
+            "slug": "TEST-label", "labels": {"count": records.len(), "kinds": {
+                "accepted": records.iter().filter(|r| r["kind"] == "accepted").count(),
+                "rejected": records.iter().filter(|r| r["kind"] == "rejected").count()
+            }}
+        });
+        read(&root, &run, head).unwrap()
+    }
+
+    #[test]
+    fn only_exact_head_verdicts_count_and_legacy_words_stay_readable() {
+        let head = "a".repeat(40);
+        for kind in ["accepted", "rejected"] {
+            for (source, current) in [
+                ("taste".to_owned(), false),
+                (format!("taste@{}", "b".repeat(40)), false),
+                ("taste@aaaa".to_owned(), false),
+                (format!("taste@{head}"), true),
+            ] {
+                let record =
+                    serde_json::json!({"kind": kind, "source": source, "words": "  TEST Ω  "});
+                let (status, rejection) = recorded(std::slice::from_ref(&record), Some(&head));
+                let expected = match (current, kind) {
+                    (true, "accepted") => Check::Pass,
+                    (true, _) => Check::Fail,
+                    (false, _) => Check::Stale,
+                };
+                assert_eq!(status, Some(expected), "{record}");
+                if let Some(rejection) = rejection {
+                    assert_eq!(rejection.words, "  TEST Ω  ");
+                    assert_eq!(rejection.pinned, current);
+                }
+                assert_eq!(recorded(&[record], None).0, Some(Check::Stale));
+            }
+        }
+        assert_eq!(
+            recorded(&[], Some(&head)),
+            (Some(Check::AwaitingHuman), None)
+        );
+    }
+
+    #[test]
+    fn unbound_and_other_head_labels_never_replace_a_current_verdict() {
+        let head = "a".repeat(40);
+        let bound = serde_json::json!({"kind": "rejected", "source": format!("taste@{head}"), "words": "TEST fail"});
+        let note =
+            serde_json::json!({"kind": "correction", "source": "TEST", "words": "TEST note"});
+        assert_eq!(
+            recorded(&[bound.clone(), note], Some(&head)),
+            (
+                Some(Check::Fail),
+                Some(Verdict {
+                    words: "TEST fail".into(),
+                    pinned: true
+                })
+            )
+        );
+        for source in ["taste".to_owned(), format!("taste@{}", "b".repeat(40))] {
+            let later = serde_json::json!({"kind": "accepted", "source": source, "words": "TEST other verdict"});
+            assert_eq!(
+                recorded(&[bound.clone(), later], Some(&head)),
+                (Some(Check::Fail), None)
+            );
         }
     }
 

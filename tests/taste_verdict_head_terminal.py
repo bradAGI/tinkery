@@ -21,7 +21,7 @@ WORDS = '  TEST only: keep "these words" — Ω  '
 REMINDER = 'awaiting human verdict'
 
 
-def journey(width, height, mono):
+def journey(width, height, mono, initial_kind):
     with tempfile.TemporaryDirectory(prefix='tinkery-TEST-verdict-head-') as directory:
         base = Path(directory).resolve()
         tools = base / 'bin'
@@ -73,6 +73,9 @@ else:
             os.write(terminal.master, keys)
             wait(text)
 
+        def shown():
+            return ' '.join(terminal.screen.text().split())
+
         def read_list():
             wait('1  think')
             send(b'6', 'Press r to read results')
@@ -80,17 +83,17 @@ else:
 
         try:
             read_list()
-            assert REMINDER in terminal.screen.text(), terminal.screen.text()
+            assert REMINDER in shown(), terminal.screen.text()
             send(b'\r', 'Is this good?')
             send(b'w', 'Signed as TEST synthetic reviewer.')
-            send(b'1', '› 1 pass')
+            send(initial_kind.encode(), '› 1 pass' if initial_kind == '1' else '› 2 fail')
             send(WORDS.encode(), 'Ω')
             head.write_text(B)
             send(F2, 'Saved your label.')
             send(b'r', 'Reading results from the named checkout')
             wait('TEST moving result')
             send(ESC, 'Enter open result')
-            assert REMINDER in terminal.screen.text(), (
+            assert REMINDER in shown(), (
                 'Verdict on A incorrectly covers B after refresh', labels(root), terminal.screen.text())
             send(b'\r', 'Is this good?')
             send(b'e', 'Human verdict')
@@ -102,20 +105,21 @@ else:
             terminal.close()
             terminal = launch('agent')
             read_list()
-            assert REMINDER in terminal.screen.text(), terminal.screen.text()
+            assert REMINDER in shown(), terminal.screen.text()
             assert (root / 'runs/test-label/labels.jsonl').read_bytes() == before
             terminal.close()
             terminal = launch('human')
             read_list()
             send(b'\r', 'Is this good?')
             send(b'w', 'Signed as TEST synthetic reviewer.')
-            send(b'2', '› 2 fail')
+            current_kind = '2' if initial_kind == '1' else '1'
+            send(current_kind.encode(), '› 2 fail' if current_kind == '2' else '› 1 pass')
             send(b'--TEST-current', '--TEST-current')
             send(F2, 'Saved your label.')
             send(b'r', 'Reading results from the named checkout')
             wait('TEST moving result')
             send(ESC, 'Enter open result')
-            assert REMINDER not in terminal.screen.text(), terminal.screen.text()
+            assert REMINDER not in shown(), terminal.screen.text()
             assert [(r['source'], r['words']) for r in labels(root)] == [
                 (f'taste@{A}', WORDS), (f'taste@{B}', '--TEST-current')]
             status = json.loads(sdlc(root, env, 'status', 'test-label', '--json').stdout)
@@ -123,9 +127,9 @@ else:
             terminal.close()
             terminal = launch('agent')
             read_list()
-            assert REMINDER not in terminal.screen.text(), terminal.screen.text()
+            assert REMINDER not in shown(), terminal.screen.text()
             print(json.dumps(dict(journey='Taste verdict head', width=width, height=height,
-                                  no_color=mono, pty_sessions=4, stale_after_refresh=True,
+                                  no_color=mono, initial_kind=initial_kind, pty_sessions=4, stale_after_refresh=True,
                                   stale_after_restart=True, current_counts=True,
                                   verbatim=True, provider_calls=0, live_github_calls=0)))
         finally:
@@ -133,5 +137,6 @@ else:
 
 
 if __name__ == '__main__':
-    journey(100, 30, False)
-    journey(80, 24, True)
+    for kind in ('1', '2'):
+        journey(100, 30, False, kind)
+        journey(80, 24, True, kind)

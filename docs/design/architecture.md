@@ -100,7 +100,7 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `taste/retry.rs` | The latest rejection's words and checked commit, a read-only review, and on F2 a fresh session with a detached checkout; never a worker or commit. |
 | `taste/preview.rs` | Exact-head repo preview declarations, local HTTP readiness and explicitly launched temporary checkout/process ownership; no inferred commands, public URLs, agent or verdict. |
 | `taste/next.rs` | Deterministic post-acceptance pause and next-dump proposal from snapshot evidence; no model, verdict, structural diagnosis or permission. The menu alone passes its unsent draft to Think. |
-| `taste/label.rs` | The operator's pass/fail label, their verdict on the result, and its one write through the checkout's `sdlc.py label`, only on F2, words unchanged, signed with the name shown; never an approval, merge or agent. |
+| `taste/label.rs` | Binding and reading the operator's pass/fail verdict for one exact head, including stale legacy records and latest rejection words; its one write through the checkout's `sdlc.py label`, only on F2, words unchanged, signed with the name shown; never an approval, merge or agent. |
 | `taste/view.rs` | Title and goal excerpts with result counts, a one-question review, palette-bound headings and statuses, and details on request with verbatim hanging check wraps and evidence; no source reads, gate derivation or copy formatting. |
 | `taste/links.rs`, `taste/evidence.rs` | The run's own recorded PR (API 1 `pr`), unknown when absent or malformed; source-owned log pointers and check methods as evidence references, never prose parsing, a mapping store, log reads or check execution. |
 

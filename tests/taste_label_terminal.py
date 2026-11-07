@@ -1,7 +1,7 @@
 """Taste labels (#666, #672): "Is this good?" answered pass or fail in the operator's words reaches
 tink-sdlc's own labels.jsonl verbatim, only on F2, signed with the name the form showed.
 
-A real tink-sdlc checkout (this repo's bundled scaffold) in a TEST root; no providers, no gh.
+A real tink-sdlc checkout (this repo's bundled scaffold) in a TEST root; stub GitHub, no providers.
 """
 import json
 import os
@@ -46,7 +46,17 @@ def journey(width, height, no_color, operator, save_case=None):
         base = Path(directory).resolve()
         tools = base / 'bin'
         tools.mkdir()
-        (tools / 'gh').write_text('#!/bin/sh\necho "TEST gh must not run" >&2\nexit 1\n')
+        (tools / 'gh').write_text(f'''#!{sys.executable}
+import json, sys
+if sys.argv[1:3] == ['pr', 'view']:
+    print(json.dumps(dict(url='https://github.com/TEST/labels/pull/1', title='TEST labels',
+                         headRefOid={'a' * 40!r}, state='OPEN', statusCheckRollup=[])))
+elif sys.argv[1:2] == ['api']:
+    print('HTTP 404', file=sys.stderr)
+    raise SystemExit(1)
+else:
+    raise SystemExit('Unexpected TEST GitHub command')
+''')
         (tools / 'gh').chmod(0o755)
         label_started, label_release = base / 'TEST-label-started', base / 'TEST-label-release'
         if save_case in ('during-save', 'old-runtime'):
@@ -80,6 +90,9 @@ os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])
             env['NO_COLOR'] = '1'
         env = subprocess.environment(env, home=env['HOME'])
         root, git = checkout(base, env)
+        if save_case != 'unknown-head':
+            (root / 'runs/test-label/pr.json').write_text(json.dumps(dict(
+                url='https://github.com/TEST/labels/pull/1', candidate='a' * 40)))
         args = [str(REPO / 'target/debug/tinkery'), '--home', '--sdlc-root', str(root),
                 '--seed-session-root', str(base / 'TEST-sessions')]
         if operator:
@@ -109,6 +122,18 @@ os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])
             assert 'awaiting human verdict' in screen.text(), screen.text()
             send(b'\r', 'Is this good?')
             assert 'Run ID' not in screen.text(), screen.text()
+            if save_case == 'unknown-head':
+                git('config', 'user.name', 'TEST operator')
+                send(b'w', 'Signed as TEST operator.')
+                send(b'1', '› 1 pass')
+                send(WORDS.encode(), 'Ω')
+                send(F2, 'Result revision unknown;')
+                assert 'Not recorded.' in screen.text(), screen.text()
+                assert WORDS in ' '.join(screen.text().split()), screen.text()
+                assert labels(root) == []
+                print(json.dumps(dict(journey='Taste unknown-head verdict refused', width=width,
+                                      height=height, no_color=no_color, labels=0, provider_calls=0)))
+                return
             if save_case:
                 git('config', 'user.name', 'TEST operator')
                 send(b'w', 'Signed as TEST operator.')
@@ -186,7 +211,7 @@ os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])
             send(F2, 'Saved your label.')
             [record] = labels(root)
             assert (record['kind'], record['words'], record['reviewer'], record['source']) == (
-                'accepted', WORDS, 'TEST operator', 'taste'), record
+                'accepted', WORDS, 'TEST operator', f'taste@{"a" * 40}'), record
             assert 'Your words' not in screen.text() and 'test-label' not in screen.text()
             # Words that look like an option still arrive as words; fail saves as rejected.
             send(b'w', 'Signed as TEST operator.')
@@ -207,7 +232,7 @@ os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])
             terminal.process.wait(timeout=5)
             assert terminal.process.returncode == 0
             print(json.dumps(dict(journey='Taste label', width=width, height=height, no_color=no_color,
-                                  labels=2, verbatim=True, provider_calls=0, gh_calls=0)))
+                                  labels=2, verbatim=True, provider_calls=0, live_github_calls=0)))
         finally:
             terminal.close()
 
@@ -219,3 +244,4 @@ if __name__ == '__main__':
     journey(100, 30, False, 'human', 'before-save')
     journey(80, 24, True, 'human', 'during-save')
     journey(80, 24, True, 'human', 'old-runtime')
+    journey(80, 24, True, 'human', 'unknown-head')

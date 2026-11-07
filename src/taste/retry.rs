@@ -1,7 +1,10 @@
 //! A rejection belongs to the checked commit named by its verdict. Review reads only.
 //! A separate save creates a detached checkout and a fresh session, never a worker or commit.
 
-use super::preview::{Local, git};
+use super::{
+    label::{self, Verdict},
+    preview::{Local, git},
+};
 use crate::{
     sdlc::Goal,
     seed_me::{
@@ -9,21 +12,11 @@ use crate::{
         retry::{Base, Prior},
     },
 };
-use serde_json::Value;
 use std::{
     fs,
-    io::Read,
-    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::atomic::AtomicBool,
 };
-
-/// Words of the latest local rejection and whether that verdict recorded this commit.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Verdict {
-    pub(super) words: String,
-    pub(super) pinned: bool,
-}
 
 /// An operator's recorded rejection and the local reading it applies to.
 #[derive(Clone)]
@@ -37,70 +30,6 @@ pub(crate) struct Rejected {
 pub(crate) struct Reviewed {
     pub(crate) prior: Prior,
     pub(crate) worktrees: PathBuf,
-}
-
-/// Only the latest verdict counts. SDLC validates its label chain in the source status read.
-/// Old records without a candidate cannot establish which commit the operator rejected.
-pub(super) fn words(local: &Local, run: &Value) -> Result<Option<Verdict>, String> {
-    if run["labels"]["kinds"]["rejected"].as_u64().unwrap_or(0) == 0 {
-        return Ok(None);
-    }
-    let count = run["labels"]["count"]
-        .as_u64()
-        .ok_or("Unreadable label count.")?;
-    let path = local
-        .checkout()
-        .join("runs")
-        .join(run["slug"].as_str().ok_or("Run name missing.")?)
-        .join("labels.jsonl");
-    if path.canonicalize().ok().as_ref() != Some(&path) {
-        return Err("Cannot read this run's verdict words in its checkout.".into());
-    }
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
-        .open(&path)
-        .map_err(|error| error.to_string())?;
-    if !file.metadata().is_ok_and(|m| m.is_file()) {
-        return Err("The verdict words are not in a regular file.".into());
-    }
-    const LIMIT: u64 = 4 * 1024 * 1024;
-    let mut bytes = Vec::new();
-    file.take(LIMIT + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > LIMIT || !bytes.ends_with(b"\n") {
-        return Err("The verdict record is too large or incomplete.".into());
-    }
-    let expected = format!("taste@{}", local.head());
-    let mut latest = None;
-    let mut total = 0;
-    for line in bytes[..bytes.len() - 1].split(|&byte| byte == b'\n') {
-        let record: Value =
-            serde_json::from_slice(line).map_err(|_| "Unreadable verdict record.")?;
-        match record["kind"].as_str() {
-            Some("accepted") => latest = None,
-            Some("rejected") => {
-                latest = record["words"]
-                    .as_str()
-                    .filter(|s| {
-                        !s.trim().is_empty()
-                            && (record["source"] == expected || record["source"] == "taste")
-                    })
-                    .map(|words| Verdict {
-                        words: words.to_owned(),
-                        pinned: record["source"] == expected,
-                    })
-            }
-            Some("correction" | "none") => {}
-            _ => return Err("Unrecognized verdict record.".into()),
-        }
-        total += 1;
-    }
-    if total != count {
-        return Err("The verdict changed while reading. Press r.".into());
-    }
-    Ok(latest)
 }
 
 impl Rejected {
@@ -122,7 +51,11 @@ impl Rejected {
     /// Recheck the run, verified original and latest verdict. Reads no unrelated checkout.
     pub(crate) fn review(&self, stop: &AtomicBool) -> Result<Reviewed, String> {
         let run = self.local.recheck(stop)?;
-        if words(&self.local, &run)?.as_ref() != Some(&self.verdict) {
+        if label::read(self.local.checkout(), &run, Some(self.local.head()))?
+            .1
+            .as_ref()
+            != Some(&self.verdict)
+        {
             return Err("The rejection changed. Return to Taste and reread.".into());
         }
         let Goal::Matched(goal) = crate::sdlc::goal(&run) else {

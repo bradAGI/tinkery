@@ -111,10 +111,10 @@ pub(super) struct ResultRow {
     pub(super) gates: Vec<String>,
     /// Unresolved source problems, not concealed by other successes.
     pub(super) gaps: Vec<String>,
-    /// Whether tink-sdlc reports an accepted or rejected verdict, when both counts are known.
+    /// Whether a verdict covers this exact head; unavailable records stay unknown.
     pub(super) labelled: Option<bool>,
     /// Words of the latest rejection only when it identifies this local candidate.
-    pub(super) rejection: Option<super::retry::Verdict>,
+    pub(super) rejection: Option<super::label::Verdict>,
 }
 
 impl ResultRow {
@@ -152,9 +152,9 @@ fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("Run report missing {key}; read again after repairing the source."))
 }
 
-fn commit(v: &Value) -> Option<&str> {
-    v.as_str()
-        .filter(|s| s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+/// A full commit identity usable for revision-bound observations; never a branch or abbreviation.
+pub(super) fn commit(value: &str) -> Option<&str> {
+    Some(value).filter(|s| s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn gate_words(stage: u64, status: &str) -> String {
@@ -195,7 +195,7 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
     if row.receipts_missing {
         row.gaps.push(format!("{MISSING_RECEIPTS}; name the checkout holding this run's receipts with --sdlc-root and read again. No other checkout was searched."));
     }
-    let receipt_head = commit(&verification["candidate"]["head"]);
+    let receipt_head = verification["candidate"]["head"].as_str().and_then(commit);
     let exact = receipt_head.is_some() && receipt_head == row.head.as_deref();
     let current = run["verification_status"] == "current" && verification["passed"] == true;
     let mut all_gates = Vec::new();
@@ -343,7 +343,9 @@ fn same_pr(pr: &Value, row: &ResultRow) -> bool {
 
 fn remote(pr: &Value, row: &mut ResultRow) -> Result<(), String> {
     row.head = Some(
-        commit(&pr["headRefOid"])
+        pr["headRefOid"]
+            .as_str()
+            .and_then(commit)
             .ok_or("PR revision unavailable.")?
             .to_owned(),
     );
@@ -504,11 +506,6 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             return Err("Unknown run verification state.".into());
         }
         row.goal = sdlc::goal(run);
-        let kinds = &run["labels"]["kinds"];
-        row.labelled = kinds["accepted"]
-            .as_u64()
-            .zip(kinds["rejected"].as_u64())
-            .map(|(accepted, rejected)| accepted > 0 || rejected > 0);
         row.seed = run["seed_contract"]["sha256"]
             .as_str()
             .unwrap_or("unknown seed")
@@ -543,12 +540,6 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             if let Some(local) = row.local() {
                 let head = local.head().to_owned();
                 let declaration = local.declaration(stop);
-                if matches!(row.goal, Goal::Matched(_)) {
-                    match super::retry::words(local, run) {
-                        Ok(words) => row.rejection = words,
-                        Err(why) => row.gaps.push(why),
-                    }
-                }
                 row.head = Some(head);
                 row.preview = declaration;
                 row.items.push(Item {
@@ -567,6 +558,23 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             .map_or(root.as_path(), |local| local.checkout())
             .to_path_buf();
         local(&source, run, &mut row)?;
+        match super::label::read(&source, run, row.head.as_deref()) {
+            Ok((status, rejection)) => {
+                row.labelled = status.map(|state| matches!(state, Check::Pass | Check::Fail));
+                if row.local().is_some() && matches!(row.goal, Goal::Matched(_)) {
+                    row.rejection = rejection;
+                }
+                if status == Some(Check::Stale) {
+                    row.items.push(Item {
+                        label: "Human verdict".into(),
+                        state: Check::Stale,
+                        kind: "operator verdict, not approval".into(),
+                        evidence: "Earlier verdicts do not identify this exact result head; they satisfy nothing for it.".into(),
+                    });
+                }
+            }
+            Err(why) => row.gaps.push(why),
+        }
         row.items.extend(supporting_checks);
         if sdlc::goal(run) != row.goal {
             return Err("Original goal changed while reading; press r.".into());
