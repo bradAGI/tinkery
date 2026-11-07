@@ -615,6 +615,62 @@ fn explicit_launch_recovers_prepared_step_but_never_uncertain_or_changed_contrac
 }
 
 #[test]
+fn run_ids_preserve_canonical_uuid_v4_contract() {
+    let fixture = Fixture::new();
+    for id in [
+        "01234567-89ab-4cde-8fab-0123456789ab",
+        "01234567-89ab-4cde-9fab-0123456789ab",
+        "01234567-89ab-4cde-afab-0123456789ab",
+        "01234567-89ab-4cde-bfab-0123456789ab",
+    ] {
+        fixture.edit(|value| value["id"] = id.into());
+        let run = Run {
+            root: fixture.root.clone(),
+            slug: "test".into(),
+            id: id.into(),
+        };
+        let snapshot = wait(Job::act(run.clone(), Action::Refresh)).unwrap();
+        assert_eq!(snapshot.run, run);
+        assert_eq!(snapshot.state, State::NotStarted);
+    }
+    for id in [
+        "",
+        "01234567-89AB-4CDE-8FAB-0123456789AB",
+        "01234567-89ab-1cde-8fab-0123456789ab",
+        "01234567-89ab-7cde-8fab-0123456789ab",
+        "01234567-89ab-4cde-7fab-0123456789ab",
+        "01234567-89ab-4cde-cfab-0123456789ab",
+        "01234567-89ab-4cde-8fab-0123456789a",
+        "01234567-89ab-4cde-8fab-0123456789abc",
+        "0123456789ab4cde8fab0123456789ab",
+        "0123456-789ab-4cde-8fab-0123456789ab",
+        "01234567_89ab-4cde-8fab-0123456789ab",
+        "01234567-89ab-4cde-8fab-0123456789ag",
+        "01234567-89ab-4cde-8fab-0123456789ab\n",
+        "01234567-89ab-4cde-8fab-0123456789é",
+    ] {
+        fixture.edit(|value| value["id"] = id.into());
+        let failure = wait(Job::act(
+            Run {
+                root: fixture.root.clone(),
+                slug: "test".into(),
+                id: id.into(),
+            },
+            Action::Refresh,
+        ))
+        .unwrap_err();
+        assert_eq!(failure.message, "The run has no stable identity.", "{id:?}");
+    }
+    assert_eq!(fixture.commands().len(), 22);
+    assert!(
+        fixture
+            .commands()
+            .iter()
+            .all(|args| args == &["status", "test", "--json"])
+    );
+}
+
+#[test]
 fn current_run_identity_is_required_before_resume_or_verify() {
     let fixture = Fixture::new();
     let initial = fixture.start();

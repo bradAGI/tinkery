@@ -21,7 +21,7 @@ impl CodexReport {
         let run = parts.next().unwrap_or("");
         let chat = parts.next().unwrap_or("");
         let path = parts.next().unwrap_or("");
-        if !uuid(run) || run.as_bytes()[14] != b'4' || !uuid(chat) || path.is_empty() {
+        if !crate::sdlc::canonical_run_id(run) || !uuid(chat) || path.is_empty() {
             return Err("--codex-report needs RUN_UUID:CHAT_ID:PATH with canonical UUIDs".into());
         }
         let path = std::env::current_dir()
@@ -200,5 +200,72 @@ impl Observation {
             "Saved observation; check the Codex chat for current status.".into()
         });
         lines
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CodexReport;
+
+    #[test]
+    fn run_ids_preserve_canonical_uuid_v4_contract() {
+        let chat = "01234567-89ab-7cde-8fab-0123456789ab";
+        for run in [
+            "01234567-89ab-4cde-8fab-0123456789ab",
+            "01234567-89ab-4cde-9fab-0123456789ab",
+            "01234567-89ab-4cde-afab-0123456789ab",
+            "01234567-89ab-4cde-bfab-0123456789ab",
+        ] {
+            assert!(CodexReport::parse(&format!("{run}:{chat}:TEST-report:part.json")).is_ok());
+        }
+        for run in [
+            "",
+            "01234567-89AB-4CDE-8FAB-0123456789AB",
+            "01234567-89ab-1cde-8fab-0123456789ab",
+            "01234567-89ab-7cde-8fab-0123456789ab",
+            "01234567-89ab-4cde-7fab-0123456789ab",
+            "01234567-89ab-4cde-cfab-0123456789ab",
+            "01234567-89ab-4cde-8fab-0123456789a",
+            "01234567-89ab-4cde-8fab-0123456789abc",
+            "0123456789ab4cde8fab0123456789ab",
+            "0123456-789ab-4cde-8fab-0123456789ab",
+            "01234567_89ab-4cde-8fab-0123456789ab",
+            "01234567-89ab-4cde-8fab-0123456789ag",
+            "01234567-89ab-4cde-8fab-0123456789ab\n",
+            "01234567-89ab-4cde-8fab-0123456789é",
+        ] {
+            let error = CodexReport::parse(&format!("{run}:{chat}:TEST-report.json")).unwrap_err();
+            assert_eq!(
+                error, "--codex-report needs RUN_UUID:CHAT_ID:PATH with canonical UUIDs",
+                "{run:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn chat_ids_keep_the_general_uuid_contract() {
+        let run = "01234567-89ab-4cde-8fab-0123456789ab";
+        for chat in [
+            "01234567-89ab-1cde-8fab-0123456789ab",
+            "01234567-89ab-7cde-bfab-0123456789ab",
+        ] {
+            assert!(CodexReport::parse(&format!("{run}:{chat}:TEST-report.json")).is_ok());
+        }
+        for chat in [
+            "",
+            "01234567-89AB-7CDE-8FAB-0123456789AB",
+            "01234567-89ab-7cde-7fab-0123456789ab",
+            "01234567-89ab-7cde-cfab-0123456789ab",
+            "01234567-89ab-7cde-8fab-0123456789a",
+            "01234567-89ab-7cde-8fab-0123456789abc",
+            "01234567_89ab-7cde-8fab-0123456789ab",
+            "01234567-89ab-7cde-8fab-0123456789ag",
+        ] {
+            let error = CodexReport::parse(&format!("{run}:{chat}:TEST-report.json")).unwrap_err();
+            assert_eq!(
+                error, "--codex-report needs RUN_UUID:CHAT_ID:PATH with canonical UUIDs",
+                "{chat:?}"
+            );
+        }
     }
 }
