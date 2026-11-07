@@ -2,10 +2,7 @@
 //! Files are read directly rather than through the helper, so a scan of thousands of
 //! sessions stays fast (see menu.md's measured scope).
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
@@ -134,7 +131,7 @@ pub fn read(path: &Path) -> Record {
     }
     use std::io::ErrorKind::{NotADirectory, NotFound};
     let ledger_path = path.join("ledger.json");
-    let text = match fs::read_to_string(&ledger_path) {
+    let text = match super::read_regular_text(&ledger_path, "ledger") {
         Ok(text) => text,
         Err(error) if matches!(error.kind(), NotFound | NotADirectory) => {
             return Record::NotASession;
@@ -179,7 +176,7 @@ pub fn read(path: &Path) -> Record {
     {
         Stage::Unknown
     } else {
-        match fs::read_to_string(path.join("seed-contract.md")) {
+        match super::read_seed_text(&path.join("seed-contract.md")) {
             Ok(seed) => Stage::from_files(status, Some(&seed)),
             Err(error) if error.kind() == NotFound => Stage::from_files(status, None),
             Err(_) => Stage::Unknown,
@@ -206,7 +203,7 @@ pub fn read(path: &Path) -> Record {
 pub fn session_id(path: &Path, goal: &str) -> Result<String, String> {
     super::migration::refuse_old_root(path)?;
     let ledger_path = path.join("ledger.json");
-    let text = fs::read_to_string(&ledger_path)
+    let text = super::read_regular_text(&ledger_path, "ledger")
         .map_err(|error| format!("{}: {error}", ledger_path.display()))?;
     let ledger: Value = serde_json::from_str(&text)
         .map_err(|error| format!("{}: {error}", ledger_path.display()))?;
@@ -228,6 +225,7 @@ pub fn session_id(path: &Path, goal: &str) -> Result<String, String> {
 #[cfg(test)]
 mod identity_tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn completed_and_stopped_are_both_over_but_say_which() {
