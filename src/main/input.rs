@@ -1,6 +1,8 @@
 //! Ordered terminal input that wakes its owning UI thread. The bounded queue preserves events;
 //! mouse input stays held after resize until the source acknowledges that resize's drain.
 //! Dropping the reader stops and joins its worker before terminal mode is restored.
+//! Unix hangups fail input before entering crossterm; a hangup between the fd check and
+//! crossterm's nonblocking call can still reach its upstream EOF loop (crossterm#793).
 
 use std::{
     io,
@@ -14,6 +16,9 @@ use std::{
 };
 
 use crossterm::event::{self, Event};
+
+#[cfg(unix)]
+use std::{fs::OpenOptions, io::IsTerminal, os::fd::AsRawFd};
 
 enum Message {
     Event(io::Result<Event>),
@@ -33,7 +38,19 @@ pub(super) struct Input {
 impl Input {
     /// Read terminal events in order, waking the caller without shortening its heartbeat.
     pub(super) fn new() -> io::Result<Self> {
-        Self::start(|timeout| {
+        #[cfg(unix)]
+        let tty = if io::stdin().is_terminal() {
+            None
+        } else {
+            Some(OpenOptions::new().read(true).write(true).open("/dev/tty")?)
+        };
+        Self::start(move |timeout| {
+            #[cfg(unix)]
+            {
+                let fd = tty.as_ref().map_or(libc::STDIN_FILENO, AsRawFd::as_raw_fd);
+                read_terminal(fd, timeout)
+            }
+            #[cfg(not(unix))]
             if event::poll(timeout)? {
                 event::read().map(Some)
             } else {
@@ -147,6 +164,43 @@ impl Input {
             }
         }
     }
+}
+
+#[cfg(unix)]
+fn read_terminal(fd: std::os::fd::RawFd, timeout: Duration) -> io::Result<Option<Event>> {
+    let mut waited = false;
+    loop {
+        poll_terminal(fd, Duration::ZERO)?;
+        if event::poll(Duration::ZERO)? {
+            poll_terminal(fd, Duration::ZERO)?;
+            return event::read().map(Some);
+        }
+        if waited || timeout.is_zero() {
+            return Ok(None);
+        }
+        poll_terminal(fd, timeout)?;
+        waited = true;
+    }
+}
+
+#[cfg(unix)]
+fn poll_terminal(fd: std::os::fd::RawFd, timeout: Duration) -> io::Result<()> {
+    let mut descriptor = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let result = unsafe { libc::poll(&mut descriptor, 1, timeout.as_millis() as libc::c_int) };
+    if result < 0 {
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+    if descriptor.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+        return Err(disconnected());
+    }
+    Ok(())
 }
 
 fn disconnected() -> io::Error {
