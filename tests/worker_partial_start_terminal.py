@@ -42,7 +42,8 @@ def partial_start(width, height, scenario, mono=False):
             assert 'test-worker' in shown and 'Watch' in shown, shown
             before = fixture.mutations()
             terminal.send(F2 * 3 + b'?', 'Worker actions')
-            terminal.send(b'\x1b', 'Request refused or uncertain:')
+            terminal.send(b'\x1b', 'Review worker start')
+            terminal.send(END, 'Watch')
             terminal.send(F10, '1 think')
             terminal.send(b'5', 'test-worker')
             assert fixture.mutations() == before, fixture.calls()

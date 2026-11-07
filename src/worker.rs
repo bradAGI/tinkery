@@ -141,13 +141,24 @@ pub(crate) enum Action {
     StopCap,
 }
 
-/// A refusal retains the known run so the interface can inspect partial progress.
+/// The safe follow-up established by the transaction, never inferred from a missing identity.
+#[derive(Clone, Debug)]
+pub(crate) enum Recovery {
+    /// No creation was attempted; the operator may fix the cause and explicitly retry.
+    Retry,
+    /// Creation may have happened; read SDLC in Watch before any further start.
+    Inspect,
+    /// A source-owned identity is available for explicit follow-up actions.
+    Run(Run),
+}
+
+/// A refusal with its transaction-owned explanation and safe follow-up.
 #[derive(Clone, Debug)]
 pub(crate) struct Failure {
-    /// The actual failed action or boundary, without an invented success.
+    /// The actual failed boundary and any next step, without an invented success.
     pub(crate) message: String,
-    /// Source identity obtained before the refusal, if intake had succeeded.
-    pub(crate) run: Option<Run>,
+    /// Whether retry is safe, inspection is needed, or a pinned run is available.
+    pub(crate) recovery: Recovery,
 }
 
 /// One finite action owned by the menu across visits. Dropping waits for its bounded command
@@ -168,7 +179,7 @@ impl Job {
         Self::spawn(move || {
             act(&run, action).map_err(|message| Failure {
                 message,
-                run: Some(run),
+                recovery: Recovery::Run(run),
             })
         })
     }
@@ -195,7 +206,7 @@ impl Job {
             Err(mpsc::TryRecvError::Disconnected) => Err(Failure {
                 message: "The worker request stopped unexpectedly. Inspect SDLC before retrying."
                     .into(),
-                run: None,
+                recovery: Recovery::Inspect,
             }),
         };
         if let Some(worker) = self.worker.take() {
@@ -332,8 +343,7 @@ fn committed_source(root: &Path) -> Result<String, String> {
 }
 
 fn start(request: Start) -> Result<Snapshot, Failure> {
-    let mut known = None;
-    let result = (|| {
+    let (intake, source_commit) = (|| {
         request.config.validate()?;
         canonical_root(&request.root)?;
         let (intake, goal) = ready::execution(&request.target, &request.root)?;
@@ -366,6 +376,14 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             return Err("This exact seed already has a run. Inspect that run instead of starting another worker.".into());
         }
         ready::execution(&request.target, &intake.root)?;
+        Ok((intake, source_commit))
+    })()
+    .map_err(|message: String| Failure {
+        message: format!("{message} Nothing was started; fix that, then F2 tries again."),
+        recovery: Recovery::Retry,
+    })?;
+    let mut known = None;
+    let result = (|| {
         command(
             &intake.root,
             &["new".into(), intake.slug.clone()],
@@ -465,9 +483,19 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
         )?;
         snapshot(&build)
     })();
-    result.map_err(|message| Failure {
-        message,
-        run: known,
+    result.map_err(|message| match known {
+        Some(run) => Failure {
+            message,
+            recovery: Recovery::Run(run),
+        },
+        None => Failure {
+            message: format!(
+                "{message} Run {} may have been created. Read it in Watch with --sdlc-root {} before starting more work.",
+                intake.slug,
+                intake.root.display()
+            ),
+            recovery: Recovery::Inspect,
+        },
     })
 }
 

@@ -4,7 +4,7 @@
 use crate::{
     Palette,
     approve::WorkerReview,
-    worker::{Action, Config, Job, Run, Snapshot, Start, State, Turn},
+    worker::{Action, Config, Job, Recovery, Run, Snapshot, Start, State, Turn},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -144,16 +144,13 @@ impl Panel {
             Err(failure) => {
                 self.snapshot = None;
                 self.notice = format!("Request refused or uncertain: {}", failure.message);
-                if let Some(run) = failure.run {
-                    self.run = Some(run);
-                } else if self.run.is_none() && starting.is_some() {
-                    // Refused before any run was known: fixing the cause and pressing F2 is safe,
-                    // because a run created meanwhile makes the retry refuse, not start twice.
-                    self.start = starting;
-                    // The operator already read the disclosure. Show why the start failed.
-                    self.scroll = u16::MAX;
-                    self.notice
-                        .push_str(" Nothing was started; fix that, then F2 tries again.");
+                match failure.recovery {
+                    Recovery::Run(run) => self.run = Some(run),
+                    Recovery::Retry => {
+                        self.start = starting;
+                        self.scroll = u16::MAX;
+                    }
+                    Recovery::Inspect => self.scroll = u16::MAX,
                 }
             }
         }
