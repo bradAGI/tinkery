@@ -67,18 +67,10 @@ fn canonical_pr_url(url: &str) -> bool {
             .is_some_and(|repo| matches!(repo, "." | ".."))
 }
 
-/// Source run IDs must use the canonical lowercase UUIDv4 spelling.
-pub(super) fn canonical_run_id(id: &str) -> bool {
-    static ID: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-            .unwrap()
-    });
-    ID.is_match(id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sdlc::canonical_run_id;
     use serde_json::json;
     const URL: &str = "https://github.com/TEST/clinic-tycoon/pull/1";
 

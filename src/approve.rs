@@ -173,8 +173,16 @@ impl Reader {
                             target_failure = "This seed changed since Shape read it. Return to Shape to read it again.".into();
                             continue;
                         }
+                        if seed.retry_started == Ok(true) {
+                            target_failure = "This seed has already started. Open Watch with --sdlc-root set to its retry checkout.".into();
+                            continue;
+                        }
                         let origin_note = root.as_deref().and_then(|root| {
-                            origin_note(&mut seed, origin, repo.as_ref(), root)
+                            if seed.target.as_ref().is_some_and(|target| target.retry.is_some()) {
+                                None // The confirmed retry itself binds its checkout; it did not go through Think.
+                            } else {
+                                origin_note(&mut seed, origin, repo.as_ref(), root)
+                            }
                         });
                         found.seeds.push(Reading { seed, origin_note });
                     }
@@ -326,7 +334,15 @@ impl Approve {
 
     /// Show clipboard transport feedback, not a claim of host clipboard verification.
     pub(crate) fn copy_result(&mut self, sent: bool) {
-        self.notice = if sent {
+        self.notice = if sent
+            && self
+                .seeds()
+                .get(self.selected)
+                .and_then(|row| row.seed.target.as_ref())
+                .is_some_and(|target| target.retry.is_some())
+        {
+            "Copied. Run it, then open Watch with --sdlc-root set to the retry checkout."
+        } else if sent {
             "Copied. Run it in a terminal; after it succeeds, open Watch."
         } else {
             "Couldn't copy; try again."
@@ -494,6 +510,17 @@ impl Approve {
                             "Choose how to start · seed confirmation is not implementation permission",
                             palette.muted,
                         ));
+                        if let Some(base) = seed
+                            .target
+                            .as_ref()
+                            .and_then(|target| target.retry.as_ref())
+                        {
+                            lines.push(Line::raw(display(&format!(
+                                "Retry from {} in {}",
+                                base.head,
+                                base.checkout.display()
+                            ))));
+                        }
                         if let Some(note) = &seed.confirmation_note {
                             lines.push(Line::raw(note.clone()));
                         }
@@ -518,6 +545,8 @@ impl Approve {
                             for line in commands.lines() {
                                 lines.push(Line::raw(line.to_owned()));
                             }
+                        } else if let Err(reason) = &seed.retry_started {
+                            lines.push(Line::raw(display(reason)));
                         } else if !matches!(reading.origin_note, Some(OriginNote::Different(_))) {
                             lines.push(Line::raw(concat!(
                                 "Cannot copy: name a checkout with tink-sdlc installed using --sdlc-root PATH; ",

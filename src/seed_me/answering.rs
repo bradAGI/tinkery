@@ -1119,7 +1119,7 @@ fn unique_id(wanted: &str, taken: &[String]) -> String {
 }
 
 /// Now as an ISO 8601 UTC timestamp, as receipts need.
-pub(super) fn now() -> String {
+pub(crate) fn now() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());

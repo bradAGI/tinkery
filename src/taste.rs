@@ -10,6 +10,8 @@ mod links;
 mod next;
 mod preview;
 mod read;
+mod retry;
+pub(crate) use retry::{Rejected, Reviewed};
 #[cfg(test)]
 mod tests;
 mod view;
@@ -53,6 +55,7 @@ pub(crate) struct Taste {
     at: Option<Instant>,
     notice: String,
     copy: Option<String>,
+    retry: Option<Rejected>,
     pause: Option<next::Pause>,
     draft: Option<crate::think_record::DraftSuggestion>,
 }
@@ -80,6 +83,7 @@ impl Taste {
             at: None,
             notice: String::new(),
             copy: None,
+            retry: None,
             pause: None,
             draft: None,
         }
@@ -149,10 +153,20 @@ impl Taste {
             self.labelling = None;
             match result {
                 Ok(_) => {
-                    self.label = None;
+                    let verdict = self.label.take().and_then(|form| form.ready().ok());
                     self.notice = "Saved your label.".into();
                     if let Some(row) = self.rows.get_mut(self.selected) {
                         row.labelled = Some(true);
+                        row.rejection = verdict
+                            .filter(|(kind, _)| {
+                                *kind == label::Kind::Fail
+                                    && row.local().is_some()
+                                    && matches!(row.goal, Goal::Matched(_))
+                            })
+                            .map(|(_, words)| retry::Verdict {
+                                words,
+                                pinned: true,
+                            });
                     }
                 }
                 Err(why) => self.notice = format!("Not recorded. {why}"),
@@ -182,7 +196,8 @@ impl Taste {
         if key.kind == KeyEventKind::Repeat
             && matches!(
                 key.code,
-                KeyCode::Char('r' | 'o' | 'a' | 'c' | 'l' | 't' | 'e' | 'v' | 'w') | KeyCode::Enter
+                KeyCode::Char('r' | 'o' | 'a' | 'c' | 'l' | 't' | 'e' | 'v' | 'w' | 's')
+                    | KeyCode::Enter
             )
         {
             return false;
@@ -302,6 +317,16 @@ impl Taste {
                     }
                 }
             }
+            KeyCode::Char('s') if self.detail && !self.evidence => {
+                if let Some(row) = self.rows.get(self.selected)
+                    && let (Some(local), Some(verdict)) = (row.local(), &row.rejection)
+                {
+                    self.retry = Some(Rejected {
+                        local: local.clone(),
+                        verdict: verdict.clone(),
+                    });
+                }
+            }
             KeyCode::Char('w')
                 if self.detail
                     && self.reading.is_none()
@@ -310,7 +335,7 @@ impl Taste {
                 if self.agent {
                     self.notice =
                         "Labels are the operator's; an agent launch can't record one.".into();
-                } else if let Some(root) = self.root.clone() {
+                } else if let Some(root) = self.label_root() {
                     self.label = Some(label::Form::default());
                     self.signer = None;
                     self.signing = Some(Read::task(move |stop| label::signer(&root, stop)));
@@ -344,6 +369,19 @@ impl Taste {
         false
     }
 
+    fn label_root(&self) -> Option<PathBuf> {
+        self.rows
+            .get(self.selected)
+            .and_then(ResultRow::local)
+            .map(|local| local.checkout().to_path_buf())
+            .or_else(|| self.root.clone())
+    }
+
+    /// The reviewed local result for one explicit transition into Shape.
+    pub(crate) fn take_retry(&mut self) -> Option<Rejected> {
+        self.retry.take()
+    }
+
     /// The open label form takes every key: words are typed, F2 saves once, Esc discards.
     fn label_key(&mut self, key: KeyEvent) {
         if self.labelling.is_some() {
@@ -356,6 +394,7 @@ impl Taste {
             KeyCode::PageDown => return self.scroll = self.scroll.saturating_add(self.page),
             _ => {}
         }
+        let root = self.label_root();
         let Some(form) = self.label.as_mut() else {
             return;
         };
@@ -368,8 +407,7 @@ impl Taste {
                 self.notice = "Label discarded; nothing recorded.".into();
             }
             label::Action::Save => {
-                let (Some(root), Some(row)) = (self.root.clone(), self.rows.get(self.selected))
-                else {
+                let (Some(root), Some(row)) = (root, self.rows.get(self.selected)) else {
                     return self.notice = "Select a result first.".into();
                 };
                 match (form.ready(), &self.signer) {
@@ -384,10 +422,10 @@ impl Taste {
                         self.notice = "Checking your name again; press F2 once it shows.".into();
                     }
                     (Ok((kind, words)), Some(Ok(name))) => {
-                        let (slug, id, name) = (row.slug.clone(), row.id.clone(), name.clone());
+                        let (row, name) = (row.clone(), name.clone());
                         self.notice = "Saving your label…".into();
                         self.labelling = Some(Read::task(move |stop| {
-                            label::write(&root, &slug, &id, kind, &words, &name, stop)
+                            label::write(&root, &row, kind, &words, &name, stop)
                         }));
                     }
                 }
@@ -549,6 +587,8 @@ impl Taste {
         } else if self.detail {
             let next = if self.pause.is_some() {
                 "t edit in Think (unsent)  "
+            } else if selected.is_some_and(|r| r.rejection.is_some()) {
+                "s Shape the next attempt  "
             } else {
                 ""
             };
@@ -662,7 +702,8 @@ fn goal(goal: &Goal) -> &str {
     }
 }
 
-fn safe(text: &str) -> String {
+/// Show untrusted source words on one line, escaping terminal controls.
+pub(crate) fn safe(text: &str) -> String {
     text.chars()
         .flat_map(|c| {
             if c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {

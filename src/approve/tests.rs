@@ -10,6 +10,7 @@ fn seed(goal: &str) -> Reading {
             acceptance: "## Acceptance criteria\n- TEST exact check  \n".into(),
             commands: Some("python3 _system/scripts/sdlc.py new <run>\nTEST intake".into()),
             confirmation_note: None,
+            retry_started: Ok(false),
         },
         origin_note: None,
     }

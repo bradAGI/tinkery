@@ -74,42 +74,8 @@ impl Local {
                 "Local result checkout is not its Git root; inspect the run and press r.".into(),
             );
         }
-        let paths = [".", ":(exclude)runs"];
-        let diff = [
-            "diff",
-            "--quiet",
-            "--no-ext-diff",
-            "--no-textconv",
-            head,
-            "--",
-        ];
-        let differs =
-            "Local source differs from the checked commit. Commit and verify, then press r.";
-        git(
-            &checkout,
-            &[&diff[..], &paths, &[":(exclude)AGENTS.md"]].concat(),
-            false,
-            stop,
-        )
-        .map_err(|_| differs)?;
-        if git(
-            &checkout,
-            &[&diff[..], &["AGENTS.md"]].concat(),
-            false,
-            stop,
-        )
-        .is_err()
-            && !generated_rules_only(&checkout, head, stop)
-        {
-            return Err(differs.into());
-        }
-        let mut untracked = vec!["ls-files", "--others", "--exclude-standard", "-z", "--"];
-        untracked.extend(paths);
-        if !git(&checkout, &untracked, false, stop)?.is_empty() {
-            return Err(
-                "Local source has uncommitted files. Commit and verify, then press r.".into(),
-            );
-        }
+        sdlc::source::check(&checkout, head, |args| git(&checkout, args, false, stop))
+            .map_err(|why| format!("{why} Commit and verify, then press r."))?;
         Ok(Self {
             root: root.to_path_buf(),
             checkout,
@@ -126,6 +92,16 @@ impl Local {
             seed: run["seed_contract"].clone(),
             goal: sdlc::goal(run),
         })
+    }
+
+    /// The checkout named at launch, whose runtime supplied the local reading.
+    pub(super) fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The run whose result the operator reviewed.
+    pub(super) fn id(&self) -> &str {
+        &self.id
     }
 
     /// The exact checked commit, never a newer checkout HEAD or inferred branch.
@@ -164,7 +140,8 @@ impl Local {
         Spec::parse(&blob).map(Some)
     }
 
-    fn recheck(&self, stop: &AtomicBool) -> Result<(), String> {
+    /// Recheck the source run and return the matching status for a preview or retry.
+    pub(super) fn recheck(&self, stop: &AtomicBool) -> Result<Value, String> {
         let output = sdlc::status(
             &self.root,
             &["status".into(), self.slug.clone(), "--json".into()],
@@ -174,28 +151,11 @@ impl Local {
         let value = sdlc::envelope(&output)?;
         if Self::read(&self.root, &value["run"], stop)? != *self {
             return Err(
-                "Local result changed since reading. Press r before running its preview.".into(),
+                "Local result changed since reading. Press r before using this result.".into(),
             );
         }
-        Ok(())
+        Ok(value["run"].clone())
     }
-}
-
-/// AGENTS.md differs from the checked commit only by tink-sdlc's generated rules block, which the
-/// worker launcher writes and tink-sdlc excludes from the verified candidate.
-fn generated_rules_only(checkout: &Path, head: &str, stop: &AtomicBool) -> bool {
-    let (Ok(committed), Ok(current)) = (
-        git(
-            checkout,
-            &["show", &format!("{head}:AGENTS.md")],
-            false,
-            stop,
-        ),
-        std::fs::read(checkout.join("AGENTS.md")),
-    ) else {
-        return false;
-    };
-    sdlc::without_generated_rules(committed.as_bytes()) == sdlc::without_generated_rules(&current)
 }
 
 /// An explicit PR result or a current checked local result; never a guessed repository.
@@ -350,7 +310,12 @@ impl Drop for Process {
     }
 }
 
-fn git(root: &Path, args: &[&str], github: bool, stop: &AtomicBool) -> Result<String, String> {
+pub(super) fn git(
+    root: &Path,
+    args: &[&str],
+    github: bool,
+    stop: &AtomicBool,
+) -> Result<String, String> {
     let mut command = Command::new("git");
     command.args([
         "-c",

@@ -1497,15 +1497,14 @@ impl Opened {
         {
             let session = self.session.clone();
             std::thread::spawn(move || {
-                let read = shaping::read(&session);
-                let folder = match (&agent, &read) {
-                    (
-                        Some(agent),
-                        Ok(Shaping {
-                            goal: Some(goal), ..
-                        }),
-                    ) => Some(agent.folder(&session, goal)),
-                    _ => None,
+                let (read, folder) = match shaping::read_with_base(&session) {
+                    Ok((read, base)) => {
+                        let folder = base.map(|base| base.checkout).or_else(|| {
+                            Some(agent.as_ref()?.folder(&session, read.goal.as_deref()?))
+                        });
+                        (Ok(read), folder)
+                    }
+                    Err(why) => (Err(why), None),
                 };
                 let _ = sender.send((read, folder));
             });

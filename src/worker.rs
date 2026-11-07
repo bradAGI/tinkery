@@ -7,12 +7,12 @@ pub(crate) use orientation::cap_advice;
 #[cfg(test)]
 mod tests;
 
+use crate::sdlc::git;
 use crate::{repo::Repo, sdlc, seed_me::ready, think_record};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     path::{Path, PathBuf},
-    process::Command,
     sync::{atomic::AtomicBool, mpsc},
     thread::{self, JoinHandle},
     time::Duration,
@@ -302,17 +302,20 @@ fn current(run: &Run) -> Result<Value, String> {
     Ok(value)
 }
 
-fn require_seed(value: &Value) -> Result<(), String> {
-    if !matches!(sdlc::goal(value), sdlc::Goal::Matched(_)) {
-        return Err("The run's original confirmed seed is unavailable or changed. Recheck it before running work.".into());
-    }
-    Ok(())
+fn require_seed(value: &Value) -> Result<ready::ReadySeed, String> {
+    sdlc::confirmed(value).map_err(|_| "The run's original confirmed seed is unavailable or changed. Recheck it before running work.".into())
 }
 
-fn git(root: &Path, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new("git");
-    command.arg("--no-optional-locks").args(args);
-    sdlc::execute(root, command, &AtomicBool::new(false), sdlc::DEADLINE)
+// Check both the recorded ancestry and the files a newly launched worker will actually read.
+fn check_retry_source(run: &Run, target: Option<&ready::SeedTarget>) -> Result<(), String> {
+    if let Some(base) = target.and_then(|t| t.retry.as_ref()) {
+        base.check_build(&run.root, &run.slug, &source_head(&run.root)?)
+            .map_err(|_| "The new build did not start at the confirmed candidate. No worker was launched.")?;
+        sdlc::source::check(&run.root, &base.head, |args| git(&run.root, args)).map_err(|why| {
+            format!("{why} Inspect the build checkout before launching a worker.")
+        })?;
+    }
+    Ok(())
 }
 
 fn source_head(root: &Path) -> Result<String, String> {
@@ -345,6 +348,10 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
         request.config.validate()?;
         canonical_root(&request.root)?;
         let (intake, goal) = ready::execution(&request.target, &request.root)?;
+        if let Some(base) = &request.target.retry {
+            base.check_checkout(&request.root)?;
+            canonical_root(&intake.root)?;
+        }
         let origins = request.record_root.as_ref().ok().and_then(|root| {
             think_record::read_origins(root, &[(&request.target.session, goal.as_str())]).ok()
         });
@@ -357,6 +364,14 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             );
         }
         let source_commit = committed_source(&intake.root)?;
+        if request
+            .target
+            .retry
+            .as_ref()
+            .is_some_and(|base| source_commit != base.head)
+        {
+            return Err("The retry checkout moved off its confirmed starting commit.".into());
+        }
         let seeds = sdlc::seeds(&intake.root, &AtomicBool::new(false))?;
         if sdlc::started(&seeds, &intake.seed)? {
             return Err("This exact seed already has a run. Inspect that run instead of starting another worker.".into());
@@ -390,6 +405,9 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             return Err("Intake recorded a different seed; no worker was started.".into());
         }
         ready::execution(&request.target, &intake.root)?;
+        if let Some(base) = &request.target.retry {
+            base.check_checkout(&request.root)?;
+        }
         if source_head(&intake.root)? != source_commit {
             return Err("The selected source commit changed during intake. Inspect the run before starting a worker.".into());
         }
@@ -407,6 +425,7 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             );
         }
         known = Some(build.clone());
+        check_retry_source(&build, Some(&request.target))?;
         let value = current(&build)?;
         require_seed(&value)?;
         ready::execution(&request.target, &intake.root)?;
@@ -444,6 +463,7 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
         let value = current(&build)?;
         require_seed(&value)?;
         ready::execution(&request.target, &intake.root)?;
+        check_retry_source(&build, Some(&request.target))?;
         command(
             &build.root,
             &[
@@ -472,20 +492,18 @@ fn act(run: &Run, action: Action) -> Result<Snapshot, String> {
         return snapshot(&observed);
     }
     let value = current(run)?;
-    if matches!(
-        action,
-        Action::Launch(_) | Action::Resume(_) | Action::Verify
-    ) {
+    if matches!(action, Action::Resume(_) | Action::Verify) {
         require_seed(&value)?;
     }
     let step = |action: &str| vec!["step".into(), run.slug.clone(), STEP.into(), action.into()];
     match action {
         Action::Refresh => {}
         Action::Launch(pin) => {
-            admit(run, pin, true)?;
+            let seed = require_seed(&value)?;
+            admit(run, pin, true, seed.target.as_ref())?;
         }
         Action::Resume(pin) => {
-            admit(run, pin, false)?;
+            admit(run, pin, false, None)?;
         }
         Action::Finish => {
             if value["verification_status"].as_str() != Some("current")
@@ -530,7 +548,12 @@ fn act(run: &Run, action: Action) -> Result<Snapshot, String> {
     snapshot(run)
 }
 
-fn admit(run: &Run, pin: Pin, launch: bool) -> Result<(), String> {
+fn admit(
+    run: &Run,
+    pin: Pin,
+    launch: bool,
+    target: Option<&ready::SeedTarget>,
+) -> Result<(), String> {
     let observed = snapshot(run)?;
     if observed.pin.as_ref() != Some(&pin) {
         return Err("The worker's model, allowance, session or contract changed. Admission refused; inspect it again.".into());
@@ -544,6 +567,7 @@ fn admit(run: &Run, pin: Pin, launch: bool) -> Result<(), String> {
     if !launch && observed.state != (State::Active { turn: Turn::Ended }) {
         return Err("Resume needs an observed ended turn. A running or unknown turn may still own this session.".into());
     }
+    check_retry_source(run, target)?;
     command(
         &run.root,
         &[

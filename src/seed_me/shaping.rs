@@ -122,10 +122,17 @@ pub enum Shaped {
 /// Read `session` through Tinkery's ledger and verifier; run disk reads off the paint path.
 /// It offers no intake command: Approve owns the one that starts a build.
 pub fn read(session: &Path) -> Result<Shaping, String> {
+    read_with_base(session).map(|(shaping, _)| shaping)
+}
+
+/// Include the retry checkout in the same reading, so Shape uses the source it displays.
+pub(crate) fn read_with_base(
+    session: &Path,
+) -> Result<(Shaping, Option<super::retry::Base>), String> {
     read_session(session).map_err(|reason| format!("Tinkery refused: {reason}"))
 }
 
-fn read_session(session: &Path) -> Result<Shaping, String> {
+fn read_session(session: &Path) -> Result<(Shaping, Option<super::retry::Base>), String> {
     let ledger = super::ledger::load(session)?;
     let flags = super::ledger::review_flags(&ledger["nodes"]);
     let status = super::ledger::status_from_ledger(session, &ledger)?;
@@ -157,6 +164,7 @@ fn read_session(session: &Path) -> Result<Shaping, String> {
     status["revisable"] = serde_json::json!(revisable);
     status["waiting_on"] = Value::Object(waits);
     let mut shaping = classify(&ledger, &status);
+    let retry = super::retry::base(&saved)?;
     if matches!(shaping.stage, Shaped::Ready { .. }) {
         shaping.ready_target = (|| {
             Some(super::ready::SeedTarget {
@@ -165,10 +173,14 @@ fn read_session(session: &Path) -> Result<Shaping, String> {
                     .as_str()
                     .filter(|id| !id.is_empty() && !id.chars().any(char::is_control))?
                     .to_owned(),
+                retry: retry.clone(),
                 version: shaping.version?,
                 sha256: status["seed"]["sha256"].as_str()?.to_owned(),
             })
         })();
+        if retry.is_some() && shaping.ready_target.is_none() {
+            return Err("The retry has no verified session identity.".into());
+        }
     }
     shaping.confirmation = confirmation;
     if matches!(shaping.stage, Shaped::Waiting) {
@@ -190,7 +202,7 @@ fn read_session(session: &Path) -> Result<Shaping, String> {
             );
         }
     }
-    Ok(shaping)
+    Ok((shaping, retry))
 }
 
 /// Where the seed stands, from the ledger and its verified `status`. An open question comes

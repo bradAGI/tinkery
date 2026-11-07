@@ -29,6 +29,7 @@ fn row() -> ResultRow {
         ],
         gaps: Vec::new(),
         labelled: Some(false),
+        rejection: None,
     }
 }
 

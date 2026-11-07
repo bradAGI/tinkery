@@ -2,6 +2,7 @@
 //! current bytes are the only join; names and goal text confer no identity. No store or discovery.
 
 mod run;
+pub(crate) mod source;
 #[cfg(test)]
 mod tests;
 
@@ -12,6 +13,13 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::AtomicBool,
 };
+
+/// Read bounded Git metadata without updating the index, on a background worker.
+pub(crate) fn git(root: &Path, args: &[&str]) -> Result<String, String> {
+    let mut command = std::process::Command::new("git");
+    command.arg("--no-optional-locks").args(args);
+    execute(root, command, &AtomicBool::new(false), DEADLINE)
+}
 
 /// A source-owned intake record, not permission to launch or approve anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +70,36 @@ impl Seed {
             .map_err(|e| format!("Cannot read the original seed: {e}"))?;
         Ok(self.sha256 == format!("{:x}", Sha256::digest(bytes)))
     }
+}
+
+/// Read only the expected detached retry's intake record; never invoke its runtime or steps.
+pub(crate) fn retry_seed(directory: &Path, slug: &str) -> Option<Seed> {
+    use std::{fs::OpenOptions, io::Read as _, os::unix::fs::OpenOptionsExt};
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+        .open(directory.join("run.json"))
+        .ok()?;
+    let limit = 4 * 1024 * 1024;
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() || metadata.len() > limit {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(limit + 1).read_to_end(&mut bytes).ok()?;
+    if bytes.len() as u64 > limit {
+        return None;
+    }
+    let run: Value = serde_json::from_slice(&bytes).ok()?;
+    let bound = &run["seed_contract"];
+    if run["schema"] != 1
+        || !canonical_run_id(run["run_id"].as_str()?)
+        || bound["path"].as_str()? != format!("runs/{slug}/seed-contract.md")
+        || bound.get("definitions_sha256").is_none()
+    {
+        return None;
+    }
+    Seed::parse(&run).ok().flatten()
 }
 
 /// Read only API 1's envelope; unknown interfaces never supply facts.
@@ -115,19 +153,22 @@ pub(crate) enum Goal {
 /// Read the exact goal only for a still-matching, verified seed, on a worker. An explicit null
 /// record means no seed; missing, changed or unverified original session files stay unknown.
 pub(crate) fn goal(run: &Value) -> Goal {
-    let seed = match Seed::parse(run) {
-        Ok(Some(seed)) => seed,
-        Ok(None) => return Goal::NoSeed,
-        Err(_) => return Goal::Unknown,
-    };
+    confirmed(run).map_or_else(|gap| gap, |ready| Goal::Matched(ready.goal))
+}
+
+/// A run may supply the goal and retry base only from its own still-matching confirmed seed.
+pub(crate) fn confirmed(run: &Value) -> Result<crate::seed_me::ready::ReadySeed, Goal> {
+    let seed = Seed::parse(run)
+        .map_err(|_| Goal::Unknown)?
+        .ok_or(Goal::NoSeed)?;
     let matched = || {
         if !seed.matches(&seed.source).ok()? {
             return None;
         }
-        let goal = crate::seed_me::ready::goal(&seed.source).ok()?;
-        seed.matches(&seed.source).ok()?.then_some(goal)
+        let ready = crate::seed_me::ready::confirmed(&seed.source).ok()?;
+        seed.matches(&seed.source).ok()?.then_some(ready)
     };
-    matched().map_or(Goal::Unknown, Goal::Matched)
+    matched().ok_or(Goal::Unknown)
 }
 
 /// Whether a session's current seed was recorded by any run. A changed same-path seed is an
@@ -197,4 +238,13 @@ pub(crate) fn without_generated_rules(data: &[u8]) -> Vec<u8> {
     }
     out.extend(lines[cursor..].concat());
     out
+}
+
+/// Source run IDs must use the canonical lowercase UUIDv4 spelling.
+pub(crate) fn canonical_run_id(id: &str) -> bool {
+    static ID: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+            .unwrap()
+    });
+    ID.is_match(id)
 }
