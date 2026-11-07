@@ -88,6 +88,93 @@ fn read_failure_reasons_preserve_session_classification_and_seed_unknowns() {
     assert_eq!(session.stage, Stage::Unknown);
 }
 
+fn fifo_session(test: &str, file: &str, check: impl FnOnce(&std::path::Path)) {
+    const SESSION: &str = "TINKERY_TEST_FIFO_SESSION";
+    if let Some(path) = std::env::var_os(SESSION) {
+        check(std::path::Path::new(&path));
+        return;
+    }
+    let root = tempfile::Builder::new()
+        .prefix("tinkery-TEST-763-fifo-")
+        .tempdir()
+        .unwrap();
+    let session = root.path().join("TEST-session");
+    fs::create_dir(&session).unwrap();
+    if file != "ledger.json" {
+        fs::write(
+            session.join("ledger.json"),
+            r#"{"schema_version":1,"session_id":"TEST-id","status":"active","goal":"TEST goal"}"#,
+        )
+        .unwrap();
+    }
+    let path = session.join(file);
+    let name = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test, "--nocapture"])
+        .env(SESSION, &session)
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success(), "{test} failed: {status}");
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("{test} waited for a FIFO writer at {file}");
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn discovery_refuses_a_fifo_ledger_without_waiting() {
+    fifo_session(
+        "discovery_refuses_a_fifo_ledger_without_waiting",
+        "ledger.json",
+        |session| {
+            let found = tinkery::tend::scan(session.parent().unwrap()).unwrap();
+            assert!(found.sessions.is_empty());
+            assert_eq!(found.unreadable, 1);
+            assert!(!found.complete());
+            assert_eq!(found.failures[0].path, session.join("ledger.json"));
+            assert!(found.failures[0].reason.contains("not a regular file"));
+        },
+    );
+}
+
+#[test]
+fn discovery_marks_a_fifo_seed_unknown_without_waiting() {
+    fifo_session(
+        "discovery_marks_a_fifo_seed_unknown_without_waiting",
+        "seed-contract.md",
+        |session| {
+            let found = tinkery::tend::scan(session.parent().unwrap()).unwrap();
+            assert!(found.complete());
+            assert_eq!(found.sessions.len(), 1);
+            assert_eq!(found.sessions[0].goal, "TEST goal");
+            assert_eq!(found.sessions[0].stage, tinkery::seed_me::Stage::Unknown);
+        },
+    );
+}
+
+#[test]
+fn attribution_refuses_a_fifo_ledger_without_waiting() {
+    fifo_session(
+        "attribution_refuses_a_fifo_ledger_without_waiting",
+        "ledger.json",
+        |session| {
+            let reason = tinkery::seed_me::session_id(session, "TEST goal").unwrap_err();
+            assert!(reason.contains(session.join("ledger.json").to_str().unwrap()));
+            assert!(reason.contains("not a regular file"));
+        },
+    );
+}
+
 #[test]
 fn notice_names_only_the_help_route_that_has_diagnostics() {
     let (_dir, mut home) = fixture();

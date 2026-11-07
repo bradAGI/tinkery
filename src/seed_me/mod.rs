@@ -81,6 +81,10 @@ fn read_regular(path: &Path, name: &str) -> std::io::Result<Vec<u8>> {
 
 /// Read regular seed bytes as UTF-8, refusing invalid text without changing the bytes.
 pub(crate) fn read_seed_text(path: &Path) -> std::io::Result<String> {
-    String::from_utf8(read_seed(path)?)
+    read_regular_text(path, "original seed")
+}
+
+fn read_regular_text(path: &Path, name: &str) -> std::io::Result<String> {
+    String::from_utf8(read_regular(path, name)?)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
