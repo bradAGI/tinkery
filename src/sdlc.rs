@@ -6,7 +6,7 @@ pub(crate) mod source;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use run::{DEADLINE, Read, SCRIPT, execute, run as status};
+pub(crate) use run::{DEADLINE, Name, Read, SCRIPT, execute, run as status};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -18,7 +18,13 @@ use std::{
 pub(crate) fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let mut command = std::process::Command::new("git");
     command.arg("--no-optional-locks").args(args);
-    execute(root, command, &AtomicBool::new(false), DEADLINE)
+    execute(
+        root,
+        command,
+        Name::Program("git"),
+        &AtomicBool::new(false),
+        DEADLINE,
+    )
 }
 
 /// A source-owned intake record, not permission to launch or approve anything.

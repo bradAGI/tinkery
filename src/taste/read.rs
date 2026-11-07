@@ -429,7 +429,7 @@ fn gh(root: &Path, url: &str, stop: &AtomicBool) -> Result<Value, String> {
         "--json",
         "url,title,headRefOid,state,statusCheckRollup",
     ]);
-    let out = sdlc::execute(root, command, stop, DEADLINE)?;
+    let out = sdlc::execute(root, command, sdlc::Name::Program("gh"), stop, DEADLINE)?;
     serde_json::from_str(&out).map_err(|_| "GitHub report unreadable.".into())
 }
 

@@ -24,6 +24,7 @@ fn completed_command(exit: u8) {
     let result = run::execute(
         fixture.root(),
         std::process::Command::new(fixture.program()),
+        Name::Program(fixture.program().to_str().unwrap()),
         &AtomicBool::new(false),
         std::time::Duration::from_secs(10),
     );
@@ -276,19 +277,140 @@ fn other_commands_name_themselves_when_they_fail_never_python_or_status() {
         .tempdir()
         .unwrap();
     let missing = std::process::Command::new("tinkery-TEST-missing-gh");
-    let why = run::execute(root.path(), missing, &AtomicBool::new(false), DEADLINE).unwrap_err();
+    let why = run::execute(
+        root.path(),
+        missing,
+        Name::Program("tinkery-TEST-missing-gh"),
+        &AtomicBool::new(false),
+        DEADLINE,
+    )
+    .unwrap_err();
     assert_eq!(
         why,
         "Couldn't start tinkery-TEST-missing-gh. Check that it is installed and on PATH."
     );
     let mut failing = std::process::Command::new("sh");
     failing.args(["-c", "echo 'fatal: TEST remote ref' >&2; exit 3"]);
-    let why = run::execute(root.path(), failing, &AtomicBool::new(false), DEADLINE).unwrap_err();
+    let why = run::execute(
+        root.path(),
+        failing,
+        Name::Program("sh"),
+        &AtomicBool::new(false),
+        DEADLINE,
+    )
+    .unwrap_err();
     assert!(
         why.starts_with("sh exited with") && why.ends_with("fatal: TEST remote ref"),
         "{why}"
     );
     assert!(!why.contains("Python"), "{why}");
+}
+
+#[test]
+fn isolated_label_failure_names_label_not_the_script() {
+    let root = tempfile::Builder::new()
+        .prefix("tinkery-TEST-label-command-")
+        .tempdir()
+        .unwrap();
+    let scripts = root.path().join("_system/scripts");
+    fs::create_dir_all(&scripts).unwrap();
+    fs::write(
+        scripts.join("sdlc.py"),
+        "import sys\nassert sys.argv[1] == 'label'\nprint('Error: TEST label refused', file=sys.stderr)\nsys.exit(3)\n",
+    )
+    .unwrap();
+    for isolated in [false, true] {
+        let mut command = std::process::Command::new("python3");
+        if isolated {
+            command.arg("-I");
+        }
+        command.args([SCRIPT, "label"]);
+        let why = run::execute(
+            root.path(),
+            command,
+            Name::Sdlc("label"),
+            &AtomicBool::new(false),
+            DEADLINE,
+        )
+        .unwrap_err();
+        assert_eq!(
+            why, "label exited with exit status: 3: Error: TEST label refused",
+            "isolated: {isolated}"
+        );
+    }
+}
+
+#[test]
+fn explicit_names_own_start_failures_without_status_special_cases() {
+    let root = tempfile::Builder::new()
+        .prefix("tinkery-TEST-command-name-")
+        .tempdir()
+        .unwrap();
+    for name in [
+        Name::Program("status"),
+        Name::Sdlc("status"),
+        Name::Sdlc("label"),
+    ] {
+        let why = execute(
+            &root.path().join("TEST-missing-checkout"),
+            std::process::Command::new("python3"),
+            name,
+            &AtomicBool::new(false),
+            DEADLINE,
+        )
+        .unwrap_err();
+        let expected = match name {
+            Name::Program(name) | Name::Sdlc(name) => name,
+        };
+        assert_eq!(
+            why,
+            format!("Couldn't start {expected}. Check that it is installed and on PATH.")
+        );
+    }
+}
+
+#[test]
+fn explicit_command_kind_preserves_sdlc_and_program_diagnostics() {
+    let root = tempfile::Builder::new()
+        .prefix("tinkery-TEST-command-diagnostics-")
+        .tempdir()
+        .unwrap();
+    for (name, output, expected) in [
+        (
+            Name::Sdlc("label"),
+            "",
+            "sdlc.py: error: TEST option refused",
+        ),
+        (Name::Program("git"), "", "TEST last diagnostic"),
+        (
+            Name::Sdlc("label"),
+            "{\"error\":{\"message\":\"TEST refusal\"}}",
+            "TEST refusal",
+        ),
+    ] {
+        let mut command = std::process::Command::new("sh");
+        command.args([
+            "-c",
+            "printf '%s' \"$1\"; printf 'sdlc.py: error: TEST option refused\\nTEST last diagnostic\\n' >&2; exit 3",
+            "TEST-command",
+            output,
+        ]);
+        let why = execute(
+            root.path(),
+            command,
+            name,
+            &AtomicBool::new(false),
+            DEADLINE,
+        )
+        .unwrap_err();
+        let name = match name {
+            Name::Program(name) | Name::Sdlc(name) => name,
+        };
+        assert_eq!(
+            why,
+            format!("{name} exited with exit status: 3: {expected}")
+        );
+    }
 }
 
 #[test]

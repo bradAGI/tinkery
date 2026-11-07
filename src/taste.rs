@@ -288,7 +288,14 @@ impl Taste {
                             self.opening = Some(Read::task(move |stop| {
                                 let mut command = Command::new("gh");
                                 command.args(["pr", "view", &url, "--web"]);
-                                sdlc::execute(&root, command, stop, DEADLINE).map(|_| ())
+                                sdlc::execute(
+                                    &root,
+                                    command,
+                                    sdlc::Name::Program("gh"),
+                                    stop,
+                                    DEADLINE,
+                                )
+                                .map(|_| ())
                             }));
                         }
                         Err(_) if row.local().is_some() => {
