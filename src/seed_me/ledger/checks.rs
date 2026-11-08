@@ -383,11 +383,6 @@ struct HeadingError {
     text: String,
 }
 
-/// Locate literal artifact headings, retaining the helper-compatible refusal wording.
-pub fn document_headings(body: &str) -> Result<Vec<(usize, String)>> {
-    headings(body, &[]).map_err(|error| error.rule.into())
-}
-
 /// The same structural parser with offending lines for model prose-field refusals.
 pub(crate) fn prose_headings(body: &str) -> Result<Vec<(usize, String)>> {
     headings(body, &[]).map_err(|error| {

@@ -49,7 +49,7 @@ else:
 print(json.dumps(dict(type='result', is_error=False, result=json.dumps(reply),
     modelUsage={flag('--model'): {}})))
 '''
-F1, F2, ESC, DOWN, UP = b'\x1bOP', b'\x1bOQ', b'\x1b', b'\x1b[B', b'\x1b[A'
+F1, F2, ESC, DOWN = b'\x1bOP', b'\x1bOQ', b'\x1b', b'\x1b[B'
 
 
 class Launch:
