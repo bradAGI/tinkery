@@ -270,7 +270,7 @@ impl Measure {
             .as_ref()
             .is_some_and(|report| !report.prs.is_empty())
         {
-            "↑↓ move   enter details   r refresh   p runs   esc back"
+            "↑↓ move   enter details   r refresh   esc back"
         } else if self.report.is_some() {
             "r refresh   p runs   esc back   ? help"
         } else {
