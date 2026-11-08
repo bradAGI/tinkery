@@ -114,6 +114,203 @@ pub(crate) fn envelope(output: &str) -> Result<Value, String> {
     Ok(value)
 }
 
+macro_rules! word_enum {
+    ($name:ident, $fallback:expr, {$($variant:ident => $word:literal),+ $(,)?}) => {
+        #[doc = "A recognized API 1 word; unknown values remain unrecognized."]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub(crate) enum $name { $(#[doc = $word] $variant),+ }
+        impl $name {
+            fn read(value: &Value) -> Option<Self> {
+                match value.as_str()? {
+                    $($word => Some(Self::$variant),)+
+                    _ => $fallback,
+                }
+            }
+        }
+    };
+}
+
+word_enum!(Verification, None, {
+    Blocked => "blocked", Running => "running", NotRun => "not-run", Current => "current",
+    Stale => "stale", Failed => "failed", Interrupted => "interrupted", Invalid => "invalid"
+});
+word_enum!(GateStatus, None, {
+    Approved => "approved", Pending => "pending", Stale => "stale", ChangesRequested => "changes-requested"
+});
+word_enum!(CheckStatus, None, {
+    Passed => "passed", Pending => "pending", Failed => "failed", Unknown => "unknown"
+});
+word_enum!(Proof, None, { Automated => "automated", Attested => "attested" });
+word_enum!(StepState, None, {
+    Prepared => "prepared", Active => "active", Uncertain => "uncertain", Completed => "completed",
+    Stopped => "stopped", Unreadable => "unreadable"
+});
+word_enum!(TurnStatus, None, { Ended => "ended", Running => "not-ended", Unknown => "unknown" });
+word_enum!(StopReason, None, { Cap => "cap", Operator => "operator" });
+
+/// A boundary word retains missing, null, malformed and unfamiliar values for contextual refusals.
+#[derive(Debug, Clone)]
+pub(crate) struct Word<T> {
+    value: Option<Value>,
+    known: Option<T>,
+}
+
+impl<T: Copy + PartialEq> Word<T> {
+    /// The recognized value, never a fallback for an unfamiliar word.
+    pub(crate) fn known(&self) -> Option<T> {
+        self.known
+    }
+    /// The original spelling for display and exact refusal text, not recognition.
+    pub(crate) fn as_str(&self) -> Option<&str> {
+        self.value.as_ref()?.as_str()
+    }
+    /// Whether the source supplied this field, including explicit null.
+    pub(crate) fn present(&self) -> bool {
+        self.value.is_some()
+    }
+    /// Compare only a recognized value.
+    pub(crate) fn is(&self, value: T) -> bool {
+        self.known == Some(value)
+    }
+}
+
+/// One parsed API record. Metadata excludes word fields so readers cannot reinterpret them.
+#[derive(Debug, Clone)]
+pub(crate) struct Run {
+    /// Non-word metadata, including source-owned evidence and identity.
+    pub(crate) data: Value,
+    /// Run verification, with unknowns retained until the consumer requires a known state.
+    pub(crate) verification: Word<Verification>,
+    /// Receipt result recognizes only the checklist result vocabulary; eligibility remains contextual.
+    pub(crate) receipt_result: Word<CheckStatus>,
+    /// Opaque receipt identity retains every original field for exact snapshot comparison.
+    pub(crate) receipt: Receipt,
+    /// A missing or malformed list cannot silently become an empty list.
+    pub(crate) gates: Option<Vec<Gate>>,
+    /// Typed completion conditions, absent for list summaries.
+    pub(crate) checklist: Option<Vec<CheckItem>>,
+    /// Older reports can omit steps; explicit null is not omission.
+    pub(crate) steps: Option<Vec<Step>>,
+    /// Whether the report supplied steps at all.
+    pub(crate) steps_present: bool,
+    /// Contract state when this record is a worker contract rather than run status.
+    pub(crate) state: Word<StepState>,
+    /// Contract stop reason, meaningful only for a stopped contract.
+    pub(crate) stopped_by: Word<StopReason>,
+}
+
+/// Exact receipt equality without exposing its words for a second interpretation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Receipt(Value);
+
+/// A gate's word and source metadata; stage requirements belong to the consuming operation.
+#[derive(Debug, Clone)]
+pub(crate) struct Gate {
+    /// Source-owned stage and decision evidence.
+    pub(crate) data: Value,
+    /// Recognized gate state or preserved unfamiliar value.
+    pub(crate) status: Word<GateStatus>,
+}
+
+/// A completion condition's recognized words and uninterpreted evidence metadata.
+#[derive(Debug, Clone)]
+pub(crate) struct CheckItem {
+    /// Exact expectation, ownership flags, check and mark evidence.
+    pub(crate) data: Value,
+    /// Completion result, not an acceptance claim.
+    pub(crate) status: Word<CheckStatus>,
+    /// Proof method, not a passing result.
+    pub(crate) proof: Word<Proof>,
+}
+
+/// A step's recognized state, turn and stop reason, without orchestration policy.
+#[derive(Debug, Clone)]
+pub(crate) struct Step {
+    /// Name, observed text and obligation metadata.
+    pub(crate) data: Value,
+    /// Persisted step state.
+    pub(crate) state: Word<StepState>,
+    /// Observed turn; explicit null differs from omission.
+    pub(crate) turn: Word<TurnStatus>,
+    /// Stop attribution, never inferred from observed turn text.
+    pub(crate) stopped_by: Word<StopReason>,
+}
+
+impl Run {
+    /// The sole API-word parse entry point. Optional detail fields and unknown words retain their
+    /// distinctions so each operation can preserve its existing requirements and refusal wording.
+    pub(crate) fn parse(value: &Value) -> Self {
+        fn word<T>(value: Option<&Value>, read: fn(&Value) -> Option<T>) -> Word<T> {
+            Word {
+                known: value.and_then(read),
+                value: value.cloned(),
+            }
+        }
+        fn metadata(value: &Value, keys: &[&str]) -> Value {
+            let mut value = value.clone();
+            if let Some(object) = value.as_object_mut() {
+                for key in keys {
+                    object.remove(*key);
+                }
+            }
+            value
+        }
+        let mut data = metadata(
+            value,
+            &[
+                "verification_status",
+                "gates",
+                "checklist",
+                "steps",
+                "state",
+                "stopped_by",
+            ],
+        );
+        if let Some(receipt) = data.get_mut("verification").and_then(Value::as_object_mut) {
+            receipt.remove("result");
+        }
+        Self {
+            data,
+            receipt: Receipt(value["verification"].clone()),
+            verification: word(value.get("verification_status"), Verification::read),
+            receipt_result: word(value["verification"].get("result"), CheckStatus::read),
+            gates: value["gates"].as_array().map(|gates| {
+                gates
+                    .iter()
+                    .map(|gate| Gate {
+                        data: metadata(gate, &["status"]),
+                        status: word(gate.get("status"), GateStatus::read),
+                    })
+                    .collect()
+            }),
+            checklist: value["checklist"].as_array().map(|items| {
+                items
+                    .iter()
+                    .map(|item| CheckItem {
+                        data: metadata(item, &["status", "proof"]),
+                        status: word(item.get("status"), CheckStatus::read),
+                        proof: word(item.get("proof"), Proof::read),
+                    })
+                    .collect()
+            }),
+            steps: value["steps"].as_array().map(|steps| {
+                steps
+                    .iter()
+                    .map(|step| Step {
+                        data: metadata(step, &["state", "turn", "stopped_by"]),
+                        state: word(step.get("state"), StepState::read),
+                        turn: word(step.get("turn"), TurnStatus::read),
+                        stopped_by: word(step.get("stopped_by"), StopReason::read),
+                    })
+                    .collect()
+            }),
+            steps_present: value.get("steps").is_some(),
+            state: word(value.get("state"), StepState::read),
+            stopped_by: word(value.get("stopped_by"), StopReason::read),
+        }
+    }
+}
+
 /// A checklist item's operator obligation, independent of result revision or screen state.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Attestation {
@@ -125,7 +322,8 @@ pub(crate) enum Attestation {
 
 impl Attestation {
     /// Read API 1 ownership and obligation; malformed flags or states never mean nothing is owed.
-    pub(crate) fn read(item: &Value) -> Result<Self, String> {
+    pub(crate) fn read(record: &CheckItem) -> Result<Self, String> {
+        let item = &record.data;
         let flag = |key: &str| {
             item[key]
                 .as_bool()
@@ -145,15 +343,15 @@ impl Attestation {
                 .ok_or("A checklist item has an invalid pending flag.")?,
         };
         let recheck = flag("needs_recheck")?;
-        let status = item["status"]
-            .as_str()
-            .filter(|status| matches!(*status, "passed" | "pending" | "failed" | "unknown"))
+        let status = record
+            .status
+            .known()
             .ok_or("A checklist item has no readable status.")?;
         Ok(if automatic || !operator {
             Self::Worker
         } else {
             Self::Operator {
-                owed: !pending && status != "passed",
+                owed: !pending && status != CheckStatus::Passed,
                 recheck,
             }
         })
@@ -173,13 +371,14 @@ pub(crate) fn seeds(root: &Path, cancel: &AtomicBool) -> Result<Vec<Seed>, Strin
         .ok_or("The checkout reported no runs list.")?
         .iter()
         .map(|run| {
-            if run["verification_status"] == "invalid" {
+            let run = Run::parse(run);
+            if run.verification.is(Verification::Invalid) {
                 return Err(
                     "A run couldn't be read. Check it in tink-sdlc, then reopen this view to read again."
                         .into(),
                 );
             }
-            Seed::parse(run)
+            Seed::parse(&run.data)
         })
         .collect::<Result<Vec<_>, _>>()
         .map(|seeds| seeds.into_iter().flatten().collect())

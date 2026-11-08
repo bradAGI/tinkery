@@ -247,7 +247,7 @@ fn canonical_root(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn status(root: &Path, slug: &str) -> Result<Value, String> {
+fn status(root: &Path, slug: &str) -> Result<sdlc::Run, String> {
     read_status(root, slug, &AtomicBool::new(false), sdlc::DEADLINE)
 }
 
@@ -256,7 +256,7 @@ fn read_status(
     slug: &str,
     cancel: &AtomicBool,
     deadline: Duration,
-) -> Result<Value, String> {
+) -> Result<sdlc::Run, String> {
     canonical_root(root)?;
     if slug.is_empty()
         || slug.len() > 80
@@ -278,10 +278,11 @@ fn read_status(
     if run["slug"].as_str() != Some(slug) {
         return Err("The checkout reported a different run; no worker action was taken.".into());
     }
-    Ok(run.clone())
+    Ok(sdlc::Run::parse(run))
 }
 
-fn identity(root: &Path, slug: &str, value: &Value) -> Result<Run, String> {
+fn identity(root: &Path, slug: &str, report: &sdlc::Run) -> Result<Run, String> {
+    let value = &report.data;
     let id = value["run_id"]
         .as_str()
         .filter(|id| sdlc::canonical_run_id(id))
@@ -298,7 +299,7 @@ fn identity(root: &Path, slug: &str, value: &Value) -> Result<Run, String> {
     })
 }
 
-fn current(run: &Run) -> Result<Value, String> {
+fn current(run: &Run) -> Result<sdlc::Run, String> {
     let value = status(&run.root, &run.slug)?;
     if identity(&run.root, &run.slug, &value)? != *run {
         return Err("This run or its build checkout changed. No worker action was taken.".into());
@@ -306,8 +307,8 @@ fn current(run: &Run) -> Result<Value, String> {
     Ok(value)
 }
 
-fn require_seed(value: &Value) -> Result<ready::ReadySeed, String> {
-    sdlc::confirmed(value).map_err(|_| "The run's original confirmed seed is unavailable or changed. Recheck it before running work.".into())
+fn require_seed(value: &sdlc::Run) -> Result<ready::ReadySeed, String> {
+    sdlc::confirmed(&value.data).map_err(|_| "The run's original confirmed seed is unavailable or changed. Recheck it before running work.".into())
 }
 
 // Check both the recorded ancestry and the files a newly launched worker will actually read.
@@ -412,7 +413,8 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
             STAGE,
         )?;
         let value = current(&run)?;
-        let seed = sdlc::Seed::parse(&value)?.ok_or("Intake did not record the selected seed.")?;
+        let seed =
+            sdlc::Seed::parse(&value.data)?.ok_or("Intake did not record the selected seed.")?;
         if !seed.matches(&intake.seed)? {
             return Err("Intake recorded a different seed; no worker was started.".into());
         }
@@ -532,8 +534,8 @@ fn act(gate: &Gate, run: &Run, action: Action) -> Result<Snapshot, String> {
             admit(gate, run, pin, false, seed.target.as_ref())?;
         }
         Action::Finish => {
-            if value["verification_status"].as_str() != Some("current")
-                || value["verification"]["passed"].as_bool() != Some(true)
+            if !value.verification.is(sdlc::Verification::Current)
+                || value.data["verification"]["passed"].as_bool() != Some(true)
             {
                 return Err("Verify first. Finish needs current passing checks; keep this worker available to repair failures.".into());
             }
@@ -553,7 +555,7 @@ fn act(gate: &Gate, run: &Run, action: Action) -> Result<Snapshot, String> {
             command(&run.root, &args, sdlc::DEADLINE)?;
         }
         Action::Verify => {
-            let verify = &value["actions"]["verify"];
+            let verify = &value.data["actions"]["verify"];
             if verify["allowed"].as_bool() != Some(true) {
                 return Err(verify["reason"]
                     .as_str()
@@ -621,12 +623,13 @@ fn admit(
 
 fn snapshot(run: &Run) -> Result<Snapshot, String> {
     let value = current(run)?;
-    let steps = value["steps"]
-        .as_array()
+    let steps = value
+        .steps
+        .as_ref()
         .ok_or("This runtime does not report worker steps.")?;
     let step = steps
         .iter()
-        .find(|step| step["name"].as_str() == Some(STEP));
+        .find(|step| step.data["name"].as_str() == Some(STEP));
     let (state, model, responses, pin) = if let Some(step) = step {
         let output = command(
             &run.root,
@@ -672,9 +675,10 @@ fn snapshot(run: &Run) -> Result<Snapshot, String> {
         }) {
             return Err("The worker launcher fingerprint is unavailable or malformed.".into());
         }
+        let parsed = sdlc::Run::parse(&record);
         if matches!(
-            record["state"].as_str(),
-            Some("active" | "completed" | "stopped")
+            parsed.state.known(),
+            Some(sdlc::StepState::Active | sdlc::StepState::Completed | sdlc::StepState::Stopped)
         ) && record["session"]
             .as_str()
             .is_none_or(|value| value.trim().is_empty())
@@ -691,22 +695,22 @@ fn snapshot(run: &Run) -> Result<Snapshot, String> {
             "{:x}",
             Sha256::digest(fixed.to_string().as_bytes())
         ));
-        let state = match record["state"].as_str() {
-            Some("prepared") => State::Prepared,
-            Some("active") => State::Active {
-                turn: match step["turn"].as_str() {
-                    Some("ended") => Turn::Ended,
-                    Some("not-ended") => Turn::Running,
-                    Some("unknown") => Turn::Unknown,
+        let state = match parsed.state.known() {
+            Some(sdlc::StepState::Prepared) => State::Prepared,
+            Some(sdlc::StepState::Active) => State::Active {
+                turn: match step.turn.known() {
+                    Some(sdlc::TurnStatus::Ended) => Turn::Ended,
+                    Some(sdlc::TurnStatus::Running) => Turn::Running,
+                    Some(sdlc::TurnStatus::Unknown) => Turn::Unknown,
                     _ => return Err("The worker turn is not reported in a supported form.".into()),
                 },
             },
-            Some("uncertain") => State::Uncertain,
-            Some("completed") => State::Completed,
-            Some("stopped") => State::Stopped {
-                cap: match record["stopped_by"].as_str() {
-                    Some("cap") => true,
-                    Some("operator") => false,
+            Some(sdlc::StepState::Uncertain) => State::Uncertain,
+            Some(sdlc::StepState::Completed) => State::Completed,
+            Some(sdlc::StepState::Stopped) => State::Stopped {
+                cap: match parsed.stopped_by.known() {
+                    Some(sdlc::StopReason::Cap) => true,
+                    Some(sdlc::StopReason::Operator) => false,
                     _ => return Err("The stopped worker has no known stop reason.".into()),
                 },
             },
@@ -726,11 +730,12 @@ fn snapshot(run: &Run) -> Result<Snapshot, String> {
         responses,
         pin,
         state,
-        verification: value["verification_status"]
+        verification: value
+            .verification
             .as_str()
             .ok_or("Verification state is missing.")?
             .into(),
-        next: value["next_action"]
+        next: value.data["next_action"]
             .as_str()
             .ok_or("The run's next action is missing.")?
             .into(),

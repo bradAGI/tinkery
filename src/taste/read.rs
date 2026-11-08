@@ -157,29 +157,32 @@ pub(super) fn commit(value: &str) -> Option<&str> {
     Some(value).filter(|s| s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
-fn gate_words(stage: u64, status: &str) -> String {
+fn gate_words(stage: u64, status: sdlc::GateStatus) -> String {
     let action = match stage {
         1 => "review the problem",
         2 => "review the specification",
         3 => "approve the plan",
         _ => "review the decision externally",
     };
-    if status == "stale" && stage == 3 {
+    if status == sdlc::GateStatus::Stale && stage == 3 {
         "re-approve the plan".into()
-    } else if status == "changes-requested" {
+    } else if status == sdlc::GateStatus::ChangesRequested {
         format!("revise and {action}")
     } else {
         action.into()
     }
 }
 
-fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
+fn local(root: &Path, parsed: &sdlc::Run, row: &mut ResultRow) -> Result<(), String> {
+    use sdlc::{CheckStatus as C, GateStatus as G, Proof as P, Verification as V};
+    let run = &parsed.data;
     let verification = run
         .get("verification")
         .ok_or("Verification report missing.")?;
-    let gates = run["gates"].as_array().ok_or("Run report missing gates.")?;
-    let checklist = run["checklist"]
-        .as_array()
+    let gates = parsed.gates.as_ref().ok_or("Run report missing gates.")?;
+    let checklist = parsed
+        .checklist
+        .as_ref()
         .ok_or("Run report missing completion conditions.")?;
     let no_decisions = match run.get("decisions") {
         None => true,
@@ -190,66 +193,75 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
     };
     row.receipts_missing = verification.is_null()
         && no_decisions
-        && checklist.iter().all(|item| item["mark"].is_null())
-        && gates.iter().all(|gate| gate["status"] == "pending");
+        && checklist.iter().all(|item| item.data["mark"].is_null())
+        && gates.iter().all(|gate| gate.status.is(G::Pending));
     if row.receipts_missing {
         row.gaps.push(format!("{MISSING_RECEIPTS}; name the checkout holding this run's receipts with --sdlc-root and read again. No other checkout was searched."));
     }
     let receipt_head = verification["candidate"]["head"].as_str().and_then(commit);
     let exact = receipt_head.is_some() && receipt_head == row.head.as_deref();
-    let current = run["verification_status"] == "current" && verification["passed"] == true;
+    let current = parsed.verification.is(V::Current) && verification["passed"] == true;
     let mut all_gates = Vec::new();
     for gate in gates {
-        let status = text(gate, "status")?;
-        if !matches!(
-            status,
-            "approved" | "pending" | "stale" | "changes-requested"
-        ) {
-            return Err("Unknown gate status.".into());
-        }
-        let stage = gate["stage"].as_u64().ok_or("Gate stage missing.")?;
+        let status = gate
+            .status
+            .as_str()
+            .ok_or("Run report missing status; read again after repairing the source.")?;
+        let known = gate.status.known().ok_or("Unknown gate status.")?;
+        let stage = gate.data["stage"].as_u64().ok_or("Gate stage missing.")?;
         if row.receipts_missing {
             row.gaps.push(format!(
                 "Gate source reported {status}: {}. Obligation {MISSING_RECEIPTS}.",
-                gate_words(stage, status)
+                gate_words(stage, known)
             ));
-        } else if status != "approved" {
-            all_gates.push(gate_words(stage, status));
+        } else if known != G::Approved {
+            all_gates.push(gate_words(stage, known));
         }
     }
     row.gates = all_gates;
-    match run["verification_status"].as_str() {
-        Some("failed") => row.gaps.push(
+    match parsed.verification.known() {
+        Some(V::Failed) => row.gaps.push(
             "Verification failed; inspect the run log externally before reviewing again.".into(),
         ),
-        Some("interrupted") => row.gaps.push(
+        Some(V::Interrupted) => row.gaps.push(
             "Verification interrupted; inspect the log and finish verification externally.".into(),
         ),
-        Some("running") => row
+        Some(V::Running) => row
             .gaps
             .push("Verification is still running; no settled local pass is claimed.".into()),
         _ => {}
     }
-    if run["checklist"].as_array().is_some_and(Vec::is_empty) {
+    if checklist.is_empty() {
         row.gaps
             .push("Completion evidence missing: no conditions reported by this run.".into());
     }
-    for item in checklist {
+    for record in checklist {
+        let item = &record.data;
         let automatic = item["automatic"].as_bool().ok_or("Check method missing.")?;
-        let attestation = sdlc::Attestation::read(item)?;
+        let attestation = sdlc::Attestation::read(record)?;
         let human = matches!(attestation, sdlc::Attestation::Operator { .. });
-        let proof = text(item, "proof")?;
+        record
+            .proof
+            .as_str()
+            .ok_or("Run report missing proof; read again after repairing the source.")?;
         if automatic && item["operator_attestation"] == true {
             return Err("Automated check also claims to require operator attestation.".into());
         }
-        if proof != if automatic { "automated" } else { "attested" } {
+        if !record
+            .proof
+            .is(if automatic { P::Automated } else { P::Attested })
+        {
             return Err("Check method conflicts with proof.".into());
         }
         let label = text(item, "verify")?.to_owned();
-        let status = text(item, "status")?;
-        if !matches!(status, "passed" | "failed" | "pending" | "unknown") {
-            return Err("Unknown completion condition status.".into());
-        }
+        let status = record
+            .status
+            .as_str()
+            .ok_or("Run report missing status; read again after repairing the source.")?;
+        let known = record
+            .status
+            .known()
+            .ok_or("Unknown completion condition status.")?;
         let recheck = item["needs_recheck"]
             .as_bool()
             .ok_or("Check freshness missing.")?;
@@ -261,26 +273,26 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
             None => false,
             Some(v) => v.as_bool().ok_or("Provisional state unreadable.")?,
         };
-        let automatic_evidence = automatic.then(|| evidence::automated(root, &row.slug, run, item));
-        let old_pass = status == "passed" || (automatic && verification["result"] == "passed");
-        let state = match status {
+        let automatic_evidence =
+            automatic.then(|| evidence::automated(root, &row.slug, parsed, record));
+        let old_pass = known == C::Passed || (automatic && parsed.receipt_result.is(C::Passed));
+        let state = match known {
             _ if row.receipts_missing => Check::ReceiptsMissing,
             _ if pending => Check::NotActivated,
-            "passed" if !automatic && mark["evidence"].as_str().is_none() => {
+            C::Passed if !automatic && mark["evidence"].as_str().is_none() => {
                 Check::AttestationEvidenceMissing
             }
             _ if row.head.is_none() => Check::RevisionUnknown,
             _ if old_pass && (!exact || !current) => Check::Stale,
-            "passed" if automatic_evidence.as_ref().is_some_and(Result::is_err) => {
+            C::Passed if automatic_evidence.as_ref().is_some_and(Result::is_err) => {
                 Check::EvidenceUnavailable
             }
-            "passed" if !automatic && recheck => Check::PassRecheck,
-            "passed" => Check::Pass,
-            "failed" if exact => Check::Fail,
-            "failed" => Check::FailureRevisionDiffers,
-            "pending" if human => Check::AwaitingHuman,
-            "pending" | "unknown" => Check::MatchingEvidenceMissing,
-            _ => return Err("Unknown completion condition status.".into()),
+            C::Passed if !automatic && recheck => Check::PassRecheck,
+            C::Passed => Check::Pass,
+            C::Failed if exact => Check::Fail,
+            C::Failed => Check::FailureRevisionDiffers,
+            C::Pending if human => Check::AwaitingHuman,
+            C::Pending | C::Unknown => Check::MatchingEvidenceMissing,
         };
         if let sdlc::Attestation::Operator { owed, recheck } = attestation
             && !row.receipts_missing
@@ -488,7 +500,11 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             labelled: None,
             rejection: None,
         };
-        if summary["verification_status"] == "invalid" || !sdlc::canonical_run_id(&row.id) {
+        if sdlc::Run::parse(summary)
+            .verification
+            .is(sdlc::Verification::Invalid)
+            || !sdlc::canonical_run_id(&row.id)
+        {
             rows.push(row);
             continue;
         }
@@ -499,14 +515,17 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             DEADLINE,
         )?;
         let value = sdlc::envelope(&out)?;
-        let run = &value["run"];
+        let parsed = sdlc::Run::parse(&value["run"]);
+        let run = &parsed.data;
         if text(run, "run_id")? != row.id || text(run, "slug")? != slug {
             return Err("Run identity changed while reading.".into());
         }
-        if !matches!(
-            text(run, "verification_status")?,
-            "blocked" | "running" | "not-run" | "current" | "stale" | "failed" | "interrupted"
-        ) {
+        parsed.verification.as_str().ok_or(
+            "Run report missing verification_status; read again after repairing the source.",
+        )?;
+        if parsed.verification.known().is_none()
+            || parsed.verification.is(sdlc::Verification::Invalid)
+        {
             return Err("Unknown run verification state.".into());
         }
         row.goal = sdlc::goal(run);
@@ -540,7 +559,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             row.preview = super::preview::declaration(&root, url, head, stop);
         }
         if run.get("pr") == Some(&Value::Null) && run["closure"].is_null() {
-            row.local = super::preview::Local::read(&root, run, stop).map(Some);
+            row.local = super::preview::Local::read(&root, &parsed, stop).map(Some);
             if let Some(local) = row.local() {
                 let head = local.head().to_owned();
                 let declaration = local.declaration(stop);
@@ -561,7 +580,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             .local()
             .map_or(root.as_path(), |local| local.checkout())
             .to_path_buf();
-        local(&source, run, &mut row)?;
+        local(&source, &parsed, &mut row)?;
         match super::label::read(&source, run, row.head.as_deref()) {
             Ok((status, rejection)) => {
                 row.labelled = status.map(|state| matches!(state, Check::Pass | Check::Fail));
@@ -626,6 +645,72 @@ mod tests {
 
     use super::*;
     use serde_json::json;
+
+    fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
+        super::local(root, &sdlc::Run::parse(run), row)
+    }
+
+    fn contract_read(mut source: Value) -> Result<(Vec<ResultRow>, usize), String> {
+        let directory = tempfile::Builder::new()
+            .prefix("tinkery-TEST-contract-")
+            .tempdir()
+            .unwrap();
+        let root = directory.path();
+        std::fs::create_dir_all(root.join("_system/scripts")).unwrap();
+        let id = "11111111-1111-4111-8111-111111111111";
+        let summary = json!({"protocol":"tink-sdlc", "api_version":1, "runs":[{
+            "slug":"test", "run_id":id, "verification_status":"current"
+        }]})
+        .to_string();
+        source["slug"] = "test".into();
+        source["run_id"] = id.into();
+        source["seed_contract"] = Value::Null;
+        source.as_object_mut().unwrap().remove("pr");
+        let detail = json!({"protocol":"tink-sdlc", "api_version":1, "run":source}).to_string();
+        std::fs::write(
+            root.join(sdlc::SCRIPT),
+            format!("import sys\nprint({summary:?} if len(sys.argv)==3 else {detail:?})\n"),
+        )
+        .unwrap();
+        collect(root, &AtomicBool::new(false))
+    }
+
+    #[test]
+    fn contract_refuses_verification() {
+        let mut source = run();
+        source["verification_status"] = "TEST-unsupported".into();
+        assert_eq!(
+            contract_read(source).unwrap_err(),
+            "Unknown run verification state."
+        );
+    }
+
+    #[test]
+    fn contract_refuses_gate() {
+        let mut source = run();
+        source["gates"][0]["status"] = "TEST-unsupported".into();
+        assert_eq!(contract_read(source).unwrap_err(), "Unknown gate status.");
+    }
+
+    #[test]
+    fn contract_refuses_check_status() {
+        let mut source = run();
+        source["checklist"][0]["status"] = "TEST-unsupported".into();
+        assert_eq!(
+            contract_read(source).unwrap_err(),
+            "A checklist item has no readable status."
+        );
+    }
+
+    #[test]
+    fn contract_refuses_proof() {
+        let mut source = run();
+        source["checklist"][0]["proof"] = "TEST-unsupported".into();
+        assert_eq!(
+            contract_read(source).unwrap_err(),
+            "Check method conflicts with proof."
+        );
+    }
 
     fn row() -> ResultRow {
         ResultRow {

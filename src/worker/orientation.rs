@@ -199,22 +199,29 @@ enum Message {
     Other,
 }
 
-fn observe(launch: &Launch, run: &Run, value: &Value, cancel: &AtomicBool) -> Option<Observation> {
+fn observe(
+    launch: &Launch,
+    run: &Run,
+    value: &sdlc::Run,
+    cancel: &AtomicBool,
+) -> Option<Observation> {
     let steps_dir = run.root.join("runs").join(&run.slug).join("steps");
     if launch.log.parent()? != steps_dir {
         return None;
     }
-    let step = value["steps"]
-        .as_array()?
+    let step = value
+        .steps
+        .as_ref()?
         .iter()
-        .find(|s| s["name"] == launch.step)?;
+        .find(|s| s.data["name"] == launch.step)?;
     if !matches!(
-        step["state"].as_str(),
-        Some("active" | "completed" | "stopped")
+        step.state.known(),
+        Some(sdlc::StepState::Active | sdlc::StepState::Completed | sdlc::StepState::Stopped)
     ) {
         return None;
     }
-    let stopped_at_cap = step["state"] == "stopped" && step["stopped_by"] == "cap";
+    let stopped_at_cap =
+        step.state.is(sdlc::StepState::Stopped) && step.stopped_by.is(sdlc::StopReason::Cap);
     let contract = regular(&launch.log.with_file_name(format!("{}.json", launch.step)))?;
     if contract.metadata().ok()?.len() > 16 * 1024 {
         return None;

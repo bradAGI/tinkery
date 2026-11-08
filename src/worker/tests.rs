@@ -129,6 +129,46 @@ fn wait(mut job: Job) -> Result<Snapshot, Failure> {
     }
 }
 
+fn contract_worker_refusal(change: impl FnOnce(&mut Value), expected: &str) {
+    let fixture = Fixture::new();
+    let started = fixture.start();
+    fixture.edit(change);
+    let failure = wait(Job::act(
+        fixture.request.authorization.clone(),
+        started.run,
+        Action::Refresh,
+    ))
+    .unwrap_err();
+    assert_eq!(failure.message, expected);
+}
+
+#[test]
+fn contract_refuses_worker_state() {
+    contract_worker_refusal(
+        |value| value["step"]["state"] = "TEST-unsupported".into(),
+        "The worker state is not supported; inspect SDLC before continuing.",
+    );
+}
+
+#[test]
+fn contract_refuses_worker_turn() {
+    contract_worker_refusal(
+        |value| value["turn"] = "TEST-unsupported".into(),
+        "The worker turn is not reported in a supported form.",
+    );
+}
+
+#[test]
+fn contract_refuses_worker_stop() {
+    contract_worker_refusal(
+        |value| {
+            value["step"]["state"] = "stopped".into();
+            value["step"]["stopped_by"] = "TEST-unsupported".into();
+        },
+        "The stopped worker has no known stop reason.",
+    );
+}
+
 #[test]
 fn no_allowance_or_invalid_pin_runs_no_commands() {
     for config in [

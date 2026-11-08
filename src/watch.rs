@@ -6,6 +6,7 @@
 //! know rather than guess.
 
 mod codex;
+mod steps;
 #[cfg(test)]
 mod tests;
 
@@ -51,18 +52,18 @@ const OLDER_REASON: &str =
     "This run has no canonical run ID. Its approvals and verification can't be checked here.";
 
 impl State {
-    fn parse(word: &str) -> Option<Self> {
-        Some(match word {
-            "blocked" => Self::Blocked,
-            "running" => Self::Running,
-            "not-run" => Self::NotRun,
-            "current" => Self::Current,
-            "stale" => Self::Stale,
-            "failed" => Self::Failed,
-            "interrupted" => Self::Interrupted,
-            "invalid" => Self::Invalid,
-            _ => return None,
-        })
+    fn from_status(status: sdlc::Verification) -> Self {
+        use sdlc::Verification as V;
+        match status {
+            V::Blocked => Self::Blocked,
+            V::Running => Self::Running,
+            V::NotRun => Self::NotRun,
+            V::Current => Self::Current,
+            V::Stale => Self::Stale,
+            V::Failed => Self::Failed,
+            V::Interrupted => Self::Interrupted,
+            V::Invalid => Self::Invalid,
+        }
     }
 
     /// Whether a person is owed something: a gate decision (tink-sdlc reports `blocked` only
@@ -178,9 +179,9 @@ struct Detail {
     codex: Option<codex::Observation>,
 }
 
-fn state(value: &Value) -> Result<State, String> {
-    let word = value["verification_status"].as_str().unwrap_or("missing");
-    State::parse(word).ok_or_else(|| {
+fn state(run: &sdlc::Run) -> Result<State, String> {
+    let word = run.verification.as_str().unwrap_or("missing");
+    run.verification.known().map(State::from_status).ok_or_else(|| {
         format!("tink-sdlc reported a state Watch doesn't know ({word}); nothing is shown rather than a guess.")
     })
 }
@@ -192,62 +193,6 @@ fn text(value: &Value, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("A run is missing {key}; nothing is shown rather than a guess."))
 }
 
-/// tink-sdlc's pinned build steps as detail lines, and what they say about a worker.
-/// An older tink-sdlc omits them; anything present but unfamiliar is refused, not guessed.
-fn steps(run: &Value) -> Result<Option<(Vec<String>, Worker)>, String> {
-    let Some(steps) = run.get("steps") else {
-        return Ok(None);
-    };
-    let refuse = || "A worker step Watch doesn't know; nothing is shown rather than a guess.";
-    let mut lines = Vec::new();
-    let mut worker = Worker::Idle;
-    for step in steps.as_array().ok_or_else(refuse)? {
-        let name = step["name"].as_str().ok_or_else(refuse)?;
-        let state = step["state"].as_str().ok_or_else(refuse)?;
-        let turn = step.get("turn").map(Value::as_str);
-        let seen = match (state, turn) {
-            ("active", Some(Some(turn))) => {
-                let now = match turn {
-                    "ended" => Worker::Ended,
-                    "not-ended" => Worker::Running,
-                    "unknown" => Worker::Unknown,
-                    _ => return Err(refuse().into()),
-                };
-                let words = step["observed_turn"].as_str().ok_or_else(refuse)?;
-                if worker == Worker::Idle || now == Worker::Ended {
-                    worker = now;
-                }
-                format!(" · {words}")
-            }
-            // Only the newest uncertain step owes reconciliation; an older tink-sdlc
-            // doesn't say which is newest, so every uncertain step is treated as owed.
-            ("uncertain", None) => {
-                let owed = match step.get("owed") {
-                    None => true,
-                    Some(owed) => owed.as_bool().ok_or_else(refuse)?,
-                };
-                if owed && worker != Worker::Ended {
-                    worker = Worker::Uncertain;
-                }
-                String::new()
-            }
-            ("prepared" | "completed" | "unreadable", None) => String::new(),
-            // A worker stopped before its turn ended is never shown as a finished turn.
-            ("stopped", None) => match step["stopped_by"].as_str() {
-                Some("operator") => " by you".into(),
-                Some("cap") => " at its response cap".into(),
-                _ => return Err(refuse().into()),
-            },
-            _ => return Err(refuse().into()),
-        };
-        lines.push(format!("Worker step {name}: {state}{seen}"));
-    }
-    if lines.is_empty() {
-        lines.push("No worker step has been started for this run.".into());
-    }
-    Ok(Some((lines, worker)))
-}
-
 /// The list summary, in tink-sdlc's order.
 fn parse_list(output: &str) -> Result<Vec<Run>, String> {
     let value = sdlc::envelope(output)?;
@@ -255,8 +200,10 @@ fn parse_list(output: &str) -> Result<Vec<Run>, String> {
         .as_array()
         .ok_or("status printed no runs list.")?;
     runs.iter()
-        .map(|run| {
-            let state = match state(run)? {
+        .map(|value| {
+            let parsed = sdlc::Run::parse(value);
+            let run = &parsed.data;
+            let state = match state(&parsed)? {
                 State::Invalid if run["error"] == OLDER_ID_ERROR => State::Older,
                 state => state,
             };
@@ -298,52 +245,62 @@ fn parse_list(output: &str) -> Result<Vec<Run>, String> {
 #[cfg(test)]
 fn parse_detail(output: &str) -> Result<Detail, String> {
     let value = sdlc::envelope(output)?;
-    parse_run_detail(&value["run"])
+    parse_run_detail(&sdlc::Run::parse(&value["run"]))
 }
 
-fn parse_run_detail(run: &Value) -> Result<Detail, String> {
-    let gates: Vec<_> = run["gates"]
-        .as_array()
+fn parse_run_detail(parsed: &sdlc::Run) -> Result<Detail, String> {
+    use sdlc::{CheckStatus as C, GateStatus as G, Proof as P};
+    let run = &parsed.data;
+    let gates: Vec<_> = parsed
+        .gates
+        .as_ref()
         .ok_or("The run has no gates list.")?
         .iter()
         .map(|gate| {
-            let stage = gate["stage"].as_u64().ok_or("A gate has no stage.")?;
-            let status = gate["status"].as_str().unwrap_or("missing");
-            if !matches!(
-                status,
-                "approved" | "pending" | "stale" | "changes-requested"
-            ) {
+            let stage = gate.data["stage"].as_u64().ok_or("A gate has no stage.")?;
+            let status = gate.status.as_str().unwrap_or("missing");
+            if gate.status.known().is_none() {
                 return Err(format!("A gate has a state Watch doesn't know ({status})."));
             }
             Ok((stage, status.to_owned()))
         })
         .collect::<Result<_, String>>()?;
-    let items = run["checklist"]
-        .as_array()
+    let items = parsed
+        .checklist
+        .as_ref()
         .ok_or("The run has no checklist.")?;
-    let count = |key: &str, word: &str| {
-        items
-            .iter()
-            .filter(|i| i[key].as_str() == Some(word))
-            .count()
-    };
-    let steps = steps(run)?;
+    let steps = steps::render(parsed)?;
     let mut attention = Attention {
-        gate: gates.iter().any(|(_, status)| status != "approved"),
+        gate: parsed
+            .gates
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|gate| !gate.status.is(G::Approved)),
         worker: steps.as_ref().map(|(_, worker)| *worker),
         ..Attention::default()
     };
     let mut checklist = Vec::new();
-    for item in items {
+    for record in items {
+        let item = &record.data;
         let automatic = item["automatic"]
             .as_bool()
             .ok_or("A checklist item has no automatic flag.")?;
-        let proof = text(item, "proof")?;
-        if proof != if automatic { "automated" } else { "attested" } {
+        let proof = record
+            .proof
+            .as_str()
+            .ok_or("A run is missing proof; nothing is shown rather than a guess.")?;
+        if !record
+            .proof
+            .is(if automatic { P::Automated } else { P::Attested })
+        {
             return Err("A checklist item's proof disagrees with its automatic flag.".into());
         }
-        let status = text(item, "status")?;
-        if !matches!(status.as_str(), "passed" | "pending" | "failed" | "unknown") {
+        let status = record
+            .status
+            .as_str()
+            .ok_or("A run is missing status; nothing is shown rather than a guess.")?;
+        if record.status.known().is_none() {
             return Err(format!("Unknown checklist status: {status}"));
         }
         let recheck = item["needs_recheck"]
@@ -355,7 +312,7 @@ fn parse_run_detail(run: &Value) -> Result<Detail, String> {
                 .as_bool()
                 .ok_or("A checklist item has an invalid pending flag.")?,
         };
-        if let sdlc::Attestation::Operator { owed, recheck } = sdlc::Attestation::read(item)? {
+        if let sdlc::Attestation::Operator { owed, recheck } = sdlc::Attestation::read(record)? {
             attention.owed += usize::from(owed);
             attention.recheck += usize::from(recheck);
         }
@@ -381,12 +338,21 @@ fn parse_run_detail(run: &Value) -> Result<Detail, String> {
     }
     Ok(Detail {
         goal: sdlc::goal(run),
-        state: state(run)?,
+        state: state(parsed)?,
         next: text(run, "next_action")?,
         gates,
-        passed: count("status", "passed"),
-        proven: count("proof", "automated"),
-        attested: count("proof", "attested"),
+        passed: items
+            .iter()
+            .filter(|item| item.status.is(C::Passed))
+            .count(),
+        proven: items
+            .iter()
+            .filter(|item| item.proof.is(P::Automated))
+            .count(),
+        attested: items
+            .iter()
+            .filter(|item| item.proof.is(P::Attested))
+            .count(),
         attention,
         checklist,
         steps: steps.map(|(lines, _)| lines),
@@ -415,7 +381,8 @@ fn read_run(root: &Path, run: Run, deadline: Duration, codex: Option<CodexReport
             deadline,
         )?;
         let value = sdlc::envelope(&output)?;
-        let detail = &value["run"];
+        let parsed_run = sdlc::Run::parse(&value["run"]);
+        let detail = &parsed_run.data;
         if run.id.is_none()
             || detail["slug"].as_str() != Some(run.slug.as_str())
             || detail["run_id"].as_str() != run.id.as_deref()
@@ -424,7 +391,7 @@ fn read_run(root: &Path, run: Run, deadline: Duration, codex: Option<CodexReport
                 "Run identity changed or is missing. Press r on the runs screen to refresh.".into(),
             );
         }
-        let mut parsed = parse_run_detail(detail)?;
+        let mut parsed = parse_run_detail(&parsed_run)?;
         // Only an explicit open run can carry chat activity. Closure and unknown closure win.
         if detail.get("closure") == Some(&Value::Null) {
             parsed.codex = codex.and_then(|source| source.for_run(run.id.as_deref().unwrap()));

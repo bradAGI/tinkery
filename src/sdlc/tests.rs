@@ -1,4 +1,9 @@
 use super::*;
+
+fn read_item(item: &serde_json::Value) -> Result<Attestation, String> {
+    let run = Run::parse(&serde_json::json!({"checklist": [item]}));
+    Attestation::read(&run.checklist.as_ref().unwrap()[0])
+}
 use serde_json::json;
 use std::fs;
 
@@ -31,7 +36,7 @@ fn checklist_obligations_fail_closed_only_for_manual_operator_items() {
                                 recheck,
                             }
                         };
-                        assert_eq!(Attestation::read(&item).unwrap(), expected, "{item}");
+                        assert_eq!(read_item(&item).unwrap(), expected, "{item}");
                     }
                 }
             }
@@ -39,7 +44,7 @@ fn checklist_obligations_fail_closed_only_for_manual_operator_items() {
     }
     let valid = json!({"automatic": false, "status": "pending", "needs_recheck": false});
     assert_eq!(
-        Attestation::read(&valid).unwrap(),
+        read_item(&valid).unwrap(),
         Attestation::Operator {
             owed: true,
             recheck: false
@@ -55,13 +60,13 @@ fn checklist_obligations_fail_closed_only_for_manual_operator_items() {
         for value in [Value::Null, json!("true"), json!(1)] {
             let mut item = valid.clone();
             item[key] = value;
-            assert!(Attestation::read(&item).is_err(), "{item}");
+            assert!(read_item(&item).is_err(), "{item}");
         }
     }
     for key in ["automatic", "needs_recheck", "status"] {
         let mut item = valid.clone();
         item.as_object_mut().unwrap().remove(key);
-        assert!(Attestation::read(&item).is_err(), "{key}");
+        assert!(read_item(&item).is_err(), "{key}");
     }
 }
 
