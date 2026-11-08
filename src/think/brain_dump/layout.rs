@@ -175,7 +175,7 @@ pub(super) fn render(frame: &mut Frame, app: &mut BrainDump, palette: Palette) {
             }
             ratatui::text::Text::from(lines)
         }
-        None => match (open_intent(app), app.conversation.board()) {
+        None => match (goal_view::open_intent(app), app.conversation.board()) {
             (Some(line), Some(g)) if !app.running() => ratatui::text::Text::styled(
                 if line == READY_FOR_REVIEW && app.can_review() {
                     format!("{line} F1, then 1: Review the goal.")
@@ -368,34 +368,6 @@ pub(super) fn render(frame: &mut Frame, app: &mut BrainDump, palette: Palette) {
         );
     }
 }
-/// With no question in focus: no goal yet, readiness, or intent still open for the seed.
-/// Only goal content decides, including submitted words not yet applied; transient
-/// states such as voice or unsent text do not.
-/// Review lists everything still open; this names one thing.
-pub(super) fn open_intent(app: &BrainDump) -> Option<String> {
-    let g = app.conversation.board()?;
-    Some(if g.goal().is_none() {
-        "No goal yet.".into()
-    } else if let Some(part) = g.parts.missing().next() {
-        format!("Still missing: {}.", part.label())
-    } else if app.conversation.open_parts().is_empty()
-        && app.conversation.caught_up()
-        && app.shaping.ready.is_none()
-        && app.conversation.skipped().iter().all(|q| {
-            app.conversation
-                .settled()
-                .iter()
-                .any(|s| same_question(&s.question, q))
-        })
-        && g.unresolved_notes.is_empty()
-        && g.misfits.is_empty()
-        && app.conversation.scope_pending().is_none()
-    {
-        READY_FOR_REVIEW.into()
-    } else {
-        "Some parts remain open for the seed.".into()
-    })
-}
 pub(super) fn help_text(app: &BrainDump) -> String {
     if app.handoff.receipt().is_some() {
         return "Right now\nYour goal is saved. Next: shape it into a seed in Shape.\ns open in tend · Esc back to the menu\n\nF1 close".into();
@@ -454,7 +426,7 @@ pub(super) fn help_text(app: &BrainDump) -> String {
         let composed = app.conversation.board().is_some_and(|g| g.goal().is_some());
         open_now = format!(
             "{}\n{}",
-            open_intent(app).unwrap_or_else(|| "No question left.".into()),
+            goal_view::open_intent(app).unwrap_or_else(|| "No question left.".into()),
             if app.can_review() {
                 "1: Review the goal."
             } else if composed && !app.can_save() {

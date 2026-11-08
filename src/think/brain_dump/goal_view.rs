@@ -417,6 +417,40 @@ pub(super) fn render_declaration(frame: &mut Frame, app: &BrainDump, palette: Pa
     );
 }
 
+fn quiet_who(parts: &GoalParts, questions: &[Question]) -> bool {
+    parts.missing().eq([Part::Who]) && !questions.iter().any(|q| q.target == Some(Part::Who))
+}
+
+/// With no question in focus: no goal yet, readiness, or intent still open for the seed.
+/// Only goal content decides, including submitted words not yet applied; transient
+/// states such as voice or unsent text do not.
+/// Review preserves every open item; this names one thing.
+pub(super) fn open_intent(app: &BrainDump) -> Option<String> {
+    let g = app.conversation.board()?;
+    Some(if g.goal().is_none() {
+        "No goal yet.".into()
+    } else if quiet_who(&g.parts, &app.conversation.unresolved()) {
+        "Who: not named".into()
+    } else if let Some(part) = g.parts.missing().next() {
+        format!("Still missing: {}.", part.label())
+    } else if app.conversation.open_parts().is_empty()
+        && app.conversation.caught_up()
+        && app.shaping.ready.is_none()
+        && app.conversation.skipped().iter().all(|q| {
+            app.conversation
+                .settled()
+                .iter()
+                .any(|s| same_question(&s.question, q))
+        })
+        && g.unresolved_notes.is_empty()
+        && g.misfits.is_empty()
+        && app.conversation.scope_pending().is_none()
+    {
+        "Ready for your review.".into()
+    } else {
+        "Some parts remain open for the seed.".into()
+    })
+}
 pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palette) {
     let inner = app.screen.agent_area;
     if let Some(receipt) = app.handoff.receipt() {
@@ -471,6 +505,7 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
     } else {
         None
     };
+    let quiet = quiet_who(&review.affirmation.parts, &review.affirmation.unresolved);
     let line_count = |text: &str| {
         Paragraph::new(text)
             .wrap(Wrap { trim: false })
@@ -480,8 +515,12 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
     let prompt_rows = (line_count(message.as_deref().unwrap_or(&instruction))
         .max(line_count(&instruction))
         + line_count(&review.input)) as u16;
-    let rows =
-        Layout::vertical([Constraint::Min(1), Constraint::Length(prompt_rows + 1)]).split(inner);
+    let rows = Layout::vertical([
+        Constraint::Min(1),
+        Constraint::Length(u16::from(quiet)),
+        Constraint::Length(prompt_rows + 1),
+    ])
+    .split(inner);
     let heading = match &review.affirmation.confirmation {
         record::GoalConfirmation::Terminal { declaration, .. } => {
             format!("You are confirming ({declaration})")
@@ -528,7 +567,14 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
                 .map_or_else(|| q.text.clone(), |p| format!("{} — {}", p.label(), q.text))
         })
         .collect::<Vec<_>>();
-    open.extend(review.affirmation.unresolved_notes.iter().cloned());
+    open.extend(
+        review
+            .affirmation
+            .unresolved_notes
+            .iter()
+            .filter(|note| !quiet || note.as_str() != "Who — still open")
+            .cloned(),
+    );
     if !open.is_empty() {
         body.push_str(&format!("\n\nStill open\n{}", open.join("\n\n")));
     }
@@ -556,6 +602,12 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
 
     // Choose guidance after this frame's bound is known, keeping the normal instruction's
     // reserved height: a shorter cue must not move the end while the operator reads or types.
+    if quiet {
+        frame.render_widget(
+            Paragraph::new("Who: not named").style(palette.muted),
+            rows[1],
+        );
+    }
     let guidance = if review.scroll < review.max {
         "PgDn: read to the end first."
     } else {
@@ -570,10 +622,10 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
         Paragraph::new(prompt.clone())
             .wrap(Wrap { trim: false })
             .style(palette.jade),
-        rows[1],
+        rows[2],
     );
     if !app.handoff.saving() {
-        app.screen.back_button = Rect::new(rows[1].x, rows[1].bottom() - 1, 4, 1);
+        app.screen.back_button = Rect::new(rows[2].x, rows[2].bottom() - 1, 4, 1);
         frame.render_widget(
             Paragraph::new("Back").style(palette.muted),
             app.screen.back_button,
