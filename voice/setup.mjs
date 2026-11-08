@@ -7,7 +7,7 @@ import { pathToFileURL as setupFileURL } from 'node:url';
 
 export const PACKAGES = { 'transcribe-cpp': '0.2.2', '@picovoice/pvrecorder-node': '1.2.9' };
 export const MODEL_FILE = 'parakeet-unified-en-0.6b-Q8_0.gguf';
-export const MODEL_BYTES = 731357568;
+const MODEL_BYTES = 731357568;
 const modelUrl = `https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/${MODEL_FILE}`;
 const setupIssue = (kind, message) => Object.assign(new Error(message), { kind });
 export const shortReason = error => Array.from(String(error.message ?? error).replace(/[\x00-\x1f\x7f]/g, ' ')).slice(0, 100).join('').trim();
@@ -17,7 +17,7 @@ export function voicePaths(home = setupHome(), env = process.env) {
     cache: setupJoin(home, '.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots'),
     downloaded: setupJoin(root, 'models', MODEL_FILE) };
 }
-export function installMegabytes(platform = process.platform) {
+function installMegabytes(platform = process.platform) {
   return platform === 'darwin' ? 20 : platform === 'linux' ? 90 : 85;
 }
 async function setupExists(path) {

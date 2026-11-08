@@ -184,7 +184,7 @@ def journey(width,height,home=False,menu_only=False,home_case='absolute',session
     assert process.poll() is None and 'tend' in screen.text()
    else:
     # Make the target non-first with the official helper, not hand-written canonical files.
-    newer=Path(helper('init','--root',root)['session'])
+    helper('init','--root',root)
     send(b's','s shape   r history   esc back   F10 menu')
     assert 'tinkery › tend' in screen.text()
     assert 'Saved.' not in screen.text() and 'any harness' not in screen.text()
