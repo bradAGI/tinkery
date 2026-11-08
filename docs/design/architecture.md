@@ -59,6 +59,7 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `menu/place.rs` | The seven-place enum, display names and purposes, and ordered navigation list; no routing or actions. |
 | `measure.rs` | Recent PR list, details and evidence limits; explicit reads only, no writes or providers. |
 | `measure/read.rs` | Bounded, cancellable `gh` reads scoped to the launch repo; no shell or retries. |
+| `measure/runs.rs`, `measure/runs/records.rs` | Closed-run postmortems: one explicit, cancellable read of tink-sdlc status, the run's labels, its steps' Pi launch logs and Git, then list and details. Unknown is never zero; no writes or providers. |
 | `tend/mod.rs` | The saved-goal garden's discovery states, selection and detail, with navigation to Shape and saved Think history. |
 | `tend/history.rs` | One owned history read at a time and a read-only conversation view with separate technical help. |
 | `tend/linking.rs` | The source and target selection state, link refusals and derived needs wording, independent of garden drawing. |

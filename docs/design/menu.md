@@ -8,7 +8,7 @@
 | 4 | approve | Read verified seeds not yet started and copy one runnable manual intake command ([Approve](approve.md)). |
 | 5 | watch | Read runs with their matched goals in one named tink-sdlc checkout, waiting runs first ([Watch](watch.md)). |
 | 6 | taste | Review an exact result against its unchanged goal; open its PR or copy an external review handoff ([Taste](taste.md)). |
-| 7 | measure | This repo's recent pull requests, read from GitHub only on explicit request; no metrics or acceptance claims. |
+| 7 | measure | This repo's recent pull requests and closed runs, each read only on explicit request; record counts, never scores or acceptance claims. |
 
 Each place shows its one-line purpose beside its name; [the place enum](../../src/menu/place.rs)
 owns the closed set, copy and navigation order. Home stores and opens variants; only digit,
@@ -131,6 +131,36 @@ and title wrapping. The PR browser is
 [#338](https://github.com/jon-devlapaz/tinkery/issues/338); the broader results and
 effort proposals [#155](https://github.com/jon-devlapaz/tinkery/issues/155) and
 [#115](https://github.com/jon-devlapaz/tinkery/issues/115) own their current scope and status.
+
+### Run postmortem
+
+`p` from the Measure start screen reads closed tink-sdlc runs in the launch repo: what went
+wrong and where the operator stepped in, without Taste carrying it
+([#680](https://github.com/jon-devlapaz/tinkery/issues/680)). It reads `sdlc.py status --json`,
+then each closed run's status, its `labels.jsonl`, its steps' Pi launch logs and Git. It writes
+nothing, contacts no network or provider and adds no store. The read has one 30-second deadline,
+and leaving cancels it. Only `p` reads or rereads.
+
+The list shows the 20 most recently closed runs, newest first. Each row has four counts, so
+each number appears beside the one that checks it:
+
+| Count | Read from | Unknown when |
+|---|---|---|
+| gates | the run's `decide` receipts. Agent-recorded and automatic seed receipts are listed in details, not counted | never; no receipts reads 0 |
+| corrections | `correction` labels in `labels.jsonl` | the file's records don't match the run's label count |
+| Pi responses | assistant `message_end` events in each step's `*.pi.log`, bound to the step contract's session | any step has no log or an unreadable one; details show the steps that were counted |
+| held | `closure.json`'s merge commit and this checkout's `HEAD` history | the merge commit isn't in `HEAD`'s history or Git fails |
+
+A gate is a planned decision, so it is not counted as a correction. Held has four states:
+`reverted` (a commit on `HEAD` says `This reverts commit <merge>` or `Reverts <repo>#<PR>`),
+`held` (closed 14 or more days ago and not reverted), `too recent` (under 14 days) and `abandoned`.
+Unknown shows as `?` and never as 0. The driving agent's responses have no record yet, so details
+show them as not recorded. The heading line counts closed, merged and reverted runs and any
+unreadable runs. There are no averages, rates, targets or scores, and Measure's counts never
+go into worker briefs.
+
+Enter opens one run's details: the closure, PR and merge commit, each gate decision with its
+reviewer, each label's words exactly as written (newest first), and the Pi responses per step.
 
 ## Direction, not built behavior
 
