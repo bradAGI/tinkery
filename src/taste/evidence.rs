@@ -54,9 +54,11 @@ fn checking_directory(root: &Path, cwd: &str) -> Result<PathBuf, String> {
 pub(super) fn automated(
     root: &Path,
     slug: &str,
-    run: &Value,
-    item: &Value,
+    report: &crate::sdlc::Run,
+    condition: &crate::sdlc::CheckItem,
 ) -> Result<String, String> {
+    let run = &report.data;
+    let item = &condition.data;
     let relative = run["log"]["path"]
         .as_str()
         .ok_or("Source log pointer unavailable.")?;
@@ -107,6 +109,17 @@ pub(super) fn automated(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn automated(root: &Path, slug: &str, run: &Value, item: &Value) -> Result<String, String> {
+        let parsed = crate::sdlc::Run::parse(run);
+        let condition = crate::sdlc::Run::parse(&json!({"checklist": [item]}));
+        super::automated(
+            root,
+            slug,
+            &parsed,
+            &condition.checklist.as_ref().unwrap()[0],
+        )
+    }
 
     fn run() -> Value {
         serde_json::from_str::<Value>(include_str!("../../tests/fixtures/taste-api1.json")).unwrap()

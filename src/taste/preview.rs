@@ -29,21 +29,22 @@ pub(super) struct Local {
     slug: String,
     id: String,
     head: String,
-    receipt: Value,
+    receipt: sdlc::Receipt,
     seed: Value,
     goal: sdlc::Goal,
 }
 
 impl Local {
     /// Require a current checked commit whose source files are committed; run evidence is separate.
-    pub(super) fn read(root: &Path, run: &Value, stop: &AtomicBool) -> Result<Self, String> {
+    pub(super) fn read(root: &Path, parsed: &sdlc::Run, stop: &AtomicBool) -> Result<Self, String> {
+        let run = &parsed.data;
         if run.get("pr") != Some(&Value::Null) || !run["closure"].is_null() {
             return Err("This run is not an open local result; press r.".into());
         }
         let receipt = &run["verification"];
-        if run["verification_status"] != "current"
+        if !parsed.verification.is(sdlc::Verification::Current)
             || receipt["passed"] != true
-            || receipt["result"] != "passed"
+            || !parsed.receipt_result.is(sdlc::CheckStatus::Passed)
         {
             return Err("Local preview needs a current passed verification. Commit and verify, then press r.".into());
         }
@@ -88,7 +89,7 @@ impl Local {
                 .ok_or("Local run identity is unknown.")?
                 .into(),
             head: head.into(),
-            receipt: receipt.clone(),
+            receipt: parsed.receipt.clone(),
             seed: run["seed_contract"].clone(),
             goal: sdlc::goal(run),
         })
@@ -141,7 +142,7 @@ impl Local {
     }
 
     /// Recheck the source run and return the matching status for a preview or retry.
-    pub(super) fn recheck(&self, stop: &AtomicBool) -> Result<Value, String> {
+    pub(super) fn recheck(&self, stop: &AtomicBool) -> Result<sdlc::Run, String> {
         let output = sdlc::status(
             &self.root,
             &["status".into(), self.slug.clone(), "--json".into()],
@@ -149,12 +150,13 @@ impl Local {
             DEADLINE,
         )?;
         let value = sdlc::envelope(&output)?;
-        if Self::read(&self.root, &value["run"], stop)? != *self {
+        let parsed = sdlc::Run::parse(&value["run"]);
+        if Self::read(&self.root, &parsed, stop)? != *self {
             return Err(
                 "Local result changed since reading. Press r before using this result.".into(),
             );
         }
-        Ok(value["run"].clone())
+        Ok(parsed)
     }
 }
 
@@ -526,6 +528,18 @@ fn successful_status(line: &[u8]) -> bool {
 mod tests {
     use super::*;
     use std::net::TcpListener;
+
+    #[test]
+    fn contract_refuses_receipt_result() {
+        let run = sdlc::Run::parse(&serde_json::json!({
+            "pr":null, "closure":null, "verification_status":"current",
+            "verification":{"passed":true, "result":"TEST-unsupported"}
+        }));
+        assert_eq!(
+            Local::read(Path::new("/TEST/unopened"), &run, &AtomicBool::new(false)).unwrap_err(),
+            "Local preview needs a current passed verification. Commit and verify, then press r."
+        );
+    }
 
     fn probe(address: SocketAddr) -> bool {
         answers(

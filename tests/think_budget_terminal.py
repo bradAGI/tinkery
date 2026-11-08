@@ -82,7 +82,7 @@ def journey(limit, home, width, height):
                 terminal.send(b'y', '1  think')
 
                 # Shape receives the same remaining allowance as Think.
-                terminal.send(b'3', 'enter open')
+                terminal.send(b'3', 'enter open   esc back')  # Home's bar also says "enter open".
                 terminal.send(b'\r', 'Keep records local or synced?')
                 terminal.send(b'Local TEST records', 'Local TEST records')
                 terminal.send(b'\x1bOQ', 'No drafting runs are left')

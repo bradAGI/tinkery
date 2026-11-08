@@ -824,3 +824,139 @@ fn alive(dir: &Path) -> bool {
     // SAFETY: signal 0 only checks whether the process exists; it sends nothing.
     unsafe { libc::kill(pid, 0) == 0 }
 }
+
+fn contract_refusal(change: impl FnOnce(&mut Value), expected: &str) {
+    let mut report = detail(vec![item("passed", true, false)]);
+    report["run"]["steps"] = serde_json::json!([]);
+    report["run"]["slug"] = "test".into();
+    report["run"]["run_id"] = "x".into();
+    change(&mut report["run"]);
+    let dir = checkout("", 0.0);
+    let summary = envelope(&run("test", "current"));
+    fs::write(
+        dir.path().join(SCRIPT),
+        format!(
+            "import sys\nprint({summary:?} if len(sys.argv)==3 else {detail:?})\n",
+            detail = report.to_string()
+        ),
+    )
+    .unwrap();
+    let mut watch = Watch::open(Some(dir.path().to_path_buf()));
+    settle(&mut watch);
+    watch.key(KeyEvent::from(KeyCode::Enter));
+    settle(&mut watch);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(240, 60)).unwrap();
+    terminal
+        .draw(|frame| watch.render(frame, frame.area(), Palette::new(false)))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text = buffer
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(
+        text.contains(expected),
+        "Expected exact refusal {expected:?}: {text}"
+    );
+}
+
+#[test]
+fn contract_refuses_verification() {
+    contract_refusal(
+        |run| run["verification_status"] = "TEST-unsupported".into(),
+        "tink-sdlc reported a state Watch doesn't know (TEST-unsupported); nothing is shown rather than a guess.",
+    );
+}
+
+#[test]
+fn contract_refuses_gate() {
+    contract_refusal(
+        |run| run["gates"][0]["status"] = "TEST-unsupported".into(),
+        "A gate has a state Watch doesn't know (TEST-unsupported).",
+    );
+}
+
+#[test]
+fn contract_refuses_check_status() {
+    contract_refusal(
+        |run| run["checklist"][0]["status"] = "TEST-unsupported".into(),
+        "Unknown checklist status: TEST-unsupported",
+    );
+}
+
+#[test]
+fn contract_refuses_proof() {
+    contract_refusal(
+        |run| run["checklist"][0]["proof"] = "TEST-unsupported".into(),
+        "A checklist item's proof disagrees with its automatic flag.",
+    );
+}
+
+#[test]
+fn contract_refuses_pending() {
+    for value in [
+        Value::Null,
+        serde_json::json!("false"),
+        serde_json::json!(0),
+    ] {
+        contract_refusal(
+            |run| run["checklist"][0]["pending"] = value,
+            "A checklist item has an invalid pending flag.",
+        );
+    }
+}
+
+#[test]
+fn contract_refuses_needs_recheck() {
+    for value in [
+        None,
+        Some(Value::Null),
+        Some(serde_json::json!("false")),
+        Some(serde_json::json!(0)),
+    ] {
+        contract_refusal(
+            |run| {
+                let item = run["checklist"][0].as_object_mut().unwrap();
+                if let Some(value) = value {
+                    item.insert("needs_recheck".into(), value);
+                } else {
+                    item.remove("needs_recheck");
+                }
+            },
+            "A checklist item has no needs_recheck flag.",
+        );
+    }
+}
+
+#[test]
+fn contract_refuses_step_state() {
+    contract_refusal(
+        |run| run["steps"] = serde_json::json!([{"name":"build","state":"TEST-unsupported"}]),
+        "A worker step Watch doesn't know; nothing is shown rather than a guess.",
+    );
+}
+
+#[test]
+fn contract_refuses_step_turn() {
+    contract_refusal(
+        |run| {
+            run["steps"] = serde_json::json!([{
+                "name":"build","state":"active","turn":"TEST-unsupported","observed_turn":"TEST observation"
+            }])
+        },
+        "A worker step Watch doesn't know; nothing is shown rather than a guess.",
+    );
+}
+
+#[test]
+fn contract_refuses_step_stop() {
+    contract_refusal(
+        |run| {
+            run["steps"] = serde_json::json!([{
+                "name":"build","state":"stopped","stopped_by":"TEST-unsupported"
+            }])
+        },
+        "A worker step Watch doesn't know; nothing is shown rather than a guess.",
+    );
+}

@@ -51,17 +51,17 @@ impl Rejected {
     /// Recheck the run, verified original and latest verdict. Reads no unrelated checkout.
     pub(crate) fn review(&self, stop: &AtomicBool) -> Result<Reviewed, String> {
         let run = self.local.recheck(stop)?;
-        if label::read(self.local.checkout(), &run, Some(self.local.head()))?
+        if label::read(self.local.checkout(), &run.data, Some(self.local.head()))?
             .1
             .as_ref()
             != Some(&self.verdict)
         {
             return Err("The rejection changed. Return to Taste and reread.".into());
         }
-        let Goal::Matched(goal) = crate::sdlc::goal(&run) else {
+        let Goal::Matched(goal) = crate::sdlc::goal(&run.data) else {
             return Err("The original goal is no longer verified.".into());
         };
-        let seed = run["seed_contract"]["source"]
+        let seed = run.data["seed_contract"]["source"]
             .as_str()
             .ok_or("The prior seed is missing.")?;
         let prior = seed_me::retry::prior(Path::new(seed), &goal)?;

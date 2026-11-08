@@ -31,7 +31,6 @@ const BIG_MODULES: &[(&str, usize)] = &[
     ("src/menu.rs", 1278),
     ("src/seed_me/answering.rs", 1210),
     ("src/seed_me/ledger.rs", 1125),
-    ("src/watch.rs", 1039),
 ];
 /// Most calls to the test-only accessors on Think's `Conversation`. Tests that poke private state
 /// break on refactors that keep behavior; new tests drive Think through its real input instead.

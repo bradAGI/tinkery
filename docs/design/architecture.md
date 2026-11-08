@@ -94,8 +94,8 @@ unconfirmed sessions or complete factory telemetry. The read-only
 | `think_record.rs`, `think_record/confirmation.rs`, `think_record/read.rs` | Confirmed-session format, caller-declared context, the shared authorization-to-actor boundary, exact-session attribution, one record scan shared by history and origin lookup, formatted history and typed submissions for Shape; no phase behavior. |
 | `think/canvas.rs`, `note.rs` | Extracted cards, and the raw text box with safe display, grapheme-offset mapping and machine-sized wrapped rows. Editor storage does not own send policy. |
 | `voice/` | Local dictation: the host boundary, helper process, protocol and owned setup. |
-| `watch.rs` | The runs in one named tink-sdlc checkout from its API 1 `status --json`: refusing other interfaces, waiting runs first, one run's detail. |
-| `sdlc.rs`, `sdlc/run.rs`, `sdlc/source.rs` | Shared read-only API 1 status and checklist attestation obligations (missing ownership fails closed), the canonical lowercase UUIDv4 run-ID rule, exact original-seed matching, the check that a checkout's files match its checked commit, cancellable transactions and bounded command ownership; no store, checkout discovery or phase policy. |
+| `watch.rs`, `watch/steps.rs` | The runs in one named tink-sdlc checkout, rendered from the shared typed report: waiting runs first, one run's detail and worker attention. No API-word recognition. |
+| `sdlc.rs`, `sdlc/run.rs`, `sdlc/source.rs` | Shared read-only API 1 status with one `Run::parse` word boundary and typed verification, gates, checklist methods/results and worker steps. Unknown, missing and null values remain distinct for operation-specific refusals. Checklist attestation obligations (missing ownership fails closed), the canonical lowercase UUIDv4 run-ID rule, exact original-seed matching, the check that a checkout's files match its checked commit, cancellable transactions and bounded command ownership; no store, checkout discovery or phase policy. |
 | `taste.rs`, `taste/read.rs` | One result's unchanged goal, revision-bound observations, the one question and external copy handoff; explicitly mapped PRs, read-only status/GitHub reads and deliberate browser navigation, never an approval, merge or agent launch. |
 | `taste/retry.rs` | The latest rejection's words and checked commit, a read-only review, and on F2 a fresh session with a detached checkout; never a worker or commit. |
 | `taste/preview.rs` | Exact-head repo preview declarations, local HTTP readiness and explicitly launched temporary checkout/process ownership; no inferred commands, public URLs, agent or verdict. |
@@ -119,8 +119,8 @@ Each pass scores 1.25. Structural PRs name the rows they move.
 | # | Question | Recorded assessment |
 | --- | --- | --- |
 | 1 | Can each module be described in one sentence? | Yes: see the module map. |
-| 2 | Are interfaces simpler than implementations? | Yes |
-| 3 | Can an implementation change without touching callers? | Yes: model contracts live beside decoders; tests align field names. Only `seed_me/` owns Seed Me's format. Review decodes its reply; reading joins it. |
+| 2 | Are interfaces simpler than implementations? | Yes: status readers consume one typed run instead of recognizing API words independently. |
+| 3 | Can an implementation change without touching callers? | Yes: model contracts live beside decoders; tests align field names. Only `seed_me/` owns Seed Me's format. Only `sdlc.rs` recognizes run-status words; readers retain their own display and refusal wording. Review decodes its reply; reading joins it. |
 | 4 | Do interface comments describe the abstraction? | Yes: modules and `pub` items carry interface comments; the build denies `missing_docs` and `unreachable_pub`. |
 | 5 | Is design discussion part of review? | Yes: [the working guide](../../AGENTS.md#guardrails) requires changeability review and naming affected rows. |
 | 6 | Does each module hide an important decision? | Yes: Conversation hides question, skip and scope rules. |
