@@ -11,7 +11,7 @@ use std::{
 };
 
 /// An absent receipt set cannot establish checks or gate obligations at this root.
-pub(super) const MISSING_RECEIPTS: &str = "unknown: receipts not found here";
+const MISSING_RECEIPTS: &str = "unknown: receipts not found here";
 
 /// Where one condition stands. Decisions match on this; the words are only for display.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,7 +38,7 @@ pub(super) enum Check {
 
 impl Check {
     /// The exact words shown and copied for this state.
-    pub(super) fn word(self) -> &'static str {
+    fn word(self) -> &'static str {
         match self {
             Self::Pass => "pass",
             Self::PassRecheck => "pass (may need recheck)",
@@ -236,14 +236,10 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
     }
     for item in checklist {
         let automatic = item["automatic"].as_bool().ok_or("Check method missing.")?;
-        let human = match item.get("operator_attestation") {
-            None => false,
-            Some(value) => value
-                .as_bool()
-                .ok_or("Operator attestation flag unreadable.")?,
-        };
+        let attestation = sdlc::Attestation::read(item)?;
+        let human = matches!(attestation, sdlc::Attestation::Operator { .. });
         let proof = text(item, "proof")?;
-        if automatic && human {
+        if automatic && item["operator_attestation"] == true {
             return Err("Automated check also claims to require operator attestation.".into());
         }
         if proof != if automatic { "automated" } else { "attested" } {
@@ -286,7 +282,10 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
             "pending" | "unknown" => Check::MatchingEvidenceMissing,
             _ => return Err("Unknown completion condition status.".into()),
         };
-        if !row.receipts_missing && human && (!pending && status != "passed" || recheck) {
+        if let sdlc::Attestation::Operator { owed, recheck } = attestation
+            && !row.receipts_missing
+            && (owed || recheck)
+        {
             row.gates.push(if recheck {
                 format!("may need recheck: {label}")
             } else {
@@ -310,6 +309,11 @@ fn local(root: &Path, run: &Value, row: &mut ResultRow) -> Result<(), String> {
                     "No manual evidence recorded"
                 })
                 .to_owned()
+        };
+        let evidence = if human && item.get("operator_attestation").is_none() && mark.is_null() {
+            format!("older record, no sign-off recorded; {evidence}")
+        } else {
+            evidence
         };
         row.items.push(Item {
             label,
@@ -701,7 +705,7 @@ mod tests {
     }
 
     #[test]
-    fn worker_only_checks_stay_in_evidence_and_next_without_a_human_obligation() {
+    fn manual_checks_owe_the_operator_unless_explicitly_worker_owned() {
         for flag in [None, Some(false)] {
             let mut source = run();
             let mut worker = json!({
@@ -733,6 +737,23 @@ mod tests {
             .into_iter()
             .map(|line| line.to_string())
             .collect::<String>();
+            if flag.is_none() {
+                assert!(review.contains("What to judge") && review.contains("worker output"));
+                assert_eq!(target.items[0].state, Check::AwaitingHuman);
+                assert_eq!(
+                    target.gates,
+                    ["worker output", "may need recheck: Check the fixture"]
+                );
+                for action in ['a', 'c'] {
+                    let copy = super::super::handoff(&target, action).unwrap();
+                    assert!(
+                        copy.contains("older record, no sign-off recorded"),
+                        "{copy}"
+                    );
+                    assert!(copy.contains("human attestation"), "{copy}");
+                }
+                continue;
+            }
             assert!(
                 review.contains("Is this good?") && !review.contains("What to judge"),
                 "{review}"

@@ -111,8 +111,8 @@ These lead, as do runs whose detail has any unapproved gate, an owed manual atte
 attestation flagged `needs_recheck`. A non-automatic item whose `status` is not `passed` is owed,
 except provisional (`pending: true`) items awaiting activation and items whose
 `operator_attestation` is `false`: the worker owns those, so their status stays in detail but
-owes the operator nothing. A report without `operator_attestation` counts the item as owed;
-any other value refuses the read. A passed attestation with
+owes the operator nothing. The shared `sdlc::Attestation` reading used by Watch and Taste
+treats a report without `operator_attestation` as the operator's; any other value refuses the read. A passed attestation with
 `needs_recheck` is shown as **may need recheck**, not declared invalid: upstream says to recheck
 only if the change affects it. Automatic pending checks alone do not demand a person.
 

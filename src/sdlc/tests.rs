@@ -10,6 +10,62 @@ mod descendant {
 }
 
 #[test]
+fn checklist_obligations_fail_closed_only_for_manual_operator_items() {
+    for owner in [None, Some(true), Some(false)] {
+        for automatic in [false, true] {
+            for status in ["pending", "failed", "unknown", "passed"] {
+                for pending in [false, true] {
+                    for recheck in [false, true] {
+                        let mut item = json!({
+                            "automatic": automatic, "status": status,
+                            "pending": pending, "needs_recheck": recheck,
+                        });
+                        if let Some(owner) = owner {
+                            item["operator_attestation"] = json!(owner);
+                        }
+                        let expected = if automatic || owner == Some(false) {
+                            Attestation::Worker
+                        } else {
+                            Attestation::Operator {
+                                owed: !pending && status != "passed",
+                                recheck,
+                            }
+                        };
+                        assert_eq!(Attestation::read(&item).unwrap(), expected, "{item}");
+                    }
+                }
+            }
+        }
+    }
+    let valid = json!({"automatic": false, "status": "pending", "needs_recheck": false});
+    assert_eq!(
+        Attestation::read(&valid).unwrap(),
+        Attestation::Operator {
+            owed: true,
+            recheck: false
+        }
+    );
+    for key in [
+        "automatic",
+        "needs_recheck",
+        "status",
+        "pending",
+        "operator_attestation",
+    ] {
+        for value in [Value::Null, json!("true"), json!(1)] {
+            let mut item = valid.clone();
+            item[key] = value;
+            assert!(Attestation::read(&item).is_err(), "{item}");
+        }
+    }
+    for key in ["automatic", "needs_recheck", "status"] {
+        let mut item = valid.clone();
+        item.as_object_mut().unwrap().remove(key);
+        assert!(Attestation::read(&item).is_err(), "{key}");
+    }
+}
+
+#[test]
 fn successful_commands_stop_descendants_and_preserve_results() {
     completed_command(0);
 }

@@ -72,9 +72,12 @@ Counts are observations, never an aggregate done/approved verdict.
 Enter opens the review. The PR title or “Local checked result”, merge state and preview offer come first so the
 command and URL stay visible before `v`. **What to judge** shows the first active human
 check the run reports as pending for the known result. It uses the source's exact
-wording. Only an explicit `operator_attestation: true` identifies a human check in
-API 1. A manual check with the flag absent or false stays in Checks and Evidence,
-and can inform Next. If several human checks are pending, the review gives the total
+wording. The shared `sdlc::Attestation` reading treats a manual check as the operator's
+unless API 1 explicitly reports `operator_attestation: false`. Missing ownership on an
+older record fails closed, matching Watch; Evidence says “older record, no sign-off recorded”
+when it has no mark. Recording a passed sign-off (including an explicit waiver in its evidence)
+through the existing external `mark` path clears the obligation in both screens. Explicitly
+worker-owned checks stay in Checks and Evidence and can inform Next. If several human checks are pending, the review gives the total
 and `e` shows them all.
 With no such check, the review asks **Is this good?** A missing receipt set, an
 unknown revision, or a previous human mark of unknown, failed or passed with a

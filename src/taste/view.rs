@@ -60,7 +60,7 @@ fn status(item: &Item) -> String {
         Check::Fail => "! failed".into(),
         Check::Stale => "… stale".into(),
         Check::NoneReported => "? unknown: no CI reported".into(),
-        Check::ReceiptsMissing => format!("? {}", super::read::MISSING_RECEIPTS),
+        Check::ReceiptsMissing => format!("? {}", Check::ReceiptsMissing),
         waiting => format!(
             "… waiting: {}",
             match waiting {
@@ -401,7 +401,7 @@ pub(super) fn details(
         block(
             &mut lines,
             Span::raw("  "),
-            super::read::MISSING_RECEIPTS,
+            &Check::ReceiptsMissing.to_string(),
             width,
             p.muted,
         );
