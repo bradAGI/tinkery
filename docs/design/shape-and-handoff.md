@@ -1,7 +1,7 @@
 # Tend and handoff
 
 Tend holds saved goals; [Shape](#shape) asks its questions with an explicit
-model and budget. There is no skill continuation prompt; continue the saved goal in Shape.
+model and budget.
 
 ## Receipt
 
@@ -536,8 +536,8 @@ Shape uses Think's
   `{"unknown":"FACT-ID","resolved_by":"DECISION-ID"}` links to an already-settled answer.
   Absence means no links; malformed or invalid links refuse the reply plainly, saving no
   findings, question or resolution. An answer saved before that step stays saved.
-  [The ledger](shape-ledger.md#2-what-shape-writes) owns eligibility, history and reopening;
-  model coverage judgments are not semantic proofs. A question may include optional `prerequisites`, a list
+  [The ledger](shape-ledger.md#2-what-shape-writes) owns eligibility, history and reopening.
+  A question may include optional `prerequisites`, a list
   of existing decision IDs, preserved unchanged (absent means `[]`). Facts belong in `supported_by`,
   not prerequisites. The ledger alone refuses unknown IDs, cycles, invalid lists and deferred
   prerequisites (a deferral is not a settled answer), saving no
@@ -548,8 +548,7 @@ Shape uses Think's
   The decoder tolerates redundant closing braces only after one complete JSON object;
   it never reconstructs missing fields or chooses between multiple objects. Invalid
   JSON, a missing question and an unsupported reply kind have specific reasons.
-  The step finds the blast radius and the ways to meet the goal before choosing to ask or draft;
-  a small live trial on #161 favored that order, which is evidence, not an eval.
+  The step finds the blast radius and the ways to meet the goal before choosing to ask or draft.
 - The launch allowance (saved calls or `--shape-budget CALLS`) defaults to zero; each step counts one before the model starts.
   With a current question and one run remaining, show `Drafting runs left this launch: 1 of M.`
   beside the answer editor before F2 spends it, using Think's shared budget wording.
@@ -660,8 +659,6 @@ Shape uses Think's
   Missing, changed or stale records invalidate readiness; renewed displayed drafting
   and explicit confirmation are required. A failure after storing records can leave
   unconfirmed records, never a verified handoff.
-  These are drafting instructions, not a semantic completeness validator: stubs prove
-  transport and preservation, not model quality or operator dogfood.
 - Agent actions require `--operator agent` and [are recorded as the agent's](think.md#confirmation-attribution-185);
   seed confirmation never claims a human keypress.
 - A commandless provisional check blocks confirmation for both operators. The refusal names the
@@ -711,8 +708,7 @@ Shape uses Think's
   first diagnostic line is kept, at most 2,048 UTF-8 bytes, with truncation disclosed.
   The diagnostic is not saved. It must match the session, ledger version and working
   folder; a changed context, successful step, stop or transport/storage failure clears it.
-  Storage failures never become model feedback. These checks prove transport and
-  preservation, not that a model will correct its next draft.
+  Storage failures never become model feedback.
   An oversized step sends nothing and keeps the words, asking the operator to start a
   smaller goal with this session as a reference. Esc stops a step; an
   already-started save finishes, then rereads. Stopped model calls still count,
@@ -723,7 +719,6 @@ Shape uses Think's
 The [drafting prompt](../../src/shape/prompt.txt) offers options only for a genuine choice
 with supported trade-offs and undo costs. Compatible properties or unknown costs use the
 existing question without options; the unresolved operator decision still gets asked.
-These instructions do not validate model judgment; improvement needs a separately budgeted comparison.
 
 A question reply may give exactly two options, each with its trade-off and undo cost (`cheap`,
 `moderate` or `hard`), the strongest case against the suggestion, and a confidence. Anything
@@ -765,9 +760,7 @@ itself, in that order.
   consequences and a `Where we did not look:` line in Risks and verification. Only asked and
   answered ledger questions appear as operator answers in Decisions. Seed prose refuses the old
   `Probe:` / `— answer:` template, including inline in Knowledge map; unasked probes are readings,
-  not answers. This format guard is not a semantic verifier of arbitrary model prose.
-- These are instructions and transport; whether probes improve real seeds needs a separately
-  approved budgeted trial.
+  not answers.
 
 ### Assumptions
 
@@ -870,7 +863,9 @@ Delegation (#239), deferral (#240) and typed findings (#241) are shipped through
 Shape checks saved drafts against the bundled contract and a [pinned consumer section list](../../tests/fixtures/tink-sdlc-intake-sections.txt),
 never an operator's consumer checkout. PTYs use Tinkery's real Rust ledger in temporary TEST roots and cover
 80×24, 100×30, 160×40 and 320×40 where applicable, including NO_COLOR. These establish
-mechanics, not operator acceptance or the quality of real goals, questions or seeds. Lock timeout
+mechanics, not operator acceptance or the quality of real goals, questions or seeds.
+Prompt rules, probes and format guards are instructions and transport, not semantic
+validators; judging whether they improve real seeds needs a separately budgeted trial. Lock timeout
 coverage does not establish pre-deadline cancellation; matching read-only no-op
 preservation has no dedicated reversion probe. Static graphs are a design choice,
 not a comparative user-study result.
