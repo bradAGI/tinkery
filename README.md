@@ -65,7 +65,16 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   `b` reviews an explicit bounded Pi start; after the full disclosure, F2 creates and
   imports the run, prepares its isolated build checkout and launches the worker.
   Supply `--worker-model provider/model:thinking --worker-responses N`; the default
-  worker allowance is zero, separate from drafting. Recent Pi launch logs show how many
+  worker allowance is zero, separate from drafting.
+  With `--operator agent`, F2, `l` and `u` share one relayed-authorization door:
+  supply `--worker-authorization FILE` containing the operator's verbatim words bound exactly
+  to the seed hash, model pin and response cap. Missing or mismatched authorization refuses
+  before work. The review shows the words and authority `operator, relayed`; provenance
+  cannot be verified. Each admission appends to `runs/<slug>/worker-authorization.jsonl`.
+  Human and undeclared F2, `l` and `u` keep their existing direct consent without a relay file.
+  Goal confirmation, seed confirmation and worker start remain separate yeses.
+  See the [relay file contract](docs/design/approve.md#start-a-worker). Navigation never starts work.
+  Recent Pi launch logs show how many
   responses workers used before editing. The review warns when your cap leaves too little
   room for an edit and a follow-up. The worker screen retains
   requests across navigation and offers explicit refresh, resume, finish, stop and

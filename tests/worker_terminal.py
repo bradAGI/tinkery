@@ -275,6 +275,7 @@ class Fixture:
             'TEST_WORKER_CALLS': str(self.log), 'TEST_WORKER_RELEASE': str(self.release)},
             home=root / 'HOME')
         self.env.pop('NO_COLOR', None)
+        self.env.pop('TINK_SDLC_STEP_SESSION', None)
         self.git('init', '-q')
         self.git('config', 'user.name', 'TEST fixture')
         self.git('config', 'user.email', 'fixture@example.invalid')
@@ -309,7 +310,8 @@ class Fixture:
 
 
 class Terminal:
-    def __init__(self, fixture, width, height, budget=True, mono=False):
+    def __init__(self, fixture, width, height, budget=True, mono=False,
+                 operator='agent', authorization='fixture'):
         self.fixture = fixture
         self.master, self.slave = os.openpty()
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
@@ -318,10 +320,20 @@ class Terminal:
         env = dict(fixture.env)
         if mono:
             env['NO_COLOR'] = '1'
-        args = [str(REPO / 'target/debug/tinkery'), '--operator', 'agent', '--home',
+        args = [str(REPO / 'target/debug/tinkery'), '--home',
                 '--sdlc-root', str(fixture.project), '--seed-session-root', str(fixture.sessions),
                 '--record-root', str(fixture.root / 'TEST-records'),
                 '--link-root', str(fixture.root / 'TEST-links')]
+        if operator is not None:
+            args.extend(['--operator', operator])
+        if authorization == 'fixture':
+            authorization = fixture.root / 'TEST-relayed-authorization.json'
+            authorization.write_text(json.dumps(dict(
+                words='TEST operator authorizes this bounded worker start.',
+                seed_sha256=hashlib.sha256((fixture.session / 'seed-contract.md').read_bytes()).hexdigest(),
+                model=MODEL, responses=CAP)))
+        if authorization is not None:
+            args.extend(['--worker-authorization', str(authorization)])
         if budget:
             args.extend(['--worker-model', MODEL, '--worker-responses', str(CAP)])
         self.process = subprocess.Popen(args, cwd=fixture.project, env=env,
@@ -340,9 +352,19 @@ class Terminal:
                 return
             if returncode is not None:
                 break
-        raise AssertionError(self.screen.text() + '\nCalls:\n' + json.dumps(self.fixture.calls(), indent=2))
+        before = self.screen.text()
+        os.write(self.master, END)
+        for _ in wait_output(self.master, self.process, consume, time.monotonic() + 0.3):
+            pass
+        raise AssertionError(before + '\nEnd of screen:\n' + self.screen.text()
+                             + '\nCalls:\n' + json.dumps(self.fixture.calls(), indent=2))
 
     def send(self, keys, text):
+        if keys.startswith(END) and len(keys) > len(END):
+            frames = self.output.count(b'\x1b[?2026l')
+            os.write(self.master, END)
+            self.wait(lambda: self.output.count(b'\x1b[?2026l') > frames)
+            keys = keys[len(END):]
         os.write(self.master, keys)
         self.wait(lambda: text in self.flat())
 
@@ -429,6 +451,14 @@ def real_runtime_journey(fail_first=False):
             contract = json.loads((build / 'runs/test-worker/steps/build.json').read_text())
             assert contract['checkout'] == str(build) and contract['run_id'] == source['run_id']
             assert contract['model'] == MODEL and contract['max_responses'] == CAP
+            receipt = json.loads((build / 'runs/test-worker/worker-authorization.jsonl').read_text().splitlines()[0])
+            assert receipt['operator'] == 'agent' and receipt['authority'] == 'operator, relayed'
+            assert 'cannot be verified' in receipt['provenance']
+            assert receipt['run_id'] == contract['run_id'] and receipt['checkout'] == str(build)
+            assert receipt['authorization'] == json.loads(
+                (fixture.root / 'TEST-relayed-authorization.json').read_text())
+            assert receipt['authorization']['model'] == contract['model']
+            assert receipt['authorization']['responses'] == contract['max_responses']
             assert 'f finish' not in terminal.flat(), 'unverified work offered an irreversible step completion'
             terminal.send(b'f?', 'Worker actions')
             assert json.loads((build / 'runs/test-worker/steps/build.json').read_text())['state'] == 'active'
@@ -440,7 +470,8 @@ def real_runtime_journey(fail_first=False):
                 assert 'f finish' not in terminal.flat(), 'failed checks offered normal completion'
                 terminal.send(b'f?', 'Worker actions')
                 assert json.loads((build / 'runs/test-worker/steps/build.json').read_text())['state'] == 'active'
-                terminal.send(b'\x1b' + END + b'u', 'Request in progress')
+                terminal.send(b'\x1b', 'Verification: failed')
+                terminal.send(END + b'u', 'Request in progress')
                 terminal.wait(lambda: 'Worker: turn ended; completion still unrecorded' in terminal.flat()
                               and 'Request in progress' not in terminal.flat())
                 resumed = json.loads((build / 'runs/test-worker/steps/build.json').read_text())
@@ -626,7 +657,7 @@ def journey(width, height, case, mono=False):
                     terminal.wait(lambda: 'F2 tries again' in terminal.flat() and 'F2 start worker' in terminal.flat())
                     fixture.git('add', 'context.md')
                     fixture.git('commit', '-qm', 'TEST commit context')
-                    terminal.send(END + F2, 'Read from tink-sdlc.')
+                    terminal.send(END + F2, 'Worker: turn ended; completion still unrecorded')
                     assert len(fixture.admissions()) == 1, fixture.calls()
                 elif case == 'pending-gate':
                     terminal.send(F2, 'Worker result unavailable')

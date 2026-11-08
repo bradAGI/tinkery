@@ -61,6 +61,7 @@ impl Fixture {
             target,
             root: root.clone(),
             record_root: Ok(records),
+            authorization: Gate::new(false, Ok(None)),
             config: Config {
                 model: "test/exact:low".into(),
                 responses: 3,
@@ -314,6 +315,34 @@ fn confirmed_retry(fixture: &Fixture) -> Start {
 }
 
 #[test]
+fn agent_retry_with_matching_relay_refuses_before_creation() {
+    let fixture = Fixture::new();
+    let mut request = confirmed_retry(&fixture);
+    let file = fixture._temp.path().join("TEST-relay.json");
+    fs::write(
+        &file,
+        json!({
+            "words": "TEST operator authorizes this exact retry",
+            "seed_sha256": request.target.sha256,
+            "model": request.config.model,
+            "responses": request.config.responses,
+        })
+        .to_string(),
+    )
+    .unwrap();
+    request.authorization = Gate::new(true, Relay::read(Some(&file)));
+    let failure = wait(Job::start(request)).unwrap_err();
+    assert!(
+        failure.message.contains("alternate worktrees"),
+        "{failure:?}"
+    );
+    assert!(
+        fixture.commands().is_empty(),
+        "unauthorized admission: retry created work"
+    );
+}
+
+#[test]
 fn retry_handoff_requires_the_reviewed_detached_commit_for_both_entry_points() {
     let fixture = Fixture::new();
     let request = confirmed_retry(&fixture);
@@ -428,8 +457,19 @@ fn retry_worker_refuses_project_edits_after_checkout_and_at_prepared_launch() {
             let Recovery::Run(run) = failure.recovery else {
                 panic!("{failure:?}");
             };
-            let prepared = wait(Job::act(run.clone(), Action::Refresh)).unwrap();
-            let launch = || Job::act(run.clone(), Action::Launch(prepared.pin.clone().unwrap()));
+            let prepared = wait(Job::act(
+                Gate::new(false, Ok(None)),
+                run.clone(),
+                Action::Refresh,
+            ))
+            .unwrap();
+            let launch = || {
+                Job::act(
+                    Gate::new(false, Ok(None)),
+                    run.clone(),
+                    Action::Launch(prepared.pin.clone().unwrap()),
+                )
+            };
             // The separate "launch prepared worker" key must recheck the same source boundary.
             assert!(wait(launch()).unwrap_err().message.contains("Local source"));
             assert!(!attempted("launch"));
@@ -552,7 +592,7 @@ fn refused_admission_keeps_known_run_and_never_retries() {
         let Recovery::Run(run) = failure.recovery else {
             panic!("{failure:?}");
         };
-        let refreshed = wait(Job::act(run, Action::Refresh)).unwrap();
+        let refreshed = wait(Job::act(Gate::new(false, Ok(None)), run, Action::Refresh)).unwrap();
         assert_eq!(
             refreshed.state,
             if refusal == "uncertain" {
@@ -581,13 +621,19 @@ fn explicit_launch_recovers_prepared_step_but_never_uncertain_or_changed_contrac
         let Recovery::Run(run) = failure.recovery else {
             panic!("{failure:?}");
         };
-        let observed = wait(Job::act(run.clone(), Action::Refresh)).unwrap();
+        let observed = wait(Job::act(
+            Gate::new(false, Ok(None)),
+            run.clone(),
+            Action::Refresh,
+        ))
+        .unwrap();
         fixture.edit(|value| {
             value.as_object_mut().unwrap().remove("refusal");
         });
         fixture.edit(|value| value["step"]["max_responses"] = 99.into());
         assert!(
             wait(Job::act(
+                Gate::new(false, Ok(None)),
                 run.clone(),
                 Action::Launch(observed.pin.clone().unwrap())
             ))
@@ -596,7 +642,11 @@ fn explicit_launch_recovers_prepared_step_but_never_uncertain_or_changed_contrac
             .contains("changed")
         );
         fixture.edit(|value| value["step"]["max_responses"] = 3.into());
-        let result = wait(Job::act(run, Action::Launch(observed.pin.unwrap())));
+        let result = wait(Job::act(
+            Gate::new(false, Ok(None)),
+            run,
+            Action::Launch(observed.pin.unwrap()),
+        ));
         if refusal == "gate" {
             assert_eq!(
                 result.unwrap().state,
@@ -633,7 +683,12 @@ fn run_ids_preserve_canonical_uuid_v4_contract() {
             slug: "test".into(),
             id: id.into(),
         };
-        let snapshot = wait(Job::act(run.clone(), Action::Refresh)).unwrap();
+        let snapshot = wait(Job::act(
+            Gate::new(false, Ok(None)),
+            run.clone(),
+            Action::Refresh,
+        ))
+        .unwrap();
         assert_eq!(snapshot.run, run);
         assert_eq!(snapshot.state, State::NotStarted);
     }
@@ -655,6 +710,7 @@ fn run_ids_preserve_canonical_uuid_v4_contract() {
     ] {
         fixture.edit(|value| value["id"] = id.into());
         let failure = wait(Job::act(
+            Gate::new(false, Ok(None)),
             Run {
                 root: fixture.root.clone(),
                 slug: "test".into(),
@@ -687,7 +743,7 @@ fn current_run_identity_is_required_before_resume_or_verify() {
         Action::StopOperator,
     ] {
         assert!(
-            wait(Job::act(run.clone(), action))
+            wait(Job::act(Gate::new(false, Ok(None)), run.clone(), action))
                 .unwrap_err()
                 .message
                 .contains("changed")
@@ -708,6 +764,7 @@ fn resume_uses_recorded_contract_and_preserves_cumulative_cap() {
     fixture.edit(|value| value["turn"] = "ended".into());
     for _ in 0..2 {
         let snapshot = wait(Job::act(
+            Gate::new(false, Ok(None)),
             run.clone(),
             Action::Resume(initial.pin.clone().unwrap()),
         ))
@@ -716,10 +773,14 @@ fn resume_uses_recorded_contract_and_preserves_cumulative_cap() {
         assert_eq!(snapshot.responses, 3);
     }
     assert!(
-        wait(Job::act(run, Action::Resume(initial.pin.clone().unwrap())))
-            .unwrap_err()
-            .message
-            .contains("cap")
+        wait(Job::act(
+            Gate::new(false, Ok(None)),
+            run,
+            Action::Resume(initial.pin.clone().unwrap())
+        ))
+        .unwrap_err()
+        .message
+        .contains("cap")
     );
     for args in fixture
         .commands()
@@ -744,6 +805,7 @@ fn running_turn_and_changed_disclosed_contract_cannot_resume() {
     let initial = fixture.start();
     assert!(
         wait(Job::act(
+            Gate::new(false, Ok(None)),
             initial.run.clone(),
             Action::Resume(initial.pin.clone().unwrap())
         ))
@@ -766,6 +828,7 @@ fn running_turn_and_changed_disclosed_contract_cannot_resume() {
         fixture.edit(|value| value["step"][field] = replacement);
         assert!(
             wait(Job::act(
+                Gate::new(false, Ok(None)),
                 initial.run.clone(),
                 Action::Resume(initial.pin.clone().unwrap())
             ))
@@ -791,10 +854,15 @@ fn explicit_refresh_follows_only_the_same_run_to_its_reported_build_checkout() {
         root: fixture.root.clone(),
         ..initial.run.clone()
     };
-    let refreshed = wait(Job::act(source.clone(), Action::Refresh)).unwrap();
+    let refreshed = wait(Job::act(
+        Gate::new(false, Ok(None)),
+        source.clone(),
+        Action::Refresh,
+    ))
+    .unwrap();
     assert_eq!(refreshed.run, initial.run);
     assert!(
-        wait(Job::act(source, Action::Verify))
+        wait(Job::act(Gate::new(false, Ok(None)), source, Action::Verify))
             .unwrap_err()
             .message
             .contains("changed")
@@ -808,18 +876,31 @@ fn finish_requires_current_passing_checks_and_a_finished_report() {
     let run = initial.run;
     fixture.edit(|value| value["turn"] = "ended".into());
     assert!(
-        wait(Job::act(run.clone(), Action::Finish))
-            .unwrap_err()
-            .message
-            .contains("Verify first")
+        wait(Job::act(
+            Gate::new(false, Ok(None)),
+            run.clone(),
+            Action::Finish
+        ))
+        .unwrap_err()
+        .message
+        .contains("Verify first")
     );
-    let verified = wait(Job::act(run.clone(), Action::Verify)).unwrap();
+    let verified = wait(Job::act(
+        Gate::new(false, Ok(None)),
+        run.clone(),
+        Action::Verify,
+    ))
+    .unwrap();
     assert_eq!(verified.verification, "current");
     assert!(
-        wait(Job::act(run.clone(), Action::Finish))
-            .unwrap_err()
-            .message
-            .contains("report")
+        wait(Job::act(
+            Gate::new(false, Ok(None)),
+            run.clone(),
+            Action::Finish
+        ))
+        .unwrap_err()
+        .message
+        .contains("report")
     );
     fs::write(
         run.root.join("runs/test/worker-report.md"),
@@ -832,17 +913,26 @@ fn finish_requires_current_passing_checks_and_a_finished_report() {
             value["passed"] = passed.into();
         });
         assert!(
-            wait(Job::act(run.clone(), Action::Finish))
-                .unwrap_err()
-                .message
-                .contains("Verify first")
+            wait(Job::act(
+                Gate::new(false, Ok(None)),
+                run.clone(),
+                Action::Finish
+            ))
+            .unwrap_err()
+            .message
+            .contains("Verify first")
         );
     }
     fixture.edit(|value| {
         value["verification"] = "current".into();
         value["passed"] = true.into();
     });
-    let done = wait(Job::act(run.clone(), Action::Finish)).unwrap();
+    let done = wait(Job::act(
+        Gate::new(false, Ok(None)),
+        run.clone(),
+        Action::Finish,
+    ))
+    .unwrap();
     assert_eq!(done.state, State::Completed);
     assert_eq!(done.verification, "current");
 }
@@ -862,22 +952,40 @@ fn failed_verification_keeps_ended_worker_available_for_same_session_repair() {
         value["fail_verify"] = true.into();
     });
     assert!(
-        wait(Job::act(run.clone(), Action::Verify))
-            .unwrap_err()
-            .message
-            .contains("verification failed")
+        wait(Job::act(
+            Gate::new(false, Ok(None)),
+            run.clone(),
+            Action::Verify
+        ))
+        .unwrap_err()
+        .message
+        .contains("verification failed")
     );
     assert!(
-        wait(Job::act(run.clone(), Action::Finish))
-            .unwrap_err()
-            .message
-            .contains("Verify first")
+        wait(Job::act(
+            Gate::new(false, Ok(None)),
+            run.clone(),
+            Action::Finish
+        ))
+        .unwrap_err()
+        .message
+        .contains("Verify first")
     );
-    let observed = wait(Job::act(run.clone(), Action::Refresh)).unwrap();
+    let observed = wait(Job::act(
+        Gate::new(false, Ok(None)),
+        run.clone(),
+        Action::Refresh,
+    ))
+    .unwrap();
     assert_eq!(observed.state, State::Active { turn: Turn::Ended });
     assert_eq!(observed.verification, "failed");
     assert_eq!(observed.pin, initial.pin);
-    let resumed = wait(Job::act(run.clone(), Action::Resume(observed.pin.unwrap()))).unwrap();
+    let resumed = wait(Job::act(
+        Gate::new(false, Ok(None)),
+        run.clone(),
+        Action::Resume(observed.pin.unwrap()),
+    ))
+    .unwrap();
     assert_eq!(resumed.model, initial.model);
     assert_eq!(resumed.responses, initial.responses);
     assert!(
@@ -889,9 +997,16 @@ fn failed_verification_keeps_ended_worker_available_for_same_session_repair() {
     fixture.edit(|value| {
         value["fail_verify"] = false.into();
     });
-    wait(Job::act(run.clone(), Action::Verify)).unwrap();
+    wait(Job::act(
+        Gate::new(false, Ok(None)),
+        run.clone(),
+        Action::Verify,
+    ))
+    .unwrap();
     assert_eq!(
-        wait(Job::act(run, Action::Finish)).unwrap().state,
+        wait(Job::act(Gate::new(false, Ok(None)), run, Action::Finish))
+            .unwrap()
+            .state,
         State::Completed
     );
 }
@@ -909,12 +1024,13 @@ fn stopped_turn_is_never_completed_and_changed_seed_does_not_block_stop() {
         .unwrap();
         assert!(
             wait(Job::act(
+                Gate::new(false, Ok(None)),
                 run.clone(),
                 Action::Resume(initial.pin.clone().unwrap())
             ))
             .is_err()
         );
-        let snapshot = wait(Job::act(run, action)).unwrap();
+        let snapshot = wait(Job::act(Gate::new(false, Ok(None)), run, action)).unwrap();
         assert_eq!(snapshot.state, State::Stopped { cap });
         assert_ne!(snapshot.verification, "current");
     }
