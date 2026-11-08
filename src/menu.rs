@@ -67,6 +67,7 @@ pub struct Home {
     /// `m` on the menu asked for the Model panel, which the launch owns.
     model_request: bool,
     worker_config: Option<crate::worker::Config>,
+    worker_authorization: Result<Option<crate::worker::Relay>, String>,
     worker_panel: Option<worker::Panel>,
     quit_after_worker: bool,
 }
@@ -128,6 +129,7 @@ impl Home {
             approve_origin: None,
             model_request: false,
             worker_config: None,
+            worker_authorization: Ok(None),
             worker_panel: None,
             quit_after_worker: false,
         }
@@ -149,19 +151,6 @@ impl Home {
     pub fn with_codex_report(mut self, report: Option<crate::watch::CodexReport>) -> Self {
         self.codex_report = report;
         self
-    }
-
-    /// Set a separate, explicit worker allowance for this launch; configuration runs nothing.
-    pub fn with_worker(mut self, model: Option<String>, responses: usize) -> Result<Self, String> {
-        if model.is_some() || responses > 0 {
-            let config = crate::worker::Config {
-                model: model.unwrap_or_default(),
-                responses,
-            };
-            config.validate()?;
-            self.worker_config = Some(config);
-        }
-        Ok(self)
     }
 
     /// An agent launch without named context only reads; see [`Shape::held`].
@@ -547,6 +536,8 @@ impl Home {
                 review,
                 self.record_root.clone(),
                 self.worker_config.clone(),
+                self.agent,
+                &self.worker_authorization,
             ));
         }
         self.approve_reader.cancel();

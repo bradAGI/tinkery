@@ -1,7 +1,9 @@
 //! Explicit, bounded worker actions through the named checkout's SDLC runtime. SDLC owns gates,
 //! sessions, caps and detached workers. Recent launch evidence can inform the operator’s cap choice.
-//! It never retries admission, writes workflow records itself, approves work or calls a provider.
+//! It records relayed start attribution, never SDLC approvals, and never retries or calls a provider.
 
+mod authorization;
+pub(crate) use authorization::Relay;
 mod orientation;
 pub(crate) use orientation::cap_advice;
 #[cfg(test)]
@@ -57,6 +59,8 @@ pub(crate) struct Start {
     pub(crate) record_root: Result<PathBuf, String>,
     /// The separately disclosed worker allowance.
     pub(crate) config: Config,
+    /// The reviewed start authority; an absent or mismatched agent relay refuses before creation.
+    pub(crate) authorization: Result<Option<Relay>, String>,
 }
 
 /// Source-owned run identity pinned across later actions, not a new workflow store.
@@ -344,6 +348,7 @@ fn committed_source(root: &Path) -> Result<String, String> {
 
 fn start(request: Start) -> Result<Snapshot, Failure> {
     let (intake, source_commit) = (|| {
+        request.authorization.as_ref().map_err(Clone::clone)?;
         request.config.validate()?;
         canonical_root(&request.root)?;
         let (intake, goal) = ready::execution(&request.target, &request.root)?;
@@ -436,6 +441,9 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
         let value = current(&build)?;
         require_seed(&value)?;
         ready::execution(&request.target, &intake.root)?;
+        if let Ok(Some(relay)) = &request.authorization {
+            relay.record(&build)?;
+        }
         let report = build
             .root
             .join("runs")

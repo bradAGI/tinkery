@@ -61,6 +61,7 @@ impl Fixture {
             target,
             root: root.clone(),
             record_root: Ok(records),
+            authorization: Ok(None),
             config: Config {
                 model: "test/exact:low".into(),
                 responses: 3,

@@ -143,6 +143,32 @@ F2. Read the whole disclosure first. `--worker-model provider/model:thinking` an
 zero and drafting calls never supply it. One response may already be in flight at
 the cap. Configuration is not permission to start on navigation.
 
+With `--operator agent`, F2 also requires `--worker-authorization FILE`. The operator
+supplies their explicit start authorization through the relay. The agent must not create
+consent or infer a budget from the words. The file is a UTF-8 JSON object, at most 16 KiB,
+with only these fields:
+
+```json
+{"words":"The operator's verbatim start authorization", "seed_sha256":"64 lowercase hex characters", "model":"provider/model:thinking", "responses":7}
+```
+
+The seed SHA-256, model pin and response cap must exactly match the reviewed start.
+Missing, unreadable, malformed or mismatched authorization refuses before run creation.
+The review shows the verbatim words, the declared agent operator and authority
+`operator, relayed`. Provenance cannot be verified. The file is a caller-supplied
+claim, not verified operator identity or proof that an agent did not invent the words.
+Tinkery never generates the file. It reads it at launch and binds that snapshot when
+opening the review; replacing the file cannot change the displayed authorization.
+F2 records that snapshot, the agent declaration, relayed authority, unverified provenance
+and exact run/step/checkout in `runs/<run>/worker-authorization.json` in the build checkout
+before preparing or launching the worker. A recording failure refuses admission.
+This is Tinkery's start disclosure, not an SDLC approval or a second workflow ledger.
+The existing exact-seed prior-start check prevents another start of the same seed.
+The relay requires the seed's checkout; it adds no alternate worktree support.
+Human and undeclared F2 keep their existing direct consent and require no relay file.
+Goal confirmation, seed confirmation and worker start remain separate yeses.
+Navigation and copying never start a worker.
+
 With a configured worker allowance, the existing Approve reader selects up to five
 recent Pi launches by the start time in each log filename. Only runs in the named
 checkout and their matching Git worktrees are considered. Empty run folders add
@@ -215,5 +241,13 @@ These prove mechanics, not operator acceptance or real-work benefit.
 separate allowance, source changes, retained requests and truthful completion states
 with temporary TEST storage and fake providers. The [partial-start journeys](../../tests/worker_partial_start_terminal.py)
 cover persisted creation followed by command, status and identity failures, read-only Watch
-recovery, blocked blind retries and the unchanged pre-creation F2 retry. Architecture diagnostics 2, 3, 6 and
-7 apply: the screen requests typed actions while SDLC owns durable work records.
+recovery, blocked blind retries and the unchanged pre-creation F2 retry.
+The relay journeys run standalone with `python3 tests/worker_relay_authorization_terminal.py`
+and through [Python discovery](../../scripts/python-tests.py).
+They cover absent/mismatched authorization, verbatim disclosure and attribution,
+separate consent, unchanged human/undeclared F2 and real SDLC persistence with a fake adapter.
+Run `python3 tests/worker_relay_authorization_terminal.py --reversion-probe` to remove only
+the admission guard temporarily, require failure at the unauthorized-admission assertion,
+then restore and rebuild. These checks make no provider requests and authenticate nobody.
+Architecture diagnostics 2, 3, 6 and 7 apply: the screen requests typed actions,
+the worker authorization boundary owns relay parsing/binding/recording, and SDLC owns workflow records.

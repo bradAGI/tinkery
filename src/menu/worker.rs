@@ -4,7 +4,7 @@
 use crate::{
     Palette,
     approve::WorkerReview,
-    worker::{Action, Config, Job, Recovery, Run, Snapshot, Start, State, Turn},
+    worker::{Action, Config, Job, Recovery, Relay, Run, Snapshot, Start, State, Turn},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -49,9 +49,12 @@ impl Panel {
         }: WorkerReview,
         record_root: Result<PathBuf, String>,
         config: Option<Config>,
+        agent: bool,
+        relay: &Result<Option<Relay>, String>,
     ) -> Self {
         let (start, disclosure) = match (seed.target, config) {
             (Some(target), Some(config)) => {
+                let authorization = Relay::review(relay, agent, &target, &config);
                 let checkout = target
                     .retry
                     .as_ref()
@@ -75,8 +78,9 @@ impl Panel {
                         root,
                         record_root,
                         config,
+                        authorization: authorization.clone(),
                     }),
-                    disclosure,
+                    disclosure + &Relay::disclosure(&authorization),
                 )
             }
             _ => (
@@ -394,6 +398,27 @@ impl Panel {
             .style(palette.muted),
             Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
         );
+    }
+}
+
+impl super::Home {
+    /// Set a separate, explicit worker allowance for this launch; configuration runs nothing.
+    pub fn with_worker(mut self, model: Option<String>, responses: usize) -> Result<Self, String> {
+        if model.is_some() || responses > 0 {
+            let config = Config {
+                model: model.unwrap_or_default(),
+                responses,
+            };
+            config.validate()?;
+            self.worker_config = Some(config);
+        }
+        Ok(self)
+    }
+
+    /// Read caller-supplied relayed words for later review; never creates authorization or starts work.
+    pub fn with_worker_authorization(mut self, path: Option<PathBuf>) -> Self {
+        self.worker_authorization = Relay::read(path.as_deref());
+        self
     }
 }
 
