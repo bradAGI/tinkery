@@ -18,7 +18,9 @@ Use the [goal-block contract](goal-block.md). Ask the most consequential unresol
 operator-only question that would change the goal: missing intent, target, scope,
 boundary or protected things, never discoverable facts. Missing fields do not
 impose question order; a missing beneficiary or reason alone need not prompt a
-question. Explicit starting scope stays chosen, not a new choice against the wider
+question. A sole missing Who without an open Who question or decision is shown quietly under
+the [goal-block presentation rule](goal-block.md#built-contract), not settled or invented.
+Explicit starting scope stays chosen, not a new choice against the wider
 ambition. Ask only when the answer matters to the next useful step; remaining
 unknowns may travel to the seed. Recording observations or declining to define a
 goal does not manufacture a goal or another question. Originals remain intact.

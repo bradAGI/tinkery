@@ -290,6 +290,7 @@ impl Conversation {
 
     /// Unresolved questions and notes for review and saved context, in their display order.
     /// Linked questions replace only their decision notes; other intent and excerpts stay intact.
+    /// Synthetic missing-part notes lead in part order, before authored notes and excerpts.
     pub(super) fn review_context(&self) -> (Vec<Question>, Vec<String>) {
         let unresolved = self.unresolved();
         let Some(g) = self.board() else {

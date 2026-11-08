@@ -417,6 +417,17 @@ pub(super) fn render_declaration(frame: &mut Frame, app: &BrainDump, palette: Pa
     );
 }
 
+/// Quiet display never settles a missing beneficiary or hides a question or choice about one.
+pub(super) fn quiet_who(
+    parts: &GoalParts,
+    questions: &[Question],
+    decisions: &[OpenDecision],
+) -> bool {
+    parts.missing().eq([Part::Who])
+        && !questions.iter().any(|q| q.target == Some(Part::Who))
+        && !decisions.iter().any(|d| d.part == Part::Who)
+}
+
 pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palette) {
     let inner = app.screen.agent_area;
     if let Some(receipt) = app.handoff.receipt() {
@@ -471,6 +482,11 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
     } else {
         None
     };
+    let quiet = quiet_who(
+        &review.affirmation.parts,
+        &review.affirmation.unresolved,
+        &review.affirmation.decisions,
+    );
     let line_count = |text: &str| {
         Paragraph::new(text)
             .wrap(Wrap { trim: false })
@@ -480,8 +496,12 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
     let prompt_rows = (line_count(message.as_deref().unwrap_or(&instruction))
         .max(line_count(&instruction))
         + line_count(&review.input)) as u16;
-    let rows =
-        Layout::vertical([Constraint::Min(1), Constraint::Length(prompt_rows + 1)]).split(inner);
+    let rows = Layout::vertical([
+        Constraint::Min(1),
+        Constraint::Length(u16::from(quiet)),
+        Constraint::Length(prompt_rows + 1),
+    ])
+    .split(inner);
     let heading = match &review.affirmation.confirmation {
         record::GoalConfirmation::Terminal { declaration, .. } => {
             format!("You are confirming ({declaration})")
@@ -528,7 +548,14 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
                 .map_or_else(|| q.text.clone(), |p| format!("{} — {}", p.label(), q.text))
         })
         .collect::<Vec<_>>();
-    open.extend(review.affirmation.unresolved_notes.iter().cloned());
+    open.extend(
+        review
+            .affirmation
+            .unresolved_notes
+            .iter()
+            .skip(usize::from(quiet))
+            .cloned(),
+    );
     if !open.is_empty() {
         body.push_str(&format!("\n\nStill open\n{}", open.join("\n\n")));
     }
@@ -556,6 +583,12 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
 
     // Choose guidance after this frame's bound is known, keeping the normal instruction's
     // reserved height: a shorter cue must not move the end while the operator reads or types.
+    if quiet {
+        frame.render_widget(
+            Paragraph::new("Who: not named").style(palette.muted),
+            rows[1],
+        );
+    }
     let guidance = if review.scroll < review.max {
         "PgDn: read to the end first."
     } else {
@@ -570,10 +603,10 @@ pub(super) fn render_goal(frame: &mut Frame, app: &mut BrainDump, palette: Palet
         Paragraph::new(prompt.clone())
             .wrap(Wrap { trim: false })
             .style(palette.jade),
-        rows[1],
+        rows[2],
     );
     if !app.handoff.saving() {
-        app.screen.back_button = Rect::new(rows[1].x, rows[1].bottom() - 1, 4, 1);
+        app.screen.back_button = Rect::new(rows[2].x, rows[2].bottom() - 1, 4, 1);
         frame.render_widget(
             Paragraph::new("Back").style(palette.muted),
             app.screen.back_button,
