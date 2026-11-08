@@ -303,15 +303,10 @@ fn parse_run_detail(parsed: &sdlc::Run) -> Result<Detail, String> {
         if record.status.known().is_none() {
             return Err(format!("Unknown checklist status: {status}"));
         }
-        let recheck = item["needs_recheck"]
-            .as_bool()
-            .ok_or("A checklist item has no needs_recheck flag.")?;
-        let pending = match item.get("pending") {
-            None => false,
-            Some(value) => value
-                .as_bool()
-                .ok_or("A checklist item has an invalid pending flag.")?,
-        };
+        let recheck = record
+            .needs_recheck
+            .map_err(|_| "A checklist item has no needs_recheck flag.")?;
+        let pending = record.pending?;
         if let sdlc::Attestation::Operator { owed, recheck } = sdlc::Attestation::read(record)? {
             attention.owed += usize::from(owed);
             attention.recheck += usize::from(recheck);

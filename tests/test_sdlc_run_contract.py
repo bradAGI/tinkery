@@ -34,6 +34,10 @@ FIELDS = {
     'worker active turn': ('TurnStatus', 'contract_refuses_worker_turn'),
     'preview verification.result': ('CheckStatus', 'contract_refuses_receipt_result'),
 }
+FLAGS = {
+    'checklist[].pending': ('A checklist item has an invalid pending flag.', 'contract_refuses_pending'),
+    'checklist[].needs_recheck': ('A checklist item has no readable needs_recheck flag.', 'contract_refuses_needs_recheck'),
+}
 ENUM_WORDS = {
     'Verification': {'blocked', 'running', 'not-run', 'current', 'stale', 'failed', 'interrupted', 'invalid'},
     'GateStatus': {'approved', 'pending', 'stale', 'changes-requested'},
@@ -91,6 +95,9 @@ def source_boundary(revision=None):
             source = subprocess.check_output(['git', 'show', f'{revision}:{relative}'],
                                               cwd=ROOT, env=subprocess.environment(), text=True)
             source = source.split('#[cfg(test)]\nmod tests {')[0]
+        for match in re.finditer(r'\[\s*"(?:pending|needs_recheck)"\s*\]|\.get\(\s*"(?:pending|needs_recheck)"\s*\)', source):
+            line = source[:match.start()].count('\n') + 1
+            violations.append(f'{path.relative_to(ROOT)}:{line}: raw checklist flag {match[0]}')
         for line, text in enumerate(source.splitlines(), 1):
             display = text.strip() in display_only.get(str(path.relative_to(ROOT)), set())
             if recognition.search(text) and not display and not text.lstrip().startswith(('//', '///')):
@@ -131,26 +138,32 @@ def check():
         assert declaration and set(re.findall(r'=> "([^"]+)"', declaration[1])) == words, kind
     assert {kind for kind, _ in FIELDS.values()} == set(ENUM_WORDS)
     fixture_parity()
-    for field, (_, test) in FIELDS.items():
+    for field, (_, test) in (FIELDS | FLAGS).items():
         result = cargo(test)
         assert result.returncode == 0, f'{field}: {result.stdout}'
     for reader in ['sdlc::tests::', 'watch::tests::', 'taste::read::tests::', 'taste::preview::tests::', 'taste::evidence::tests::', 'worker::tests::']:
         result = cargo(reader)
         assert result.returncode == 0, result.stdout
-    print(f'Run contract: {len(FIELDS)} refused word contexts; {len(NON_REFUSED)} compatibility exceptions; fixture assertions unchanged.')
+    print(f'Run contract: {len(FIELDS)} refused word contexts; {len(FLAGS)} refused flags; {len(NON_REFUSED)} compatibility exceptions; fixture assertions unchanged.')
 
 
 def revert():
     path = ROOT / 'src/sdlc.rs'
     original = path.read_text()
+    mutations = []
+    for field, (kind, test) in FIELDS.items():
+        fallback = {'Verification': 'Current', 'GateStatus': 'Approved', 'CheckStatus': 'Passed',
+                    'Proof': 'Automated', 'StepState': 'Prepared', 'TurnStatus': 'Running',
+                    'StopReason': 'Operator'}[kind]
+        marker = f'word_enum!({kind}, None,'
+        mutations.append((field, test, marker, f'word_enum!({kind}, Some(Self::{fallback}),'))
+    for field, (refusal, test) in FLAGS.items():
+        marker = f'.ok_or("{refusal}")'
+        mutations.append((field, test, marker, f'.or(Some(false)){marker}'))
     try:
-        for field, (kind, test) in FIELDS.items():
-            fallback = {'Verification': 'Current', 'GateStatus': 'Approved', 'CheckStatus': 'Passed',
-                        'Proof': 'Automated', 'StepState': 'Prepared', 'TurnStatus': 'Running',
-                        'StopReason': 'Operator'}[kind]
-            marker = f'word_enum!({kind}, None,'
+        for field, test, marker, replacement in mutations:
             assert original.count(marker) == 1, marker
-            mutated = original.replace(marker, f'word_enum!({kind}, Some(Self::{fallback}),', 1)
+            mutated = original.replace(marker, replacement, 1)
             path.write_text(mutated)
             result = cargo(test)
             running = re.search(r'running (\d+) tests?', result.stdout)

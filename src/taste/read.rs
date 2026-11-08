@@ -262,17 +262,12 @@ fn local(root: &Path, parsed: &sdlc::Run, row: &mut ResultRow) -> Result<(), Str
             .status
             .known()
             .ok_or("Unknown completion condition status.")?;
-        let recheck = item["needs_recheck"]
-            .as_bool()
-            .ok_or("Check freshness missing.")?;
+        let recheck = record.needs_recheck?;
         let mark = item.get("mark").ok_or("Check evidence missing.")?;
         if !mark.is_null() && !mark.is_object() {
             return Err("Check evidence unreadable.".into());
         }
-        let pending = match item.get("pending") {
-            None => false,
-            Some(v) => v.as_bool().ok_or("Provisional state unreadable.")?,
-        };
+        let pending = record.pending?;
         let automatic_evidence =
             automatic.then(|| evidence::automated(root, &row.slug, parsed, record));
         let old_pass = known == C::Passed || (automatic && parsed.receipt_result.is(C::Passed));
@@ -710,6 +705,40 @@ mod tests {
             contract_read(source).unwrap_err(),
             "Check method conflicts with proof."
         );
+    }
+
+    #[test]
+    fn contract_refuses_pending() {
+        for value in [Value::Null, json!("false"), json!(0)] {
+            let mut source = run();
+            source["checklist"][0]["pending"] = value;
+            assert_eq!(
+                contract_read(source).unwrap_err(),
+                "A checklist item has an invalid pending flag."
+            );
+        }
+    }
+
+    #[test]
+    fn contract_refuses_needs_recheck() {
+        for value in [
+            None,
+            Some(Value::Null),
+            Some(json!("false")),
+            Some(json!(0)),
+        ] {
+            let mut source = run();
+            let item = source["checklist"][0].as_object_mut().unwrap();
+            if let Some(value) = value {
+                item.insert("needs_recheck".into(), value);
+            } else {
+                item.remove("needs_recheck");
+            }
+            assert_eq!(
+                contract_read(source).unwrap_err(),
+                "A checklist item has no readable needs_recheck flag."
+            );
+        }
     }
 
     fn row() -> ResultRow {

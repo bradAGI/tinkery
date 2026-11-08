@@ -221,6 +221,10 @@ pub(crate) struct CheckItem {
     pub(crate) status: Word<CheckStatus>,
     /// Proof method, not a passing result.
     pub(crate) proof: Word<Proof>,
+    /// Missing means active; malformed provisional flags refuse interpretation.
+    pub(crate) pending: Result<bool, &'static str>,
+    /// Required freshness flag, not a failed sign-off.
+    pub(crate) needs_recheck: Result<bool, &'static str>,
 }
 
 /// A step's recognized state, turn and stop reason, without orchestration policy.
@@ -287,9 +291,18 @@ impl Run {
                 items
                     .iter()
                     .map(|item| CheckItem {
-                        data: metadata(item, &["status", "proof"]),
+                        data: metadata(item, &["status", "proof", "pending", "needs_recheck"]),
                         status: word(item.get("status"), CheckStatus::read),
                         proof: word(item.get("proof"), Proof::read),
+                        pending: match item.get("pending") {
+                            None => Ok(false),
+                            Some(value) => value
+                                .as_bool()
+                                .ok_or("A checklist item has an invalid pending flag."),
+                        },
+                        needs_recheck: item["needs_recheck"]
+                            .as_bool()
+                            .ok_or("A checklist item has no readable needs_recheck flag."),
                     })
                     .collect()
             }),
@@ -336,13 +349,8 @@ impl Attestation {
                 .as_bool()
                 .ok_or("A checklist item has an invalid operator_attestation flag.")?,
         };
-        let pending = match item.get("pending") {
-            None => false,
-            Some(value) => value
-                .as_bool()
-                .ok_or("A checklist item has an invalid pending flag.")?,
-        };
-        let recheck = flag("needs_recheck")?;
+        let pending = record.pending?;
+        let recheck = record.needs_recheck?;
         let status = record
             .status
             .known()

@@ -894,6 +894,42 @@ fn contract_refuses_proof() {
 }
 
 #[test]
+fn contract_refuses_pending() {
+    for value in [
+        Value::Null,
+        serde_json::json!("false"),
+        serde_json::json!(0),
+    ] {
+        contract_refusal(
+            |run| run["checklist"][0]["pending"] = value,
+            "A checklist item has an invalid pending flag.",
+        );
+    }
+}
+
+#[test]
+fn contract_refuses_needs_recheck() {
+    for value in [
+        None,
+        Some(Value::Null),
+        Some(serde_json::json!("false")),
+        Some(serde_json::json!(0)),
+    ] {
+        contract_refusal(
+            |run| {
+                let item = run["checklist"][0].as_object_mut().unwrap();
+                if let Some(value) = value {
+                    item.insert("needs_recheck".into(), value);
+                } else {
+                    item.remove("needs_recheck");
+                }
+            },
+            "A checklist item has no needs_recheck flag.",
+        );
+    }
+}
+
+#[test]
 fn contract_refuses_step_state() {
     contract_refusal(
         |run| run["steps"] = serde_json::json!([{"name":"build","state":"TEST-unsupported"}]),
