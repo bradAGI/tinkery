@@ -29,12 +29,17 @@ def journey(width, height, mono, case):
             if case in ('question', 'skipped'):
                 parts['outcome'] = 'Access is restricted'
                 reply['questions'] = [dict(id='audience', target='who', text=QUESTION)]
+            if case == 'decision':
+                reply['decisions'] = [dict(part='who', text='Staff or visitors lose access',
+                                           answers=['staff', 'visitors'])]
+            if case == 'quiet-note':
+                reply['unresolved_notes'] = ['Who — still open']
             if case == 'other-missing':
                 del parts['why']
             (root / 'reply.json').write_text(json.dumps(reply))
             run.send(b'1', "What's on your mind?")
             os.write(run.master, b'\x1b[200~' + WORDS.encode() + b'\x1b[201~')
-            expected = ('Who: not named' if case == 'quiet' else
+            expected = ('Who: not named' if case in ('quiet', 'quiet-note') else
                         QUESTION if case in ('question', 'skipped') else 'Still missing: Who.')
             run.send(F2, expected)
             if case == 'skipped':
@@ -42,7 +47,7 @@ def journey(width, height, mono, case):
             if case == 'quiet':
                 assert 'Still missing' not in run.flat() and 'Still open' not in run.flat()
                 assert 'Ready for your review' not in run.flat()
-            else:
+            elif case != 'quiet-note':
                 assert 'Who: not named' not in run.flat()
             run.choose('Review the goal', 'You are confirming')
             if case == 'quiet':
@@ -50,8 +55,13 @@ def journey(width, height, mono, case):
                 assert 'Still open' not in run.flat() and 'Still missing' not in run.flat()
             else:
                 run.read_until('Still open')
-                run.read_until(QUESTION if case in ('question', 'skipped') else 'Who — still open')
-                assert 'Who: not named' not in run.flat()
+                run.read_until(QUESTION if case in ('question', 'skipped') else
+                               'Open decision: Staff or visitors lose access' if case == 'decision'
+                               else 'Who — still open')
+                if case == 'quiet-note':
+                    assert 'Who: not named' in run.flat()
+                else:
+                    assert 'Who: not named' not in run.flat()
             if case == 'other-missing':
                 run.read_until('Why — still open')
             run.read_until('type confirm to save')
@@ -63,8 +73,11 @@ def journey(width, height, mono, case):
             assert context['goal_parts'].get('who') is None
             if case in ('question', 'skipped'):
                 assert any(q['target'] == 'who' and q['text'] == QUESTION for q in context['unresolved'])
+            elif case == 'decision':
+                assert any(d['part'] == 'who' for d in context['decisions'])
+                assert 'Open decision: Staff or visitors lose access (staff / visitors)' in context['unresolved_notes']
             else:
-                assert 'Who — still open' in context['unresolved_notes']
+                assert context['unresolved_notes'].count('Who — still open') == (2 if case == 'quiet-note' else 1)
             assert 'Who: not named' not in ledger['goal']
             assert any(e.get('observed') == WORDS for e in origin['evidence'])
             assert (root / 'calls').read_text() == 'shape\ndecision-review\n'
@@ -81,5 +94,5 @@ def journey(width, height, mono, case):
 if __name__ == '__main__':
     for size in [(80, 24), (100, 30)]:
         for mono in [False, True]:
-            for case in ['quiet', 'question', 'skipped', 'other-missing']:
+            for case in ['quiet', 'question', 'skipped', 'other-missing', 'decision', 'quiet-note']:
                 journey(*size, mono, case)

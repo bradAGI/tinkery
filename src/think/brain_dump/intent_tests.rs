@@ -514,7 +514,7 @@ fn a_submitted_refinement_that_failed_to_apply_is_not_called_ready() {
         );
     }
     assert!(
-        !goal_view::open_intent(&a)
+        !layout::open_intent(&a)
             .unwrap()
             .contains("Ready for your review")
     );
@@ -524,7 +524,7 @@ fn a_submitted_refinement_that_failed_to_apply_is_not_called_ready() {
 fn a_skipped_question_without_a_target_keeps_the_goal_open() {
     let mut a = constraints(&["must work offline"], &[]);
     assert!(
-        goal_view::open_intent(&a)
+        layout::open_intent(&a)
             .unwrap()
             .starts_with("Ready for your review")
     );

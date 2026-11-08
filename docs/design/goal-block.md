@@ -17,7 +17,7 @@ Who, outcome, why and done-when are required for readiness, not a questionnaire;
 optional situation and constraints stay absent unless supplied. A known outcome
 leads the block even without a beneficiary. In that case the outcome stands alone;
 no subject is invented, and who remains missing. When Who alone is missing and
-no open question targets it, reading and review show muted `Who: not named`
+no open question or decision targets it, reading and review show muted `Who: not named`
 instead of a Still missing or Still open entry for Who. Readiness is unchanged;
 Who stays open in the saved goal and seed context.
 A goal can be reviewed with remaining questions when a composed goal exists;
