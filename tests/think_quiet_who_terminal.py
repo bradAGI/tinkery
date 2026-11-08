@@ -39,7 +39,7 @@ def journey(width, height, mono, case):
             (root / 'reply.json').write_text(json.dumps(reply))
             run.send(b'1', "What's on your mind?")
             os.write(run.master, b'\x1b[200~' + WORDS.encode() + b'\x1b[201~')
-            expected = ('Who: not named' if case in ('quiet', 'quiet-note') else
+            expected = ('Who: not named. Review' if case in ('quiet', 'quiet-note') else
                         QUESTION if case in ('question', 'skipped') else 'Still missing: Who.')
             run.send(F2, expected)
             if case == 'skipped':

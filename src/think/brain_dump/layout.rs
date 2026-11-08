@@ -377,7 +377,7 @@ pub(super) fn open_intent(app: &BrainDump) -> Option<String> {
     Some(if g.goal().is_none() {
         "No goal yet.".into()
     } else if goal_view::quiet_who(&g.parts, &app.conversation.unresolved(), &g.decisions) {
-        "Who: not named".into()
+        "Who: not named.".into()
     } else if let Some(part) = g.parts.missing().next() {
         format!("Still missing: {}.", part.label())
     } else if app.conversation.open_parts().is_empty()
