@@ -286,7 +286,7 @@ fn details(run: &Closed) -> String {
     match &run.labels {
         Ok(labels) => {
             lines.push(format!(
-                "Corrections: {} · labels, newest first",
+                "Corrections: {} · all labels, newest first",
                 count(run.corrections())
             ));
             for label in labels.iter().rev() {

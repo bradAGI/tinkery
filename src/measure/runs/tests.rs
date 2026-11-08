@@ -300,7 +300,7 @@ fn counts_come_from_records_and_unknown_is_never_zero() {
         "Gates: 2 by you",
         "stage 3 approved · seed · automatic seed binding, not counted",
         "stage 2 changes-requested · pi · agent-recorded, not counted",
-        "Corrections: 2 · labels, newest first",
+        "Corrections: 2 · all labels, newest first",
         "  build: 5",
         "  fix: 1",
         "Driving agent responses: not recorded",

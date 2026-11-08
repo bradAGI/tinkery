@@ -162,6 +162,9 @@ go into worker briefs.
 Enter opens one run's details: the closure, PR and merge commit, each gate decision with its
 reviewer, each label's words exactly as written (newest first), and the Pi responses per step.
 
+[The terminal journey](../../tests/measure_runs_terminal.py) uses a fake `sdlc.py` and real Git
+at 80×24, 100×30, 160×40 and 320×40, with and without NO_COLOR.
+
 ## Direction, not built behavior
 
 Approve prepares manual intake; Watch shows read-only progress. [Taste](taste.md) supports
