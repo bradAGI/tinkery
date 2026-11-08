@@ -12,6 +12,7 @@ use std::{
 };
 
 const LIMIT: u64 = 16 * 1024;
+const REQUIRED: &str = "Agent worker admission requires --worker-authorization FILE with the operator's relayed authorization.";
 const PROVENANCE: &str =
     "Provenance cannot be verified. These are relayed words, not verified operator identity.";
 
@@ -53,20 +54,32 @@ impl Relay {
         };
         read().map_err(|e: String| format!("Cannot read relayed authorization: {e}"))
     }
+}
 
-    /// Require an exact binding for agent F2; human and undeclared F2 keep direct consent.
-    pub(crate) fn review(
-        input: &Result<Option<Self>, String>,
-        agent: bool,
-        target: &SeedTarget,
-        config: &Config,
-    ) -> Result<Option<Self>, String> {
-        if !agent {
+/// One authorization door for agent starts, launches and resumes; other operators pass directly.
+#[derive(Clone, Debug)]
+pub(crate) struct Gate {
+    agent: bool,
+    relay: Result<Option<Relay>, String>,
+}
+
+impl Gate {
+    /// Retain the launch-time declaration and relay snapshot without granting admission.
+    pub(crate) fn new(agent: bool, relay: Result<Option<Relay>, String>) -> Self {
+        Self { agent, relay }
+    }
+
+    fn bind(&self, target: Option<&SeedTarget>, config: &Config) -> Result<Option<&Relay>, String> {
+        if !self.agent {
             return Ok(None);
         }
-        let relay = input.as_ref().map_err(Clone::clone)?.as_ref().ok_or(
-            "Agent F2 requires --worker-authorization FILE with the operator's relayed authorization.",
-        )?;
+        let relay = self
+            .relay
+            .as_ref()
+            .map_err(Clone::clone)?
+            .as_ref()
+            .ok_or(REQUIRED)?;
+        let target = target.ok_or("Agent worker admission requires a readable confirmed seed.")?;
         if relay.seed_sha256 != target.sha256
             || relay.model != config.model
             || relay.responses != config.responses
@@ -76,11 +89,27 @@ impl Relay {
         if target.retry.is_some() {
             return Err("Relayed authorization requires the seed's checkout; alternate worktrees are outside this flow.".into());
         }
-        Ok(Some(relay.clone()))
+        Ok(Some(relay))
     }
 
-    /// Disclose original words and the limits of their attribution before the start action.
-    pub(crate) fn disclosure(input: &Result<Option<Self>, String>) -> String {
+    /// Refuse agent work without an exact non-retry seed, model and allowance binding.
+    pub(crate) fn check(&self, target: Option<&SeedTarget>, config: &Config) -> Result<(), String> {
+        self.bind(target, config).map(|_| ())
+    }
+
+    /// Disclose verbatim relay words and attribution limits, including any known refusal.
+    pub(crate) fn disclosure(&self, binding: Option<(&SeedTarget, &Config)>) -> String {
+        if !self.agent {
+            return String::new();
+        }
+        let input = match binding {
+            Some((target, config)) => self.bind(Some(target), config),
+            None => self
+                .relay
+                .as_ref()
+                .map_err(Clone::clone)
+                .and_then(|relay| relay.as_ref().map(Some).ok_or_else(|| REQUIRED.into())),
+        };
         match input {
             Ok(Some(relay)) => format!(
                 "\nAuthority: operator, relayed\nOperator declaration: agent\n{PROVENANCE}\n\
@@ -93,21 +122,32 @@ impl Relay {
         }
     }
 
-    /// Persist a Tinkery start disclosure in the run, not an SDLC approval or authenticated receipt.
-    pub(crate) fn record(&self, run: &Run) -> Result<(), String> {
+    /// Bind and append each agent admission before work; recording failures refuse the action.
+    pub(crate) fn record(
+        &self,
+        run: &Run,
+        target: Option<&SeedTarget>,
+        config: &Config,
+        action: &str,
+    ) -> Result<(), String> {
+        let Some(relay) = self.bind(target, config)? else {
+            return Ok(());
+        };
         let value = serde_json::json!({
             "schema": 1, "operator": "agent", "authority": "operator, relayed",
-            "provenance": PROVENANCE, "authorization": self,
+            "provenance": PROVENANCE, "authorization": relay, "action": action,
             "run_id": run.id, "step": "build", "checkout": run.root,
         });
         let path = run
             .root
             .join("runs")
             .join(&run.slug)
-            .join("worker-authorization.json");
+            .join("worker-authorization.jsonl");
         let write = || -> Result<(), Box<dyn std::error::Error>> {
-            let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-            file.write_all(&serde_json::to_vec_pretty(&value)?)?;
+            let mut bytes = serde_json::to_vec(&value)?;
+            bytes.push(b'\n');
+            let mut file = OpenOptions::new().append(true).create(true).open(path)?;
+            file.write_all(&bytes)?;
             file.sync_all()?;
             Ok(())
         };

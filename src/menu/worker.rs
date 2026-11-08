@@ -4,7 +4,7 @@
 use crate::{
     Palette,
     approve::WorkerReview,
-    worker::{Action, Config, Job, Recovery, Relay, Run, Snapshot, Start, State, Turn},
+    worker::{Action, Config, Gate, Job, Recovery, Relay, Run, Snapshot, Start, State, Turn},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -26,6 +26,7 @@ pub(super) enum Destination {
 pub(super) struct Panel {
     goal: String,
     disclosure: String,
+    gate: Gate,
     start: Option<Start>,
     /// The start in flight; it comes back for an explicit retry only if nothing was started.
     starting: Option<Start>,
@@ -49,12 +50,11 @@ impl Panel {
         }: WorkerReview,
         record_root: Result<PathBuf, String>,
         config: Option<Config>,
-        agent: bool,
-        relay: &Result<Option<Relay>, String>,
+        gate: Gate,
     ) -> Self {
         let (start, disclosure) = match (seed.target, config) {
             (Some(target), Some(config)) => {
-                let authorization = Relay::review(relay, agent, &target, &config);
+                let authority = gate.disclosure(Some((&target, &config)));
                 let checkout = target
                     .retry
                     .as_ref()
@@ -78,9 +78,9 @@ impl Panel {
                         root,
                         record_root,
                         config,
-                        authorization: authorization.clone(),
+                        authorization: gate.clone(),
                     }),
-                    disclosure + &Relay::disclosure(&authorization),
+                    disclosure + &authority,
                 )
             }
             _ => (
@@ -93,6 +93,7 @@ impl Panel {
         Self {
             goal: seed.goal,
             disclosure,
+            gate,
             start,
             starting: None,
             run: None,
@@ -107,11 +108,12 @@ impl Panel {
     }
 
     /// Open an existing source-selected run with a read only; no new allowance is inferred.
-    pub(super) fn existing(run: Run) -> Self {
-        let job = Job::act(run.clone(), Action::Refresh);
+    pub(super) fn existing(run: Run, gate: Gate) -> Self {
+        let job = Job::act(gate.clone(), run.clone(), Action::Refresh);
         Self {
             goal: String::new(),
-            disclosure: String::new(),
+            disclosure: gate.disclosure(None),
+            gate,
             start: None,
             starting: None,
             run: Some(run),
@@ -228,7 +230,7 @@ impl Panel {
                     _ => None,
                 };
                 if let (Some(action), Some(run)) = (action, &self.run) {
-                    self.job = Some(Job::act(run.clone(), action));
+                    self.job = Some(Job::act(self.gate.clone(), run.clone(), action));
                     self.notice = "Requesting the named action from tink-sdlc…".into();
                 } else {
                     self.scroll(code);
@@ -367,6 +369,9 @@ impl Panel {
         if !self.notice.is_empty() {
             add(&format!("\n{}", self.notice));
         }
+        if self.snapshot.is_some() {
+            add(&self.gate.disclosure(None));
+        }
         let text = Paragraph::new(Text::from(lines))
             .style(palette.ink)
             .wrap(Wrap { trim: false });
@@ -402,6 +407,11 @@ impl Panel {
 }
 
 impl super::Home {
+    /// Share the declaration and relay snapshot without granting permission on navigation.
+    pub(super) fn worker_gate(&self) -> Gate {
+        Gate::new(self.agent, self.worker_authorization.clone())
+    }
+
     /// Set a separate, explicit worker allowance for this launch; configuration runs nothing.
     pub fn with_worker(mut self, model: Option<String>, responses: usize) -> Result<Self, String> {
         if model.is_some() || responses > 0 {

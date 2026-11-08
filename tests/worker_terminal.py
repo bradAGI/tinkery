@@ -451,7 +451,7 @@ def real_runtime_journey(fail_first=False):
             contract = json.loads((build / 'runs/test-worker/steps/build.json').read_text())
             assert contract['checkout'] == str(build) and contract['run_id'] == source['run_id']
             assert contract['model'] == MODEL and contract['max_responses'] == CAP
-            receipt = json.loads((build / 'runs/test-worker/worker-authorization.json').read_text())
+            receipt = json.loads((build / 'runs/test-worker/worker-authorization.jsonl').read_text().splitlines()[0])
             assert receipt['operator'] == 'agent' and receipt['authority'] == 'operator, relayed'
             assert 'cannot be verified' in receipt['provenance']
             assert receipt['run_id'] == contract['run_id'] and receipt['checkout'] == str(build)
@@ -470,7 +470,8 @@ def real_runtime_journey(fail_first=False):
                 assert 'f finish' not in terminal.flat(), 'failed checks offered normal completion'
                 terminal.send(b'f?', 'Worker actions')
                 assert json.loads((build / 'runs/test-worker/steps/build.json').read_text())['state'] == 'active'
-                terminal.send(b'\x1b' + END + b'u', 'Request in progress')
+                terminal.send(b'\x1b', 'Verification: failed')
+                terminal.send(END + b'u', 'Request in progress')
                 terminal.wait(lambda: 'Worker: turn ended; completion still unrecorded' in terminal.flat()
                               and 'Request in progress' not in terminal.flat())
                 resumed = json.loads((build / 'runs/test-worker/steps/build.json').read_text())

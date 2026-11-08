@@ -3,7 +3,7 @@
 //! It records relayed start attribution, never SDLC approvals, and never retries or calls a provider.
 
 mod authorization;
-pub(crate) use authorization::Relay;
+pub(crate) use authorization::{Gate, Relay};
 mod orientation;
 pub(crate) use orientation::cap_advice;
 #[cfg(test)]
@@ -60,7 +60,7 @@ pub(crate) struct Start {
     /// The separately disclosed worker allowance.
     pub(crate) config: Config,
     /// The reviewed start authority; an absent or mismatched agent relay refuses before creation.
-    pub(crate) authorization: Result<Option<Relay>, String>,
+    pub(crate) authorization: Gate,
 }
 
 /// Source-owned run identity pinned across later actions, not a new workflow store.
@@ -179,9 +179,9 @@ impl Job {
     }
 
     /// Perform exactly one requested action, rechecking the pinned run before any write.
-    pub(crate) fn act(run: Run, action: Action) -> Self {
+    pub(crate) fn act(gate: Gate, run: Run, action: Action) -> Self {
         Self::spawn(move || {
-            act(&run, action).map_err(|message| Failure {
+            act(&gate, &run, action).map_err(|message| Failure {
                 message,
                 recovery: Recovery::Run(run),
             })
@@ -348,7 +348,7 @@ fn committed_source(root: &Path) -> Result<String, String> {
 
 fn start(request: Start) -> Result<Snapshot, Failure> {
     let (intake, source_commit) = (|| {
-        request.authorization.as_ref().map_err(Clone::clone)?;
+        request.authorization.check(Some(&request.target), &request.config)?;
         request.config.validate()?;
         canonical_root(&request.root)?;
         let (intake, goal) = ready::execution(&request.target, &request.root)?;
@@ -441,9 +441,9 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
         let value = current(&build)?;
         require_seed(&value)?;
         ready::execution(&request.target, &intake.root)?;
-        if let Ok(Some(relay)) = &request.authorization {
-            relay.record(&build)?;
-        }
+        request
+            .authorization
+            .record(&build, Some(&request.target), &request.config, "start")?;
         let report = build
             .root
             .join("runs")
@@ -507,7 +507,7 @@ fn start(request: Start) -> Result<Snapshot, Failure> {
     })
 }
 
-fn act(run: &Run, action: Action) -> Result<Snapshot, String> {
+fn act(gate: &Gate, run: &Run, action: Action) -> Result<Snapshot, String> {
     if matches!(action, Action::Refresh) {
         let value = status(&run.root, &run.slug)?;
         let observed = identity(&run.root, &run.slug, &value)?;
@@ -525,10 +525,11 @@ fn act(run: &Run, action: Action) -> Result<Snapshot, String> {
         Action::Refresh => {}
         Action::Launch(pin) => {
             let seed = require_seed(&value)?;
-            admit(run, pin, true, seed.target.as_ref())?;
+            admit(gate, run, pin, true, seed.target.as_ref())?;
         }
         Action::Resume(pin) => {
-            admit(run, pin, false, None)?;
+            let seed = require_seed(&value)?;
+            admit(gate, run, pin, false, seed.target.as_ref())?;
         }
         Action::Finish => {
             if value["verification_status"].as_str() != Some("current")
@@ -574,6 +575,7 @@ fn act(run: &Run, action: Action) -> Result<Snapshot, String> {
 }
 
 fn admit(
+    gate: &Gate,
     run: &Run,
     pin: Pin,
     launch: bool,
@@ -592,7 +594,18 @@ fn admit(
     if !launch && observed.state != (State::Active { turn: Turn::Ended }) {
         return Err("Resume needs an observed ended turn. A running or unknown turn may still own this session.".into());
     }
-    check_retry_source(run, target)?;
+    if launch {
+        check_retry_source(run, target)?;
+    }
+    gate.record(
+        run,
+        target,
+        &Config {
+            model: observed.model,
+            responses: observed.responses,
+        },
+        if launch { "launch" } else { "resume" },
+    )?;
     command(
         &run.root,
         &[

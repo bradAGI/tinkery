@@ -536,8 +536,7 @@ impl Home {
                 review,
                 self.record_root.clone(),
                 self.worker_config.clone(),
-                self.agent,
-                &self.worker_authorization,
+                self.worker_gate(),
             ));
         }
         self.approve_reader.cancel();
@@ -585,7 +584,7 @@ impl Home {
             && let Some(run) = watch.worker_run()
         {
             if !self.worker_busy() {
-                self.worker_panel = Some(worker::Panel::existing(run));
+                self.worker_panel = Some(worker::Panel::existing(run, self.worker_gate()));
             }
             self.view = View::Worker;
             return;
