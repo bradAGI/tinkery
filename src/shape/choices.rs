@@ -68,7 +68,10 @@ impl Shape {
                 "Supply a check command",
                 Choice::RepairCheck(false),
             ));
-            rows.push(Row::new("Make it a judgment", Choice::RepairCheck(true)));
+            rows.push(Row::new(
+                "Make it a human judgment",
+                Choice::RepairCheck(true),
+            ));
         }
         if agent && open.offers_teach_back() {
             rows.push(Row::new("Revise the draft", Choice::Change));
@@ -143,10 +146,12 @@ impl Shape {
                     open.notice = shaping.commandless_check.as_ref().map(|statement| {
                         (
                             format!("Check: {statement}"),
-                            Some(
+                            Some(if judgment {
+                                "Next: type how a person judges the built result; agent evidence can't sign it off. F2 saves; Esc cancels.".into()
+                            } else {
                                 "Next: type your words, then F2 saves the check; Esc cancels."
-                                    .into(),
-                            ),
+                                    .into()
+                            }),
                         )
                     });
                 }

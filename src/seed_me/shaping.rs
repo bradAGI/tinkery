@@ -33,6 +33,8 @@ pub struct Shaping {
     pub deferred: Option<super::ledger::DeferredPrerequisite>,
     /// First provisional requiring a command or operator judgment before confirmation.
     pub commandless_check: Option<String>,
+    /// The human sign-off the draft's or ready seed's judged checks require, if any.
+    pub signoff: Option<String>,
 }
 
 /// One settled decision: what was decided, the answer as recorded, and who settled it.
@@ -189,10 +191,16 @@ fn read_session(session: &Path) -> Result<(Shaping, Option<super::retry::Base>),
     if matches!(shaping.stage, Shaped::Ready { .. }) && status["handoff"]["operator"] == "agent" {
         shaping.confirmation_note = Some("Agent-confirmed seed. Intake requires tink-sdlc 1.38.0 or newer; this is not operator confirmation or implementation approval.".into());
     }
+    if matches!(shaping.stage, Shaped::Drafted { .. } | Shaped::Ready { .. })
+        && let Ok(records) = super::ledger::read_checks(session)
+    {
+        if matches!(shaping.stage, Shaped::Drafted { .. }) {
+            shaping.commandless_check =
+                super::ledger::commandless_check(&records).map(str::to_owned);
+        }
+        shaping.signoff = super::ledger::human_signoff(&records);
+    }
     if let Shaped::Drafted { text, revision } = &mut shaping.stage {
-        shaping.commandless_check = super::ledger::read_checks(session)
-            .ok()
-            .and_then(|records| super::ledger::commandless_check(&records).map(str::to_owned));
         *text = super::read_seed_text(&session.join("seed-contract.md")).ok();
         if let (Some(seed), Some(revision)) = (text.as_ref(), revision.as_ref()) {
             shaping.teach_back = super::ledger::teach_back_report(&saved, revision, seed);
@@ -265,6 +273,7 @@ fn classify(ledger: &Value, status: &Value) -> Shaping {
         teach_back: Vec::new(),
         deferred: None,
         commandless_check: None,
+        signoff: None,
     };
     let unknown = |what: &str| shaping(goal.clone(), Shaped::Unknown { what: what.into() });
     let Some(state) = text(status, "status") else {

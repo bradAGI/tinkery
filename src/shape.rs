@@ -1828,6 +1828,11 @@ fn render_open(
                         .lines
                         .extend(Text::styled(line.clone(), palette.ink).lines);
                 }
+                if let Some(signoff) = &shaping.signoff {
+                    reading
+                        .lines
+                        .push(Line::styled(signoff.clone(), palette.ink));
+                }
             }
             let (mut reading, input) = if let Some(form) = &open.form {
                 reading.lines.extend(said.lines);
@@ -2325,6 +2330,9 @@ fn standing(shaping: &Shaping, stand: Stand, palette: Palette) -> (Text<'static>
                 },
                 palette.ink,
             ));
+            if let Some(signoff) = &shaping.signoff {
+                lines.push(Line::styled(signoff.clone(), palette.ink));
+            }
             if *ended {
                 lines.push(Line::styled(
                     "This session is completed, so nothing in it can change.",
