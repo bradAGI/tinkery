@@ -17,7 +17,7 @@ READERS = [ROOT / 'src/watch.rs', ROOT / 'src/worker.rs',
            *sorted((ROOT / 'src/watch').glob('*.rs')), *sorted((ROOT / 'src/worker').glob('*.rs')),
            *sorted((ROOT / 'src/taste').glob('*.rs'))]
 READERS = [path for path in READERS if not path.name.endswith('tests.rs')]
-WORDS = ('blocked', 'running', 'not-run', 'current', 'stale', 'failed', 'interrupted',
+WORDS = ('blocked', 'running', 'not-run', 'current', 'stale', 'failed', 'interrupted', 'awaiting-attestation',
          'invalid', 'approved', 'pending', 'changes-requested', 'passed', 'unknown',
          'automated', 'attested', 'prepared', 'active', 'completed', 'stopped',
          'unreadable', 'uncertain', 'ended', 'not-ended', 'cap', 'operator')
@@ -29,17 +29,19 @@ FIELDS = {
     'steps[].state': ('StepState', 'contract_refuses_step_state'),
     'steps[].turn': ('TurnStatus', 'contract_refuses_step_turn'),
     'steps[].stopped_by': ('StopReason', 'contract_refuses_step_stop'),
+    'worker verification_status': ('Verification', 'contract_refuses_worker_verification'),
     'worker contract.state': ('StepState', 'contract_refuses_worker_state'),
     'worker contract.stopped_by': ('StopReason', 'contract_refuses_worker_stop'),
     'worker active turn': ('TurnStatus', 'contract_refuses_worker_turn'),
-    'preview verification.result': ('CheckStatus', 'contract_refuses_receipt_result'),
+    'preview verification.result': ('ReceiptResult', 'contract_refuses_receipt_result'),
 }
 FLAGS = {
     'checklist[].pending': ('A checklist item has an invalid pending flag.', 'contract_refuses_pending'),
     'checklist[].needs_recheck': ('A checklist item has no readable needs_recheck flag.', 'contract_refuses_needs_recheck'),
 }
 ENUM_WORDS = {
-    'Verification': {'blocked', 'running', 'not-run', 'current', 'stale', 'failed', 'interrupted', 'invalid'},
+    'Verification': {'blocked', 'running', 'not-run', 'current', 'stale', 'failed', 'interrupted', 'invalid', 'awaiting-attestation'},
+    'ReceiptResult': {'passed', 'failed', 'awaiting-attestation'},
     'GateStatus': {'approved', 'pending', 'stale', 'changes-requested'},
     'CheckStatus': {'passed', 'pending', 'failed', 'unknown'},
     'Proof': {'automated', 'attested'},
@@ -49,8 +51,8 @@ ENUM_WORDS = {
 }
 COMPATIBILITY = {
     'summary': 'Watch requires verification, slug, next/error and counts; Taste skips invalid IDs/states and does not require detail.',
-    'verification_status': 'Watch accepts invalid; Taste detail refuses it; worker display accepts any string but refuses missing/null/non-string.',
-    'verification.result': 'Unknown/missing/null is not a refusal; only passed supports a local preview or old-pass history.',
+    'verification_status': 'Watch accepts invalid; Taste detail refuses it; worker requires a recognized typed state. Awaiting attestation never permits Finish.',
+    'verification.result': 'Unknown/missing/null is not a parse refusal; passed or awaiting-attestation support their separately guarded local preview states.',
     'gates[].status': 'Missing/null/non-string is refused; pending is not a decision receipt.',
     'checklist[].status': 'Watch uses its own refusal; Taste/shared ownership reject before Taste result interpretation.',
     'checklist[].proof': 'Must agree with automatic, including missing/null/non-string and unknown words.',
@@ -68,8 +70,7 @@ COMPATIBILITY = {
     'identity': 'Run slug/ID/checkout must still match each reader’s existing identity requirements.',
     'metadata': 'Stage/counts remain unsigned integers; id/verify/next/errors remain text. Source evidence argv/cwd/log/digest checks remain unchanged.',
 }
-NON_REFUSED = {'verification.result': 'Run summaries/results retain unfamiliar receipt results without a parse refusal; preview separately requires passed.',
-               'worker verification_status': 'Any string is displayed; missing/non-string is refused.'}
+NON_REFUSED = {'verification.result': 'Run summaries/results retain unfamiliar receipt results without a parse refusal; preview separately checks the typed result.'}
 
 
 def production(path):
@@ -127,7 +128,7 @@ def fixture_parity():
             assert name in current, f'Existing fixture test removed: {path}:{name}'
             assert hashlib.sha256(current[name].encode()).hexdigest() == digest, f'Existing fixture/output assertions changed: {path}:{name}'
             count += 1
-    print(f'Fixture parity: {count} original fixture/output tests retained verbatim and rerun.', flush=True)
+    print(f'Fixture parity: {count} pinned fixture/output tests retained and rerun.', flush=True)
 
 
 def check():
@@ -144,7 +145,7 @@ def check():
     for reader in ['sdlc::tests::', 'watch::tests::', 'taste::read::tests::', 'taste::preview::tests::', 'taste::evidence::tests::', 'worker::tests::']:
         result = cargo(reader)
         assert result.returncode == 0, result.stdout
-    print(f'Run contract: {len(FIELDS)} refused word contexts; {len(FLAGS)} refused flags; {len(NON_REFUSED)} compatibility exceptions; fixture assertions unchanged.')
+    print(f'Run contract: {len(FIELDS)} refused word contexts; {len(FLAGS)} refused flags; {len(NON_REFUSED)} compatibility exceptions; existing behavior assertions retained.')
 
 
 def revert():
@@ -153,7 +154,7 @@ def revert():
     mutations = []
     for field, (kind, test) in FIELDS.items():
         fallback = {'Verification': 'Current', 'GateStatus': 'Approved', 'CheckStatus': 'Passed',
-                    'Proof': 'Automated', 'StepState': 'Prepared', 'TurnStatus': 'Running',
+                    'ReceiptResult': 'Passed', 'Proof': 'Automated', 'StepState': 'Prepared', 'TurnStatus': 'Running',
                     'StopReason': 'Operator'}[kind]
         marker = f'word_enum!({kind}, None,'
         mutations.append((field, test, marker, f'word_enum!({kind}, Some(Self::{fallback}),'))

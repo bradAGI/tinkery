@@ -101,6 +101,8 @@ pub(super) struct ResultRow {
     pub(super) local: Result<Option<super::preview::Local>, String>,
     /// Exact-head declaration, or an honest absence/read refusal.
     pub(super) preview: Result<Option<super::preview::Spec>, String>,
+    /// Source-reported judgments still pending for this unaccepted candidate.
+    pub(super) pending_attestations: Vec<String>,
     /// Snapshot identity of the imported seed, not approval.
     pub(super) seed: String,
     /// Imported conditions and source observations, separately labelled.
@@ -200,7 +202,12 @@ fn local(root: &Path, parsed: &sdlc::Run, row: &mut ResultRow) -> Result<(), Str
     }
     let receipt_head = verification["candidate"]["head"].as_str().and_then(commit);
     let exact = receipt_head.is_some() && receipt_head == row.head.as_deref();
-    let current = parsed.verification.is(V::Current) && verification["passed"] == true;
+    let current = (parsed.verification.is(V::Current) && verification["passed"] == true)
+        || (parsed.verification.is(V::AwaitingAttestation)
+            && parsed
+                .receipt_result
+                .is(sdlc::ReceiptResult::AwaitingAttestation)
+            && verification["passed"] == false);
     let mut all_gates = Vec::new();
     for gate in gates {
         let status = gate
@@ -270,7 +277,8 @@ fn local(root: &Path, parsed: &sdlc::Run, row: &mut ResultRow) -> Result<(), Str
         let pending = record.pending?;
         let automatic_evidence =
             automatic.then(|| evidence::automated(root, &row.slug, parsed, record));
-        let old_pass = known == C::Passed || (automatic && parsed.receipt_result.is(C::Passed));
+        let old_pass = known == C::Passed
+            || (automatic && parsed.receipt_result.is(sdlc::ReceiptResult::Passed));
         let state = match known {
             _ if row.receipts_missing => Check::ReceiptsMissing,
             _ if pending => Check::NotActivated,
@@ -487,6 +495,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
             merged: false,
             local: Ok(None),
             preview: Err("Preview identity unknown; press r.".into()),
+            pending_attestations: Vec::new(),
             seed: String::new(),
             items: Vec::new(),
             receipts_missing: false,
@@ -523,6 +532,7 @@ pub(super) fn collect(root: &Path, stop: &AtomicBool) -> Result<(Vec<ResultRow>,
         {
             return Err("Unknown run verification state.".into());
         }
+        row.pending_attestations = parsed.pending_attestations.clone()?;
         row.goal = sdlc::goal(run);
         row.seed = run["seed_contract"]["sha256"]
             .as_str()
@@ -752,6 +762,7 @@ mod tests {
             merged: false,
             local: Ok(None),
             preview: Err("No preview declared".into()),
+            pending_attestations: Vec::new(),
             seed: "TEST".into(),
             items: vec![],
             receipts_missing: false,

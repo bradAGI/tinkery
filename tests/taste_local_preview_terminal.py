@@ -82,6 +82,22 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
             run['verification_status'] = 'not-run' if case == 'missing' else case
             if case == 'missing':
                 run['verification'] = None
+        elif case.startswith('awaiting'):
+            run['verification_status'] = 'awaiting-attestation'
+            run['verification'].update(result='awaiting-attestation', passed=False,
+                                       pending_attestations=['seed-2', 'seed-4'])
+            for item in run['checklist']:
+                if not item['automatic']:
+                    item.update(status='pending', mark=None)
+            if case == 'awaiting-invalid-ids':
+                run['verification']['pending_attestations'] = [None]
+        elif case == 'person-failed':
+            run['verification_status'] = 'failed'
+            run['verification'].update(result='failed', passed=False, candidate=None,
+                                       error='Checklist failed: seed-2')
+            run['checklist'][1].update(status='failed', mark={'evidence': 'TEST person rejected'})
+        elif case == 'unknown':
+            run['verification_status'] = 'TEST-unknown'
         elif case == 'pending-human':
             # tink-sdlc's receipt after machine checks pass and a seed judgment awaits a person (#787):
             # no candidate, and automatic items read pending because the receipt is not current.
@@ -132,25 +148,38 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
             wait(lambda: '1  think' in screen.text())
             send(b'6', 'Press r to read results')
             assert not started.exists() and not opened.exists()
+            if case in ('unknown', 'awaiting-invalid-ids'):
+                send(b'r', 'Unknown run verification state' if case == 'unknown' else 'pending_attestations')
+                os.write(terminal.master, b'v')
+                time.sleep(.1)
+                assert not started.exists() and not opened.exists(), 'unknown/invalid run launched preview'
+                return
             send(b'r', 'TEST café')
             send(b'\r', 'e details')
             refusals = {
                 'missing': 'current passed verification', 'failed': 'current passed verification',
                 'pending-human': 'current passed verification',
+                'person-failed': 'current passed verification',
                 'stale': 'current passed verification', 'dirty': 'source differs',
                 'agents-edit': 'source differs', 'agents-edit-with-rules': 'source differs',
                 'untracked': 'source has uncommitted files', 'malformed-pr': 'invalid PR URL',
                 'missing-head': 'commit is unknown',
             }
             if case in refusals:
-                assert refusals[case] in screen.text(), screen.text()
+                assert refusals[case] in screen.text(), 'refusal-' + case + ': ' + screen.text()
                 if case == 'pending-human':
                     # The loop: inspection needs a pass, the pass needs this person's judgment.
                     assert 'Only a human can record the verdict.' in screen.text(), screen.text()
                 send(b'v', refusals[case])
                 assert not started.exists() and not opened.exists()
                 return
-            assert 'Local checked result' in screen.text() and 'v runs' in screen.text(), screen.text()
+            label = 'Unaccepted candidate' if case.startswith('awaiting') else 'Local checked result'
+            assert label in screen.text(), 'candidate-label: ' + screen.text()
+            assert 'v runs' in screen.text(), 'preview-offer: ' + screen.text()
+            if case.startswith('awaiting'):
+                shown = ' '.join(screen.text().split())
+                assert 'Pending judgments: seed-2, seed-4.' in shown, 'pending-ids: ' + shown
+                assert 'Only a person can record them in tink-sdlc.' in shown, 'human-only: ' + shown
             assert 'o open PR' not in screen.text()
             send(b'o', 'This local result has no PR')
             send(b'a', 'This local result has no PR')
@@ -159,12 +188,13 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
             os.write(terminal.master, b'v')
             time.sleep(.08)
             assert not started.exists(), 'help executed the preview'
-            send(b'\x1b', 'Local checked result')
+            send(b'\x1b', label)
             assert not started.exists() and not opened.exists(), 'navigation or copy executed the preview'
-            if case in ('changed-run', 'changed-candidate', 'changed-declaration', 'changed-source', 'stale-before-v'):
+            if case in ('changed-run', 'changed-candidate', 'changed-declaration', 'changed-source', 'stale-before-v',
+                        'awaiting-stale-before-v'):
                 if case == 'changed-run':
                     run['run_id'] = '00000000-0000-4000-8000-000000000999'
-                elif case == 'stale-before-v':
+                elif case in ('stale-before-v', 'awaiting-stale-before-v'):
                     run['verification_status'] = 'stale'
                 elif case == 'changed-source':
                     (repo / 'marker').write_text('TEST changed after reading')

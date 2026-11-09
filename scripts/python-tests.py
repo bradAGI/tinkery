@@ -60,6 +60,7 @@ def main():
                      '--bin', 'tinkery', '--example', 'seed_fixture'], cwd=ROOT,
                     env=env, check=True)
     env['TINKERY_TEST_SEED_FIXTURE'] = str(ROOT / 'target/debug/examples/seed_fixture')
+    env['TINKERY_PYTHON_TEST_WORKER'] = '1'
     workers = int(os.environ.get('TINKERY_TEST_JOBS') or min(8, os.cpu_count() or 2))
     print(f'Python tests: tier {tier}, {len(files)} files, {workers} workers', flush=True)
     failed = []

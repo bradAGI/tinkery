@@ -116,7 +116,9 @@ pub(crate) struct Snapshot {
     /// Current source-owned worker state.
     pub(crate) state: State,
     /// SDLC verification state; a completed worker does not imply current verification.
-    pub(crate) verification: String,
+    pub(crate) verification: sdlc::Word<sdlc::Verification>,
+    /// Validated source-reported judgment IDs, not a completion or acceptance claim.
+    pub(crate) pending_attestations: Vec<String>,
     /// SDLC's next action in its own words.
     pub(crate) next: String,
 }
@@ -730,11 +732,14 @@ fn snapshot(run: &Run) -> Result<Snapshot, String> {
         responses,
         pin,
         state,
-        verification: value
-            .verification
-            .as_str()
-            .ok_or("Verification state is missing.")?
-            .into(),
+        pending_attestations: value.pending_attestations?,
+        verification: {
+            value
+                .verification
+                .known()
+                .ok_or("Verification state is unknown or missing.")?;
+            value.verification
+        },
         next: value.data["next_action"]
             .as_str()
             .ok_or("The run's next action is missing.")?

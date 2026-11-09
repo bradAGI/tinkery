@@ -173,7 +173,11 @@ answer. The URL restriction is not a network sandbox for arbitrary repo code.
 
 For a PR, `r` reads that file through `gh api` at the displayed head.
 For an open run with `pr: null`, it reads the local result only when API 1 reports
-current passed verification and an exact candidate commit. The source-owned
+current passed verification or `awaiting-attestation`, with an exact candidate commit.
+The shared typed reader keeps pending judgment IDs separate from a passed receipt.
+The latter state offers an `Unaccepted candidate`, names every pending ID and says
+only a person can record those judgments in tink-sdlc. It enables only this existing
+preview, never Finish or human mark/decide authority. The source-owned
 `run.checkout`, or the named root when omitted, must be a Git root. Source files
 must match that commit and there must be no untracked source files; run evidence
 under `runs/` and Git-ignored files such as dependencies/build output are excluded.
@@ -187,7 +191,7 @@ receipt's commit. Local results require no GitHub call or provider request.
 
 Local declarations come from the commit's Git blob, never a working-tree file.
 Immediately before preparation and again before execution, `v` rereads the run and
-requires the same run ID, seed and goal, checkout, commit, current receipt and
+requires the same run ID, seed and goal, checkout, commit, eligible receipt and
 committed source. A change refuses execution and asks for `r`; it never starts an
 old reading. The local result offers no PR opening or PR handoff. Its details name
 the checkout and commit; passing checks remains separate from a human verdict.
