@@ -29,9 +29,7 @@ use serde::{Deserialize, Serialize};
 
 const FOLDER_GUARD: &str = include_str!("../pi/folder.mjs");
 
-/// Maximum encoded request bytes sent to a host. About 32K tokens: room for a long goal's whole
-/// ledger, well inside current context windows and at the low end of where long-context quality
-/// is reported to fall off.
+/// Maximum encoded request bytes sent to a host.
 pub const REQUEST_LIMIT: usize = 128 * 1024;
 /// Maximum reply or diagnostic bytes accepted from a host.
 pub const LIMIT: usize = 32 * 1024;
