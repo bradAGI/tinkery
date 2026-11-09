@@ -36,6 +36,7 @@ These dated records are not current behavior or permission to implement:
 | [Question-generation research](research/think/question-generation.md) | Research comparison, not a shipped behavior specification |
 | [Human baseline](research/shared/baseline.md) | A recorded evaluation plan and partial results, not a code-quality score |
 | [Project preparation](research/shared/project-preparation.md) | Research on what a new project needs before a run, and who owns each step; ships nothing |
+| [Local inspection before a judgment](research/taste/local-inspection.md) | Research for #787 on previewing a result whose human judgment is pending; ships nothing |
 | [Dogfood findings](../findings/README.md) | Historical observations and evidence; not a general outcome claim |
 
 For shipped behavior, use the relevant contract above. For proposals, use the linked

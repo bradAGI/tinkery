@@ -82,6 +82,15 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
             run['verification_status'] = 'not-run' if case == 'missing' else case
             if case == 'missing':
                 run['verification'] = None
+        elif case == 'pending-human':
+            # tink-sdlc's receipt after machine checks pass and a seed judgment awaits a person (#787):
+            # no candidate, and automatic items read pending because the receipt is not current.
+            run['verification_status'] = 'failed'
+            run['verification'] = {'result': 'failed', 'passed': False, 'candidate': None, 'log': None,
+                                   'error': "Checklist incomplete: seed-2 (mark it with --reviewer 'REVIEWER' "
+                                            "--source 'SOURCE')"}
+            for item in run['checklist']:
+                item.update(status='pending', mark=None)
         elif case == 'dirty':
             (repo / 'marker').write_text('TEST checked but not committed')
         elif case in ('generated-rules', 'agents-edit', 'agents-edit-with-rules'):
@@ -127,6 +136,7 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
             send(b'\r', 'e details')
             refusals = {
                 'missing': 'current passed verification', 'failed': 'current passed verification',
+                'pending-human': 'current passed verification',
                 'stale': 'current passed verification', 'dirty': 'source differs',
                 'agents-edit': 'source differs', 'agents-edit-with-rules': 'source differs',
                 'untracked': 'source has uncommitted files', 'malformed-pr': 'invalid PR URL',
@@ -134,6 +144,9 @@ def journey(width=100, height=30, mono=False, forwarded=True, case='ready'):
             }
             if case in refusals:
                 assert refusals[case] in screen.text(), screen.text()
+                if case == 'pending-human':
+                    # The loop: inspection needs a pass, the pass needs this person's judgment.
+                    assert 'Only a human can record the verdict.' in screen.text(), screen.text()
                 send(b'v', refusals[case])
                 assert not started.exists() and not opened.exists()
                 return
@@ -215,9 +228,9 @@ if __name__ == '__main__':
     for width, height in [(100, 30), (80, 24)]:
         for mono in [False, True]:
             journey(width, height, mono, forwarded=mono)
-    for case in ['missing', 'failed', 'stale', 'dirty', 'untracked', 'malformed-pr', 'missing-head',
+    for case in ['missing', 'failed', 'pending-human', 'stale', 'dirty', 'untracked', 'malformed-pr', 'missing-head',
                  'generated-rules', 'agents-edit', 'agents-edit-with-rules',
                  'changed-run', 'changed-candidate', 'changed-declaration', 'changed-source',
                  'stale-before-v', 'occupied-port']:
         journey(case=case)
-    print('PASS 20 local-preview journeys; no provider or GitHub calls')
+    print('PASS 21 local-preview journeys; no provider or GitHub calls')
