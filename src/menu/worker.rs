@@ -234,7 +234,7 @@ impl Panel {
                     _ => None,
                 };
                 if let (Some(action), Some(run)) = (action, &self.run) {
-                    if !self.fresh && !matches!(action, Action::Refresh) {
+                    if !self.fresh && !matches!(action, Action::Refresh | Action::StopOperator) {
                         return None;
                     }
                     self.fresh = false;
@@ -308,7 +308,7 @@ impl Panel {
                 "Worker actions\n\nF2 starts only the reviewed seed with its separate worker allowance.\n\
                  r reads status. l launches a prepared step; u resumes an ended turn on its existing model/session and cumulative cap.\n\
                  v verifies first. Only current passing checks allow f to record the normally ended worker.\n\
-                 After a refused request, r must read successfully before any other action.\n\
+                 After a refused request, only r and s work until a read succeeds.\n\
                  Failed checks keep the ended worker resumable after that read. s stops it; c records that its cap stopped it.\n\
                  w opens Watch; t opens Taste, where r reads and v runs a declared preview.\n\
                  Esc/F10 return Home. b there reopens this worker.\n\
@@ -350,7 +350,7 @@ impl Panel {
                 );
             }
             keys = if !self.fresh {
-                "r read   w watch   t taste   ? help   esc back"
+                "r read   s stop   w watch   t taste   ? help   esc back"
             } else if self.can_launch() {
                 "l launch prepared   r read   w watch   t taste   ? help   esc back"
             } else if self.can_finish() {
@@ -375,7 +375,7 @@ impl Panel {
                 ));
             }
             keys = if self.run.is_some() {
-                "r read   w watch   t taste   ? help   esc back"
+                "r read   s stop   w watch   t taste   ? help   esc back"
             } else if self.start.is_some() {
                 "F2 start worker   ↑↓ read   ? help   esc back"
             } else {

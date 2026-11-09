@@ -216,9 +216,10 @@ explicit actions. Verify before finishing: `f` refuses without current passing
 verification, so a failed check leaves the ended worker resumable after a successful reread.
 A refused request retains the last successful worker reading and tink-sdlc's own blocker,
 including unmet human checks and their instructions. That reading is explicitly historical:
-current worker and verification state are unknown, and only `r` can request anything until
-it succeeds. Hidden action keys obey the same admission rule as the footer. A failed reread
-keeps actions disabled; neither failure nor rereading automatically launches or resumes work.
+current worker and verification state are unknown, and only `r` and `s` can request anything
+until a read succeeds. Stop stays available because it is the conservative action; it still
+confirms the run first, so tink-sdlc status must answer for it to act. Hidden action keys obey the same admission rule as the footer. A failed reread
+keeps the others disabled; neither failure nor rereading automatically launches or resumes work.
 Resume discloses and rechecks the original model, session and cap;
 it cannot silently use changed settings or add allowance. Unknown admission never
 becomes a successful launch or an automatic retry. The preflight identity read is

@@ -76,15 +76,21 @@ def freshness(terminal):
                 failed_read(terminal)
             terminal.send(HOME, 'esc back')
             assert UNKNOWN in terminal.flat(), 'failed reread must be explicitly unknown: ' + terminal.flat()
+            assert 's stop' in terminal.flat(), 'stale footer must offer stop: ' + terminal.flat()
             before = fixture.calls()
-            for key in (b'v', b'f', b's', b'c', b'l', F2):
+            for key in (b'v', b'f', b'c', b'l', F2):
                 settle(terminal, END + key)
                 assert fixture.calls() == before, 'stale-action no-mutation: ' + repr(key)
     fixture.change(lambda value: value['step'].update(state='active'))
     settle(terminal, b'r')
     terminal.send(END, 'Read from tink-sdlc.')
+    before = len(fixture.mutations())
+    settle(terminal, b'v')
+    assert len(fixture.mutations()) > before, 'successful reread did not restore deliberate actions'
+    failed_read(terminal)
     settle(terminal, b's')
-    assert fixture.read()['step']['state'] == 'stopped', 'successful reread did not restore deliberate actions'
+    step = fixture.read()['step']
+    assert step['state'] == 'stopped' and step['stopped_by'] == 'operator', f'stale stop did not reach SDLC: {step}'
 
 
 def no_launch(terminal):
@@ -126,7 +132,7 @@ def journey(case, width, height):
 def reversion():
     path = REPO / 'src/menu/worker.rs'
     original = path.read_text()
-    guard = ('                    if !self.fresh && !matches!(action, Action::Refresh) {\n'
+    guard = ('                    if !self.fresh && !matches!(action, Action::Refresh | Action::StopOperator) {\n'
              '                        return None;\n'
              '                    }\n')
     patches = (
@@ -135,6 +141,7 @@ def reversion():
          'ended-state retention:'),
         ('freshness', guard, '', 'stale-action no-mutation:'),
         ('no-launch', guard, '', 'no-extra-launch call-count:'),
+        ('freshness', ' | Action::StopOperator', '', 'stale stop did not reach SDLC:'),
     )
     env = subprocess.environment()
     build = ['cargo', '+stable', 'build', '--locked', '--quiet', '--bin', 'tinkery']
