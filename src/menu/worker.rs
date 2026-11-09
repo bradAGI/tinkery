@@ -249,6 +249,38 @@ impl Panel {
         None
     }
 
+    /// The key bar names only keys that act now: `l` and `u` appear once the disclosure end is drawn.
+    fn keys(&self) -> &'static str {
+        let read = self.read_to_end;
+        if self.help {
+            "↑↓ read   esc close help"
+        } else if self.snapshot.is_none() {
+            if self.run.is_some() {
+                "r read   s stop   w watch   t taste   ? help   esc back"
+            } else if self.start.is_some() {
+                "F2 start worker   ↑↓ read   ? help   esc back"
+            } else {
+                "↑↓ read   ? help   esc back"
+            }
+        } else if !self.fresh {
+            "r read   s stop   w watch   t taste   ? help   esc back"
+        } else if self.can_launch() && read {
+            "l launch prepared   r read   w watch   t taste   ? help   esc back"
+        } else if self.can_launch() {
+            "End to launch   r read   w watch   t taste   ? help   esc back"
+        } else if self.can_finish() && read {
+            "f finish   u resume   r read   v verify   t taste   ? help   esc back"
+        } else if self.can_finish() {
+            "f finish   End to resume   r read   v verify   t taste   ? help   esc back"
+        } else if self.can_resume() && read {
+            "v verify   u resume   r read   t taste   ? help   esc back"
+        } else if self.can_resume() {
+            "v verify   End to resume   r read   t taste   ? help   esc back"
+        } else {
+            "r read   v verify   s stop   c cap stop   t taste   ? help   esc back"
+        }
+    }
+
     fn can_resume(&self) -> bool {
         self.snapshot
             .as_ref()
@@ -302,7 +334,6 @@ impl Panel {
                 lines.push(Line::raw(safe));
             }
         };
-        let keys;
         if self.help {
             add(
                 "Worker actions\n\nF2 starts only the reviewed seed with its separate worker allowance.\n\
@@ -315,7 +346,6 @@ impl Panel {
                  Admission finishes before Tinkery exits. The detached worker stays owned by SDLC.\n\
                  No refresh or navigation automatically retries, resumes, verifies or opens a preview.",
             );
-            keys = "↑↓ read   esc close help";
         } else if let Some(snapshot) = &self.snapshot {
             if !self.fresh {
                 add(
@@ -359,17 +389,6 @@ impl Panel {
                      v verifies before f records the ended turn; failed checks leave u available. Neither action accepts the result.",
                 );
             }
-            keys = if !self.fresh {
-                "r read   s stop   w watch   t taste   ? help   esc back"
-            } else if self.can_launch() {
-                "l launch prepared   r read   w watch   t taste   ? help   esc back"
-            } else if self.can_finish() {
-                "f finish   u resume   r read   v verify   t taste   ? help   esc back"
-            } else if self.can_resume() {
-                "v verify   u resume   r read   t taste   ? help   esc back"
-            } else {
-                "r read   v verify   s stop   c cap stop   t taste   ? help   esc back"
-            };
         } else {
             add(if self.run.is_some() {
                 "Worker result unavailable; current state unknown. r reads again"
@@ -384,13 +403,6 @@ impl Panel {
                     run.root.display()
                 ));
             }
-            keys = if self.run.is_some() {
-                "r read   s stop   w watch   t taste   ? help   esc back"
-            } else if self.start.is_some() {
-                "F2 start worker   ↑↓ read   ? help   esc back"
-            } else {
-                "↑↓ read   ? help   esc back"
-            };
         }
         if !self.notice.is_empty() {
             add(&format!("\n{}", self.notice));
@@ -413,6 +425,7 @@ impl Panel {
         if !self.help && self.scroll == hidden {
             self.read_to_end = true;
         }
+        let keys = self.keys();
         if let Some(cue) = crate::more_cue(self.scroll as usize, hidden as usize) {
             frame.render_widget(
                 Paragraph::new(cue).style(palette.muted),
