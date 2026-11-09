@@ -476,7 +476,13 @@ def real_runtime_journey(fail_first=False):
                 terminal.send(b'f?', 'Worker actions')
                 assert json.loads((build / 'runs/test-worker/steps/build.json').read_text())['state'] == 'active'
                 terminal.send(b'\x1b', 'Verification: failed')
-                terminal.send(END + b'u', 'Request in progress')
+                # u is offered only after a frame shows the disclosure end; a burst before it resumes nothing.
+                assert 'u resume' not in terminal.flat() and 'End to resume' in terminal.flat()
+                os.write(terminal.master, END + b'u')
+                terminal.wait(lambda: 'u resume' in terminal.flat())
+                assert not any(json.loads(line)['operation'] == 'resume'
+                               for line in adapter_log.read_text().splitlines()), 'u acted before it was offered'
+                terminal.send(b'u', 'Request in progress')
                 terminal.wait(lambda: 'Worker: turn ended; completion still unrecorded' in terminal.flat()
                               and 'Request in progress' not in terminal.flat())
                 resumed = json.loads((build / 'runs/test-worker/steps/build.json').read_text())
@@ -684,6 +690,7 @@ def journey(width, height, case, mono=False):
                     assert len(fixture.admissions()) == 1
                     terminal.send(b'r', 'Worker: prepared, not launched')
                     assert len(fixture.admissions()) == 1, 'refresh launched a prepared step'
+                    assert 'l launch prepared' not in terminal.flat() and 'End to launch' in terminal.flat()
                     terminal.send(END + b'?', 'Worker actions')
                     terminal.send(b'l', 'Worker actions')
                     assert len(fixture.admissions()) == 1, 'help launched a prepared step'

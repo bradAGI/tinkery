@@ -138,7 +138,7 @@ find the new run.
 seed, a usable checkout and a successful start-status read; uncertainty offers no
 start shortcut. The review reads nothing and runs nothing. It shows the exact goal,
 provider/model/thinking pin, response cap, checkout, provider data and effects before
-F2. Read the whole disclosure first. `--worker-model provider/model:thinking` and
+F2. Read the whole disclosure first; the key bar names `l` and `u` only once its end has been drawn. `--worker-model provider/model:thinking` and
 `--worker-responses N` supply a separate allowance for this launch; its default is
 zero and drafting calls never supply it. One response may already be in flight at
 the cap. Configuration is not permission to start on navigation.
