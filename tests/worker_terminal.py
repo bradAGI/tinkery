@@ -464,7 +464,10 @@ def real_runtime_journey(fail_first=False):
             assert json.loads((build / 'runs/test-worker/steps/build.json').read_text())['state'] == 'active'
             terminal.send(b'\x1b', 'Worker: turn ended; completion still unrecorded')
             if fail_first:
-                terminal.send(b'v', 'Worker result unavailable')
+                terminal.send(b'v?', 'Worker actions')
+                terminal.wait(lambda: 'Request in progress' not in terminal.flat())
+                terminal.send(b'\x1b', 'Current worker and verification state unknown.')
+                assert 'Worker: turn ended; completion still unrecorded' in terminal.flat()
                 terminal.send(b'r', 'Verification: failed')
                 assert 'Worker: turn ended; completion still unrecorded' in terminal.flat()
                 assert 'f finish' not in terminal.flat(), 'failed checks offered normal completion'
@@ -720,12 +723,12 @@ def journey(width, height, case, mono=False):
                     assert fixture.admissions()[0]['cwd'] == fixture.read()['run']['checkout']
                     if case == 'changed-pin':
                         fixture.change(lambda value: value['step'].update(model='test/different:off'))
-                        terminal.send(END + b'u', 'Worker result unavailable')
+                        terminal.send(END + b'u', 'Current worker and verification state unknown.')
                         terminal.send(END, 'Admission refused; inspect it again')
                         assert len(fixture.admissions()) == 1, 'changed displayed pin was resumed'
                     elif case == 'changed-run':
                         fixture.change(lambda value: value['run'].update(run_id='b6683af7-ab6a-4262-8509-9e404d0a7d0b'))
-                        terminal.send(END + b'u', 'Worker result unavailable')
+                        terminal.send(END + b'u', 'Current worker and verification state unknown.')
                         terminal.send(END, 'run or its build checkout changed')
                         assert len(fixture.admissions()) == 1, 'replaced run was resumed'
                     elif case == 'cap':

@@ -32,6 +32,7 @@ pub(super) struct Panel {
     starting: Option<Start>,
     run: Option<Run>,
     snapshot: Option<Snapshot>,
+    fresh: bool,
     job: Option<Job>,
     notice: String,
     help: bool,
@@ -98,6 +99,7 @@ impl Panel {
             starting: None,
             run: None,
             snapshot: None,
+            fresh: false,
             job: None,
             notice: String::new(),
             help: false,
@@ -118,6 +120,7 @@ impl Panel {
             starting: None,
             run: Some(run),
             snapshot: None,
+            fresh: false,
             job: Some(job),
             notice: "Reading worker…".into(),
             help: false,
@@ -144,11 +147,12 @@ impl Panel {
             Ok(snapshot) => {
                 self.run = Some(snapshot.run.clone());
                 self.snapshot = Some(snapshot);
+                self.fresh = true;
                 self.notice =
                     "Read from tink-sdlc. r reads again; nothing resumes automatically.".into();
             }
             Err(failure) => {
-                self.snapshot = None;
+                self.fresh = false;
                 self.notice = format!("Request refused or uncertain: {}", failure.message);
                 match failure.recovery {
                     Recovery::Run(run) => self.run = Some(run),
@@ -230,6 +234,10 @@ impl Panel {
                     _ => None,
                 };
                 if let (Some(action), Some(run)) = (action, &self.run) {
+                    if !self.fresh && !matches!(action, Action::Refresh) {
+                        return None;
+                    }
+                    self.fresh = false;
                     self.job = Some(Job::act(self.gate.clone(), run.clone(), action));
                     self.notice = "Requesting the named action from tink-sdlc…".into();
                 } else {
@@ -300,7 +308,8 @@ impl Panel {
                 "Worker actions\n\nF2 starts only the reviewed seed with its separate worker allowance.\n\
                  r reads status. l launches a prepared step; u resumes an ended turn on its existing model/session and cumulative cap.\n\
                  v verifies first. Only current passing checks allow f to record the normally ended worker.\n\
-                 Failed checks keep the ended worker resumable. s stops it; c records that its cap stopped it.\n\
+                 After a refused request, r must read successfully before any other action.\n\
+                 Failed checks keep the ended worker resumable after that read. s stops it; c records that its cap stopped it.\n\
                  w opens Watch; t opens Taste, where r reads and v runs a declared preview.\n\
                  Esc/F10 return Home. b there reopens this worker.\n\
                  Admission finishes before Tinkery exits. The detached worker stays owned by SDLC.\n\
@@ -308,6 +317,11 @@ impl Panel {
             );
             keys = "↑↓ read   esc close help";
         } else if let Some(snapshot) = &self.snapshot {
+            if !self.fresh {
+                add(
+                    "Current worker and verification state unknown. Last successful read follows:\n",
+                );
+            }
             add(&format!(
                 "Worker: {}\n\nRun: {}\nCheckout: {}",
                 state(&snapshot.state),
@@ -324,18 +338,20 @@ impl Panel {
                 "Verification: {}\n\n{}",
                 snapshot.verification, snapshot.next
             ));
-            if self.can_launch() {
+            if self.fresh && self.can_launch() {
                 add(
                     "\nl sends this prepared task and source context to the displayed provider within its existing cap. It grants no extra responses.",
                 );
             }
-            if self.can_resume() {
+            if self.fresh && self.can_resume() {
                 add(
                     "\nu sends the existing task and source context to the same provider again within the remaining cap.\n\
                      v verifies before f records the ended turn; failed checks leave u available. Neither action accepts the result.",
                 );
             }
-            keys = if self.can_launch() {
+            keys = if !self.fresh {
+                "r read   w watch   t taste   ? help   esc back"
+            } else if self.can_launch() {
                 "l launch prepared   r read   w watch   t taste   ? help   esc back"
             } else if self.can_finish() {
                 "f finish   u resume   r read   v verify   t taste   ? help   esc back"
@@ -346,7 +362,7 @@ impl Panel {
             };
         } else {
             add(if self.run.is_some() {
-                "Worker result unavailable"
+                "Worker result unavailable; current state unknown. r reads again"
             } else {
                 "Review worker start"
             });
@@ -359,7 +375,7 @@ impl Panel {
                 ));
             }
             keys = if self.run.is_some() {
-                "r read   s stop   c record cap stop   ? help   esc back"
+                "r read   w watch   t taste   ? help   esc back"
             } else if self.start.is_some() {
                 "F2 start worker   ↑↓ read   ? help   esc back"
             } else {
