@@ -16,6 +16,7 @@ fn row() -> ResultRow {
         local: Ok(None),
         preview: Err("No preview declared".into()),
         receipts_missing: false,
+        pending_attestations: Vec::new(),
         seed: "TEST-digest".into(),
         items: vec![Item {
             label: "TEST check".into(),

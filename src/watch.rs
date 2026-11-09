@@ -6,6 +6,7 @@
 //! know rather than guess.
 
 mod codex;
+mod state;
 mod steps;
 #[cfg(test)]
 mod tests;
@@ -30,19 +31,7 @@ use serde_json::Value;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-/// What tink-sdlc says about a run's verification, from API 1. Anything else is refused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
-    Blocked,
-    Running,
-    NotRun,
-    Current,
-    Stale,
-    Failed,
-    Interrupted,
-    Invalid,
-    Older,
-}
+use state::State;
 
 // Coupled to tink-sdlc's exact wording for a run without a canonical ID. If that text changes,
 // such runs fall back to "can't be read", which fails safe.
@@ -50,46 +39,6 @@ const OLDER_ID_ERROR: &str =
     "Run run_id must be a canonical UUIDv4 string; create runs with sdlc.py new.";
 const OLDER_REASON: &str =
     "This run has no canonical run ID. Its approvals and verification can't be checked here.";
-
-impl State {
-    fn from_status(status: sdlc::Verification) -> Self {
-        use sdlc::Verification as V;
-        match status {
-            V::Blocked => Self::Blocked,
-            V::Running => Self::Running,
-            V::NotRun => Self::NotRun,
-            V::Current => Self::Current,
-            V::Stale => Self::Stale,
-            V::Failed => Self::Failed,
-            V::Interrupted => Self::Interrupted,
-            V::Invalid => Self::Invalid,
-        }
-    }
-
-    /// Whether a person is owed something: a gate decision (tink-sdlc reports `blocked` only
-    /// while a gate isn't approved), or a failed, interrupted or unreadable run. An older run
-    /// owes nothing: there is no action to take on it.
-    fn needs_you(self) -> bool {
-        matches!(
-            self,
-            Self::Blocked | Self::Failed | Self::Interrupted | Self::Invalid
-        )
-    }
-
-    fn words(self) -> &'static str {
-        match self {
-            Self::Blocked => "waiting on a decision",
-            Self::Running => "running",
-            Self::NotRun => "not verified yet",
-            Self::Current => "verified",
-            Self::Stale => "verification out of date",
-            Self::Failed => "verification failed",
-            Self::Interrupted => "verification interrupted",
-            Self::Invalid => "can't be read",
-            Self::Older => "older run",
-        }
-    }
-}
 
 /// One run as the list summary reports it.
 #[derive(Debug, Clone, PartialEq)]
@@ -334,7 +283,22 @@ fn parse_run_detail(parsed: &sdlc::Run) -> Result<Detail, String> {
     Ok(Detail {
         goal: sdlc::goal(run),
         state: state(parsed)?,
-        next: text(run, "next_action")?,
+        next: if parsed
+            .verification
+            .is(sdlc::Verification::AwaitingAttestation)
+        {
+            format!(
+                "Pending judgments: {}. Only a person can record them in tink-sdlc.\n{}",
+                parsed
+                    .pending_attestations
+                    .as_ref()
+                    .map_err(|why| why.to_string())?
+                    .join(", "),
+                text(run, "next_action")?
+            )
+        } else {
+            text(run, "next_action")?
+        },
         gates,
         passed: items
             .iter()

@@ -271,7 +271,12 @@ const STALE: Duration = Duration::from_secs(10 * 60);
 /// What was built: the PR title, or its link while the title is unknown.
 fn built(row: &ResultRow) -> String {
     if row.local().is_some() {
-        return "Local checked result".into();
+        return if row.pending_attestations.is_empty() {
+            "Local checked result"
+        } else {
+            "Unaccepted candidate"
+        }
+        .into();
     }
     safe(
         row.title
@@ -315,6 +320,18 @@ pub(super) fn review(
         width,
         p.muted,
     );
+    if !row.pending_attestations.is_empty() {
+        block(
+            &mut lines,
+            Span::raw(""),
+            &format!(
+                "Pending judgments: {}. Only a person can record them in tink-sdlc.",
+                row.pending_attestations.join(", ")
+            ),
+            width,
+            p.muted,
+        );
+    }
     if let Some(pause) = pause {
         heading(&mut lines, "Next", p.ink);
         let guess = p.ink.add_modifier(Modifier::ITALIC);
@@ -556,7 +573,7 @@ mod tests {
             id: "TEST-run-id".into(), slug: "TEST-run".into(),
             goal: Goal::Matched(format!("{}\nWhy: TEST reason.\nDone when: TEST result.", "TEST café 👩‍💻 goal ".repeat(12))),
             url: Ok("https://github.com/TEST/example/pull/1".into()), title: None, head: Some("a".repeat(40)),
-            merged: true, local: Ok(None), preview: Err("No preview declared".into()), receipts_missing: false, seed: "TEST-seed".into(), gates: vec![human.into()], gaps: vec![], labelled: None, rejection: None,
+            merged: true, local: Ok(None), pending_attestations: Vec::new(), preview: Err("No preview declared".into()), receipts_missing: false, seed: "TEST-seed".into(), gates: vec![human.into()], gaps: vec![], labelled: None, rejection: None,
             items: vec![
                 Item { label: "Every original check word stays intact while this long sentence wraps with a hanging indent and no abbreviation.".into(),
                     state: Check::Fail, kind: "automated".into(), evidence: "/TEST/log; argv: [TEST]".into() },

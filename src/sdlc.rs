@@ -132,7 +132,8 @@ macro_rules! word_enum {
 
 word_enum!(Verification, None, {
     Blocked => "blocked", Running => "running", NotRun => "not-run", Current => "current",
-    Stale => "stale", Failed => "failed", Interrupted => "interrupted", Invalid => "invalid"
+    Stale => "stale", Failed => "failed", Interrupted => "interrupted", Invalid => "invalid",
+    AwaitingAttestation => "awaiting-attestation"
 });
 word_enum!(GateStatus, None, {
     Approved => "approved", Pending => "pending", Stale => "stale", ChangesRequested => "changes-requested"
@@ -141,6 +142,9 @@ word_enum!(CheckStatus, None, {
     Passed => "passed", Pending => "pending", Failed => "failed", Unknown => "unknown"
 });
 word_enum!(Proof, None, { Automated => "automated", Attested => "attested" });
+word_enum!(ReceiptResult, None, {
+    Passed => "passed", Failed => "failed", AwaitingAttestation => "awaiting-attestation"
+});
 word_enum!(StepState, None, {
     Prepared => "prepared", Active => "active", Uncertain => "uncertain", Completed => "completed",
     Stopped => "stopped", Unreadable => "unreadable"
@@ -181,8 +185,10 @@ pub(crate) struct Run {
     pub(crate) data: Value,
     /// Run verification, with unknowns retained until the consumer requires a known state.
     pub(crate) verification: Word<Verification>,
-    /// Receipt result recognizes only the checklist result vocabulary; eligibility remains contextual.
-    pub(crate) receipt_result: Word<CheckStatus>,
+    /// Receipt results are separate from checklist outcomes; pending judgment is never a pass.
+    pub(crate) receipt_result: Word<ReceiptResult>,
+    /// Validated pending judgment IDs; absent older fields remain empty, malformed lists refuse.
+    pub(crate) pending_attestations: Result<Vec<String>, &'static str>,
     /// Opaque receipt identity retains every original field for exact snapshot comparison.
     pub(crate) receipt: Receipt,
     /// A missing or malformed list cannot silently become an empty list.
@@ -272,12 +278,44 @@ impl Run {
         );
         if let Some(receipt) = data.get_mut("verification").and_then(Value::as_object_mut) {
             receipt.remove("result");
+            receipt.remove("pending_attestations");
         }
         Self {
             data,
             receipt: Receipt(value["verification"].clone()),
             verification: word(value.get("verification_status"), Verification::read),
-            receipt_result: word(value["verification"].get("result"), CheckStatus::read),
+            receipt_result: word(value["verification"].get("result"), ReceiptResult::read),
+            pending_attestations: match value["verification"].get("pending_attestations") {
+                None if Verification::read(&value["verification_status"])
+                    != Some(Verification::AwaitingAttestation) =>
+                {
+                    Ok(Vec::new())
+                }
+                ids => (|| {
+                    let invalid = "The run has no readable pending_attestations list.";
+                    let ids = ids.and_then(Value::as_array).ok_or(invalid)?;
+                    if ids.is_empty() {
+                        return Err(invalid);
+                    }
+                    let mut pending = Vec::new();
+                    for id in ids {
+                        let id = id
+                            .as_str()
+                            .filter(|id| {
+                                !id.is_empty()
+                                    && id
+                                        .bytes()
+                                        .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+                            })
+                            .ok_or(invalid)?;
+                        if pending.iter().any(|other| other == id) {
+                            return Err(invalid);
+                        }
+                        pending.push(id.to_owned());
+                    }
+                    Ok(pending)
+                })(),
+            },
             gates: value["gates"].as_array().map(|gates| {
                 gates
                     .iter()

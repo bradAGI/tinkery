@@ -214,6 +214,10 @@ an ended turn, `f` records a normally
 ended worker, `v` verifies, `s` stops it, and `c` records a cap stop. These are separate
 explicit actions. Verify before finishing: `f` refuses without current passing
 verification, so a failed check leaves the ended worker resumable after a successful reread.
+An `awaiting-attestation` reading says `waiting on your judgment`, names the pending
+IDs and keeps Finish refused. Taste can inspect its unaccepted candidate; only a
+person outside Tinkery can record those judgments with tink-sdlc. Worker presentation
+consumes typed verification rather than recognizing status words itself.
 A refused request retains the last successful worker reading and tink-sdlc's own blocker,
 including unmet human checks and their instructions. That reading is explicitly historical:
 current worker and verification state are unknown, and only `r` and `s` can request anything

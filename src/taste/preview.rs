@@ -35,17 +35,28 @@ pub(super) struct Local {
 }
 
 impl Local {
-    /// Require a current checked commit whose source files are committed; run evidence is separate.
+    /// Require a fresh machine-checked commit; pending judgments never imply acceptance.
     pub(super) fn read(root: &Path, parsed: &sdlc::Run, stop: &AtomicBool) -> Result<Self, String> {
         let run = &parsed.data;
         if run.get("pr") != Some(&Value::Null) || !run["closure"].is_null() {
             return Err("This run is not an open local result; press r.".into());
         }
         let receipt = &run["verification"];
-        if !parsed.verification.is(sdlc::Verification::Current)
-            || receipt["passed"] != true
-            || !parsed.receipt_result.is(sdlc::CheckStatus::Passed)
-        {
+        let passed = parsed.verification.is(sdlc::Verification::Current)
+            && receipt["passed"] == true
+            && parsed.receipt_result.is(sdlc::ReceiptResult::Passed);
+        let awaiting = parsed
+            .verification
+            .is(sdlc::Verification::AwaitingAttestation)
+            && receipt["passed"] == false
+            && parsed
+                .receipt_result
+                .is(sdlc::ReceiptResult::AwaitingAttestation)
+            && parsed
+                .pending_attestations
+                .as_ref()
+                .is_ok_and(|ids| !ids.is_empty());
+        if !passed && !awaiting {
             return Err("Local preview needs a current passed verification. Commit and verify, then press r.".into());
         }
         let head = receipt["candidate"]["head"]
@@ -160,7 +171,7 @@ impl Local {
     }
 }
 
-/// An explicit PR result or a current checked local result; never a guessed repository.
+/// An explicit PR result or a fresh machine-checked local result; never a guessed repository.
 #[derive(Clone, Debug)]
 pub(super) enum Source {
     GitHub { url: String, head: String },

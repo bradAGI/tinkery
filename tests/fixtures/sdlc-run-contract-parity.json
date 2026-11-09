@@ -70,9 +70,9 @@
     "resume_uses_recorded_contract_and_preserves_cumulative_cap": "61ea15edd6981f9c0136a03f0384a73f41ac8c1eb50dafa1fa6506921f3af89c",
     "running_turn_and_changed_disclosed_contract_cannot_resume": "0656facd081ffaf6ea93854dcf0bf71059241e1f234b6c5b5f39eca39e24f860",
     "explicit_refresh_follows_only_the_same_run_to_its_reported_build_checkout": "b9ed243227098446780c1432d8e9867d3154a55b3f2a863d4574c72490481495",
-    "finish_requires_current_passing_checks_and_a_finished_report": "99ab009acf35cdb52f467568d31f644fad69a526915b82ab93d50d448af4b7ea",
-    "failed_verification_keeps_ended_worker_available_for_same_session_repair": "b0b6aafa9ab0aed1b70f52858fcaab459c572f9b31521fde958ce78e63f7bb35",
-    "stopped_turn_is_never_completed_and_changed_seed_does_not_block_stop": "7bc23fdb9bf934dd9037c974cc6e66c8ff135f166ca3eac469a76cc26dc87440",
+    "finish_requires_current_passing_checks_and_a_finished_report": "f88941927b00df90d1201b3c2ee56a6fd8f0d607867a312ac6207ac9273680bb",
+    "failed_verification_keeps_ended_worker_available_for_same_session_repair": "058a3fefdfecbed8f486540130a47495725bef19faec717a4c3d672b5c3c235f",
+    "stopped_turn_is_never_completed_and_changed_seed_does_not_block_stop": "98484d370c6434998fe66827f6654bac1a139767bc2e486f17634d4026e7d3de",
     "drop_waits_for_admission_receipt_without_killing_or_retrying_it": "ffc1c0a2521fce68f7dfde89b0c2aa0f072bcf461351d4941dfc4b5b40a2e86d"
   }
 }

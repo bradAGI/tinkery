@@ -103,9 +103,13 @@ A run needs a person when tink-sdlc reports it:
 | `verification_status` | Shown as | Why it needs a person |
 | --- | --- | --- |
 | `blocked` | waiting on a decision | tink-sdlc reports `blocked` only while a gate isn't approved |
+| `awaiting-attestation` | waiting on your judgment | machine commands passed, but the named judgments still need a person |
 | `failed` | verification failed | someone has to look at the failure |
 | `interrupted` | verification interrupted | the last pass didn't finish |
 | `invalid` | can't be read | the run is broken; its reason is shown |
+
+The awaiting state names the shared reader's validated pending judgment IDs in both
+list and detail. It is not a failed run or acceptance. Unknown words still refuse.
 
 These lead, as do runs whose detail has any unapproved gate, an owed manual attestation, or an
 attestation flagged `needs_recheck`. A non-automatic item whose `status` is not `passed` is owed,

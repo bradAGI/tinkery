@@ -260,7 +260,7 @@ impl Panel {
             && self
                 .snapshot
                 .as_ref()
-                .is_some_and(|s| s.verification == "current")
+                .is_some_and(|s| s.verification.is(crate::sdlc::Verification::Current))
     }
 
     fn can_launch(&self) -> bool {
@@ -336,8 +336,18 @@ impl Panel {
             }
             add(&format!(
                 "Verification: {}\n\n{}",
-                snapshot.verification, snapshot.next
+                snapshot.verification.as_str().unwrap_or("unknown"),
+                snapshot.next
             ));
+            if snapshot
+                .verification
+                .is(crate::sdlc::Verification::AwaitingAttestation)
+            {
+                add(&format!(
+                    "waiting on your judgment: {}\nOnly a person can record these judgments in tink-sdlc.",
+                    snapshot.pending_attestations.join(", ")
+                ));
+            }
             if self.fresh && self.can_launch() {
                 add(
                     "\nl sends this prepared task and source context to the displayed provider within its existing cap. It grants no extra responses.",

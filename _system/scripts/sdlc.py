@@ -887,6 +887,7 @@ def verify(args):
                                  + changed_report(before_files, snapshot_files()))
             ready(path)
             proof = {}
+            incomplete = ''
             if items is not None:
                 marked = marks(path, items)
                 attested = [item['id'] for item in items if 'check' not in item and not item.get('pending')]
@@ -898,12 +899,17 @@ def verify(args):
                 missing = [i for i in attested if marked.get(i, {}).get('result') != 'passed'
                            or (i in seed_results and seed_results[i] != 'attested')]
                 if missing:
-                    raise ValueError(f"Checklist incomplete: {', '.join(missing)} ({mark_hint(args.run, items, missing)})")
-                proof = {'checklist_items': {item['id']: 'proven' if 'check' in item else 'attested'
-                                             for item in items if not is_seed_check(item)}}
+                    incomplete = f"Checklist incomplete: {', '.join(missing)} ({mark_hint(args.run, items, missing)})"
+                    if any(marked.get(i, {}).get('result') == 'failed' for i in missing):
+                        raise ValueError(incomplete)  # A person already judged it; nothing awaits them.
+                    proof.update(pending_attestations=missing, error=incomplete)
+                proof['checklist_items'] = {item['id']: 'proven' if 'check' in item else
+                                            'pending' if item['id'] in missing else 'attested'
+                                            for item in items if not is_seed_check(item)}
                 if seed_results:
                     proof['seed_checks'] = seed_results
-            write_json(receipt, {'result': 'passed', **before, **proof, 'log': digest(log_path.read_bytes())})
+            write_json(receipt, {'result': 'awaiting-attestation' if incomplete else 'passed',
+                                 **before, **proof, 'log': digest(log_path.read_bytes())})
         except Exception as error:
             defined = {}
             with contextlib.suppress(Exception):
@@ -911,6 +917,8 @@ def verify(args):
             write_json(receipt, {'result': 'failed', 'error': describe(error), **defined,
                                  **({'seed_checks': seed_results} if seed_results else {})})
             raise
+        if incomplete:
+            raise ValueError(incomplete)
     if seed_results:
         confirmer = 'agent' if any(item.get('origin') == 'agent-confirmed-seed' for item in items) else 'operator'
         print(f'Seed checks ({confirmer}-confirmed): ' + ', '.join(f'{name}: {state}' for name, state in seed_results.items()))
@@ -1083,10 +1091,14 @@ def evidence_matches(record, current):
             and all(record.get(key) == value for key, value in current.items() if key != 'candidate'))
 
 
-def verification_matches(path, record):
+def proof_matches(path, record):
     _, log = verification_files(path)
-    return (record.get('result') == 'passed' and evidence_matches(record, evidence_inputs(path))
+    return (evidence_matches(record, evidence_inputs(path))
             and record['log'] == digest(log.read_bytes()))
+
+
+def verification_matches(path, record):
+    return record.get('result') == 'passed' and proof_matches(path, record)
 
 
 def writer_active(path):
@@ -1270,9 +1282,56 @@ def close(args):
                              "--kind none --words 'No corrections' --reviewer NAME --source REF")
         if args.outcome == 'merged' and pr is None:
             raise ValueError(f'Record the PR first: python3 _system/scripts/sdlc.py pr {args.run} <PR URL>')
-        write_json(path / 'closure.json', {'outcome': args.outcome, **({'merge': args.merge} if args.merge else {}),
-                                           'time_ns': time.time_ns()})
+        closure = {'outcome': args.outcome, **({'merge': args.merge} if args.merge else {}), 'time_ns': time.time_ns()}
+        main = keep_records(path, closure)
+        write_json(path / 'closure.json', closure)
     print(f'Closed {args.run}: {args.outcome}.')
+    if main:
+        print(f'Copied its records to {main}; commit them there before removing this worktree.')
+
+
+def main_checkout():
+    """This scaffold's root in the repository's main working tree; None when this checkout is that tree or the
+    repository is bare, so there is no other working tree to keep records in."""
+    listed = run_git(ROOT, 'worktree', 'list', '--porcelain')
+    top = run_git(ROOT, 'rev-parse', '--show-toplevel')
+    if listed.returncode or top.returncode or not listed.stdout.startswith('worktree '):
+        return None
+    first = listed.stdout.split('\n\n', 1)[0].splitlines()
+    if 'bare' in first:
+        return None
+    main = Path(first[0].removeprefix('worktree '))
+    if main.resolve() == Path(top.stdout.strip()).resolve():
+        return None
+    return main / ROOT.resolve().relative_to(Path(top.stdout.strip()).resolve())
+
+
+def keep_records(path, closure):
+    """Closing in a linked worktree copies the run's records, closure included, into the main checkout, so they
+    outlive the worktree. Refuses rather than overwrite uncommitted changes there or another run of the same name.
+    Copies before the local closure is written, so a failed copy leaves the run open; files it already copied show
+    as uncommitted there, so restore them before closing again."""
+    main = main_checkout()
+    if main is None:
+        return None
+    target = main / 'runs' / path.name
+    if target.is_symlink() or (target.exists() and not target.is_dir()):
+        raise ValueError(f'{target} must be a directory, not a symlink; the run stays open.')
+    held = read_json(target / 'run.json') if (target / 'run.json').is_file() else None
+    if held is not None and not (isinstance(held, dict) and held.get('run_id') == require_run(path)['run_id']):
+        raise ValueError(f'{target} holds a different run of the same name; the run stays open.')
+    dirty = run_git(main, 'status', '--porcelain', '--', f'runs/{path.name}')
+    if dirty.returncode:
+        raise ValueError(f'Could not read Git status in {main}: {git_line(dirty)}; the run stays open.')
+    if dirty.stdout.strip():
+        raise ValueError(f'{target} has uncommitted changes; commit or restore them, then close again. The run stays open.')
+    for file in sorted(path.rglob('*')):
+        relative = file.relative_to(path)
+        if any(part.startswith('.') for part in relative.parts) or file.is_symlink() or not file.is_file():
+            continue
+        write_bytes(target / relative, file.read_bytes())
+    write_json(target / 'closure.json', closure)
+    return target
 
 
 def status_state(path):
@@ -1300,7 +1359,7 @@ def status_state(path):
     record_path, _ = verification_files(path)
     record = read_json(record_path) if record_path.exists() else None
     if record is not None:
-        if not isinstance(record, dict) or record.get('result') not in ('passed', 'failed', 'running'):
+        if not isinstance(record, dict) or record.get('result') not in ('passed', 'failed', 'running', 'awaiting-attestation'):
             raise ValueError('Unrecognized verification receipt.')
         for key in ('error', 'log'):
             if record.get(key) is not None and not isinstance(record[key], str):
@@ -1309,11 +1368,17 @@ def status_state(path):
         if identity is not None and (not isinstance(identity, dict) or not all(
                 isinstance(identity.get(key), str) and identity[key] for key in ('head', 'tree'))):
             raise ValueError('Verification candidate must contain nonempty head and tree strings.')
+        if record['result'] == 'awaiting-attestation' and (
+                not isinstance(record.get('pending_attestations'), list) or not record['pending_attestations']
+                or not all(isinstance(item, str) and item for item in record['pending_attestations'])):
+            raise ValueError('Verification pending_attestations must contain nonempty item ids.')
     active = writer_active(path)
     verified = False
+    awaiting = False
     if not blocked and not active and record is not None:
         try:
             verified = verification_matches(path, record)
+            awaiting = record['result'] == 'awaiting-attestation' and proof_matches(path, record)
         except (ValueError, OSError, subprocess.SubprocessError, KeyError, TypeError):
             pass
     if active:
@@ -1322,10 +1387,13 @@ def status_state(path):
         state = 'blocked'
     elif verified:
         state = 'current'
+    elif awaiting:
+        state = 'awaiting-attestation'
     elif record is None:
         state = 'not-run'
     else:
-        state = {'passed': 'stale', 'failed': 'failed', 'running': 'interrupted'}[record['result']]
+        state = {'passed': 'stale', 'awaiting-attestation': 'stale',
+                 'failed': 'failed', 'running': 'interrupted'}[record['result']]
     checklist = checklist_view(path, verified)
     errors = []
     try:
@@ -1377,7 +1445,8 @@ def status_state(path):
     next_action = unavailable or worker_action(path.name, steps, newest) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
-        'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
+        'awaiting-attestation': (record.get('error') or 'Record the pending attestations, then rerun verification.') if record else '',
+        'stale': 'The previous proof no longer matches this candidate or its evidence. Run verification again.',
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',
     }.get(state, (f'Building in {building}; read status there.' if (building := build_checkout(path.name)) else
@@ -1405,7 +1474,10 @@ def status_state(path):
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active, 'steps': steps,
             **({'definition': definition} if definition is not None else {}),
-            'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
+            'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')},
+                             **({'pending_attestations': record['pending_attestations']}
+                                if record['result'] == 'awaiting-attestation' else {}),
+                             'passed': verified} if record else None,
             'checklist': checklist['items'], 'checklist_state': checklist['state'],
             'checklist_text': checklist_text(checklist), 'next_action': next_action, 'errors': errors,
             'reproduction': reproduction,
@@ -1438,8 +1510,12 @@ def status_text(view):
         lines.append(f"Reproduction: failed with exit {repro['exit_code']} when locked ({' '.join(repro['argv'])})" if repro['executed'] else
                      'Reproduction: recorded from review evidence, not run locally; CI must confirm it fails on the unfixed code '
                      '(lock-tests --reproduce runs it at lock time).')
-    if view['verification'] is not None:
-        lines.append('Verification: ' + ('current' if view['verification_status'] == 'current' else 'failed, stale, or blocked'))
+    if view['verification'] is not None and view['closure']:
+        candidate = (view['verification'].get('candidate') or {}).get('head', 'unknown')[:12]
+        lines.append(f"Verification: last {view['verification']['result']} on {candidate}")
+    elif view['verification'] is not None:
+        lines.append('Verification: ' + (view['verification_status'] if view['verification_status'] in
+                                              ('current', 'awaiting-attestation') else 'failed, stale, or blocked'))
     else:
         lines.append('Verification: not run (implementation may be pending; a text log is not passing evidence)')
     if all(g['status'] == 'approved' for g in view['gates']):

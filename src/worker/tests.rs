@@ -143,6 +143,14 @@ fn contract_worker_refusal(change: impl FnOnce(&mut Value), expected: &str) {
 }
 
 #[test]
+fn contract_refuses_worker_verification() {
+    contract_worker_refusal(
+        |value| value["verification"] = "TEST-unsupported".into(),
+        "Verification state is unknown or missing.",
+    );
+}
+
+#[test]
 fn contract_refuses_worker_state() {
     contract_worker_refusal(
         |value| value["step"]["state"] = "TEST-unsupported".into(),
@@ -931,7 +939,7 @@ fn finish_requires_current_passing_checks_and_a_finished_report() {
         Action::Verify,
     ))
     .unwrap();
-    assert_eq!(verified.verification, "current");
+    assert!(verified.verification.is(sdlc::Verification::Current));
     assert!(
         wait(Job::act(
             Gate::new(false, Ok(None)),
@@ -974,7 +982,7 @@ fn finish_requires_current_passing_checks_and_a_finished_report() {
     ))
     .unwrap();
     assert_eq!(done.state, State::Completed);
-    assert_eq!(done.verification, "current");
+    assert!(done.verification.is(sdlc::Verification::Current));
 }
 
 #[test]
@@ -1018,7 +1026,7 @@ fn failed_verification_keeps_ended_worker_available_for_same_session_repair() {
     ))
     .unwrap();
     assert_eq!(observed.state, State::Active { turn: Turn::Ended });
-    assert_eq!(observed.verification, "failed");
+    assert!(observed.verification.is(sdlc::Verification::Failed));
     assert_eq!(observed.pin, initial.pin);
     let resumed = wait(Job::act(
         Gate::new(false, Ok(None)),
@@ -1072,7 +1080,7 @@ fn stopped_turn_is_never_completed_and_changed_seed_does_not_block_stop() {
         );
         let snapshot = wait(Job::act(Gate::new(false, Ok(None)), run, action)).unwrap();
         assert_eq!(snapshot.state, State::Stopped { cap });
-        assert_ne!(snapshot.verification, "current");
+        assert!(!snapshot.verification.is(sdlc::Verification::Current));
     }
 }
 

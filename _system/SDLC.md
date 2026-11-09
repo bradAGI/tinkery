@@ -42,6 +42,18 @@ An item may carry `check`: `{"argv":[...],"timeout_seconds":N}`, validated like 
 
 An item without `check` is attested: record it with `sdlc.py mark <run> <item-id> passed|failed --evidence <text>`, which needs a current stage 3 approval and appends a receipt under `marks/`. The latest receipt per item wins, and `verify` requires `passed`. Verification binds a digest of each latest receipt, so any later mark or edit makes it stale: mark first, then verify. Attested marks are self-reported claims for independent review to challenge. Status flags an item marked on an older candidate; re-check it only if the change affects it. The passed receipt records each item as `proven` or `attested`.
 
+If commands pass against stable inputs but attestations remain incomplete, `verify`
+still exits nonzero with `Checklist incomplete` and the mark commands. It records
+`result: awaiting-attestation`, the proven candidate's HEAD and content tree, policy,
+test lock, definition and mark digests, log digest, per-item proof and
+`pending_attestations` ids. Missing attestations are `pending`, never `attested`.
+This is machine proof only, not passing verification or permission to release.
+Status reports `awaiting-attestation` only while those proof inputs and the log
+still match. A later mark or changed proof input retires it; evidence-only commits
+preserve it because HEAD records provenance and content tree determines freshness.
+An item a person marked `failed` awaits nobody, so that verify records `failed` instead.
+After recording the actual observations, rerun `verify` to obtain a pass.
+
 `new` always writes `checklist.json`; if it is deleted, status reads MISSING and verification refuses until it is restored from Git. Local files, deletable receipts and `git update-index --skip-worktree` are not a tamper boundary: trusted CI and forge review are.
 
 ### Locked seed acceptance checks
@@ -516,7 +528,7 @@ Runs are created atomically and have one writer at a time; busy or interrupted o
 
 Use protected branches, current required CI, independent code-owner approval and deployment checks in your forge. Open the PR once the candidate is committed and verification is current (end of stage 4; `stage <slug> 5` enforces it); stages 1-2 need none, and a draft PR during build is not review. Delivery, merge authority and the no-`origin` warning are owned by `stages/05-deploy/CONTEXT.md`; `stage <slug> 3` prints that warning early, without refusing. PR creation and review findings do not prove deployment: keep deployed revision, result and rollback references in the deployment system.
 
-Once the PR is open, record it: `sdlc.py pr <run> <PR URL>` writes `runs/<run>/pr.json` (the URL and the verified candidate commit it was opened from). It needs current verification, and a run has one PR: a different URL is refused. Put `Tink-Run: <run_id>` in the PR description so the link reads back from the forge. Before closing, the operator labels the run: `sdlc.py label <run> --kind correction|none|accepted|rejected --words TEXT --reviewer NAME --source REF [--about FILE|outside] [--consent local|shareable]` appends one line to `runs/<run>/labels.jsonl` with the words verbatim and, for `--about FILE`, that checkout file's SHA-256. `none` records that there were no corrections; `outside` marks a correction made outside the run's records. Labels are human-only like `decide`, and are refused inside a build step session (`TINK_SDLC_STEP_SESSION=1`). Each line names the digest of the file before it, so an edited or removed earlier line, an agent-attributed line, or a closed run with no labels invalidates the run; this catches mistakes, not a determined writer. A run ends when `sdlc.py close <run> --outcome merged --merge <commit>` (needs at least one label, the recorded PR and the full merge commit) or `--outcome abandoned` (needs at least one label) writes `runs/<run>/closure.json`; a run closes once, and its PR and labels are then fixed. While the run builds in another checkout, `pr`, `label` and `close` refuse here and name that checkout. Until then, current runs say what to record next. These are local records of what happened, not merge authority; a `closure.md` note is optional and is not the record.
+Once the PR is open, record it: `sdlc.py pr <run> <PR URL>` writes `runs/<run>/pr.json` (the URL and the verified candidate commit it was opened from). It needs current verification, and a run has one PR: a different URL is refused. Put `Tink-Run: <run_id>` in the PR description so the link reads back from the forge. Before closing, the operator labels the run: `sdlc.py label <run> --kind correction|none|accepted|rejected --words TEXT --reviewer NAME --source REF [--about FILE|outside] [--consent local|shareable]` appends one line to `runs/<run>/labels.jsonl` with the words verbatim and, for `--about FILE`, that checkout file's SHA-256. `none` records that there were no corrections; `outside` marks a correction made outside the run's records. Labels are human-only like `decide`, and are refused inside a build step session (`TINK_SDLC_STEP_SESSION=1`). Each line names the digest of the file before it, so an edited or removed earlier line, an agent-attributed line, or a closed run with no labels invalidates the run; this catches mistakes, not a determined writer. A run ends when `sdlc.py close <run> --outcome merged --merge <commit>` (needs at least one label, the recorded PR and the full merge commit) or `--outcome abandoned` (needs at least one label) writes `runs/<run>/closure.json`; a run closes once, and its PR and labels are then fixed. While the run builds in another checkout, `pr`, `label` and `close` refuse here and name that checkout. Closing in a linked worktree first copies the run's records, closure included, into the main checkout's `runs/<run>/` (skipping dot-files), so status there still shows the closure, labels and last verification after the worktree is removed; it refuses, leaving the run open, while that folder has uncommitted changes (including files a failed copy already wrote; restore them first) or holds another run of the same name. A bare repository has no main checkout, so nothing is copied. Commit the copied records in the main checkout. Until then, current runs say what to record next. These are local records of what happened, not merge authority; a `closure.md` note is optional and is not the record.
 
 Maintenance is optional intake, not a required completion stage. Enable it only after defining metric-specific thresholds, deduplication, cooldowns, and run limits. Alerts create drafts for service-owner triage, never fabricated approvals.
 
@@ -583,9 +595,15 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   Human v2 and legacy bindings retain the three-field status shape.
   This is intake evidence, not approval, goal identity or release authority.
 - `verification_status`: `blocked`, `running`, `not-run`, `current`, `stale`,
-  `failed`, or `interrupted`. `verification` is null or a normalized record with
-  `result`, `passed`, `candidate`, `log` (digest), and `error`. Only `passed: true`
-  means current evidence; receipt internals are not a client contract.
+  `failed`, `interrupted`, or `awaiting-attestation`. The last means command proof
+  is fresh but required attestations remain incomplete. It becomes `stale` when
+  proof inputs or the log change; definition gates and active writers still take
+  precedence. `verification` is null or a normalized record with `result`, `passed`,
+  `candidate`, `log` (digest), and `error`. An `awaiting-attestation` result also
+  includes `pending_attestations`, a nonempty list of item ids from that invocation,
+  even after the proof becomes stale. Its `passed` is always false. Only
+  `passed: true` means current passing verification; receipt internals are not a
+  client contract. Older API 1 clients must fail closed on the new status word.
 - `checklist`: normalized items with their definition, `automatic`, `status`
   (`pending`, `passed`, `failed`, or `unknown` for a seed attestation), `proof` (`automated`, `attested`), optional
   observation `mark`, and `needs_recheck`. `checklist_state` distinguishes

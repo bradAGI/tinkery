@@ -15,6 +15,50 @@ mod descendant {
 }
 
 #[test]
+fn awaiting_receipts_keep_pending_ids_out_of_untyped_metadata() {
+    let source = json!({"verification_status":"awaiting-attestation", "verification":{
+        "result":"awaiting-attestation", "passed":false, "pending_attestations":["seed-2", "seed-4"]
+    }});
+    let run = Run::parse(&source);
+    assert!(run.verification.is(Verification::AwaitingAttestation));
+    assert!(run.receipt_result.is(ReceiptResult::AwaitingAttestation));
+    assert_eq!(run.pending_attestations.unwrap(), ["seed-2", "seed-4"]);
+    assert!(
+        run.data["verification"]
+            .get("pending_attestations")
+            .is_none()
+    );
+    assert_eq!(run.receipt, Receipt(source["verification"].clone()));
+    for invalid in [
+        Value::Null,
+        json!([]),
+        json!("seed-2"),
+        json!([null]),
+        json!([""]),
+        json!(["seed-2", "seed-2"]),
+        json!(["seed-2\ncommand"]),
+    ] {
+        let mut value = source.clone();
+        value["verification"]["pending_attestations"] = invalid;
+        assert!(Run::parse(&value).pending_attestations.is_err());
+    }
+    let mut missing = source;
+    missing["verification"]
+        .as_object_mut()
+        .unwrap()
+        .remove("pending_attestations");
+    assert!(Run::parse(&missing).pending_attestations.is_err());
+    assert!(
+        Run::parse(&json!({"verification_status":"current"}))
+            .pending_attestations
+            .unwrap()
+            .is_empty()
+    );
+    let checklist = Run::parse(&json!({"checklist":[{"status":"awaiting-attestation"}]}));
+    assert!(checklist.checklist.unwrap()[0].status.known().is_none());
+}
+
+#[test]
 fn checklist_obligations_fail_closed_only_for_manual_operator_items() {
     for owner in [None, Some(true), Some(false)] {
         for automatic in [false, true] {
