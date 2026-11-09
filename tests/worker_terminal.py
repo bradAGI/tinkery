@@ -363,7 +363,9 @@ class Terminal:
         if keys.startswith(END) and len(keys) > len(END):
             frames = self.output.count(b'\x1b[?2026l')
             os.write(self.master, END)
-            self.wait(lambda: self.output.count(b'\x1b[?2026l') > frames)
+            # A frame can land before End is handled; u and l need a frame drawn at the end.
+            self.wait(lambda: self.output.count(b'\x1b[?2026l') > frames
+                      and '↓ more' not in self.screen.text() and '↕ more' not in self.screen.text())
             keys = keys[len(END):]
         os.write(self.master, keys)
         self.wait(lambda: text in self.flat())
