@@ -1,7 +1,9 @@
-//! This repo's recent PRs, not productivity or acceptance. Only an explicit read contacts GitHub;
-//! navigation and details use memory, and leaving cancels the read without writing records.
+//! This repo's recent PRs and closed-run postmortems, not productivity or acceptance. Only an
+//! explicit read contacts GitHub or the run records; navigation and details use memory, and
+//! leaving cancels the read without writing records.
 
 mod read;
+mod runs;
 #[cfg(test)]
 mod tests;
 
@@ -118,6 +120,7 @@ pub(crate) struct Measure {
     selected: usize,
     detail: bool,
     scroll: u16,
+    runs: Option<runs::Runs>,
 }
 
 impl Measure {
@@ -133,6 +136,7 @@ impl Measure {
             selected: 0,
             detail: false,
             scroll: 0,
+            runs: None,
         }
     }
 
@@ -162,6 +166,9 @@ impl Measure {
 
     /// Receive one explicit read; late results cannot reopen an exited view.
     pub(crate) fn poll(&mut self) {
+        if let Some(runs) = &mut self.runs {
+            runs.poll();
+        }
         if let Some(result) = self.read.as_ref().and_then(read::Read::poll) {
             self.read = None;
             match result {
@@ -185,8 +192,18 @@ impl Measure {
         if key.kind == KeyEventKind::Repeat && !matches!(key.code, KeyCode::Up | KeyCode::Down) {
             return false;
         }
+        if key.code == KeyCode::Char('q') {
+            return true;
+        }
+        if let (Some(runs), Some(repo)) = (&mut self.runs, &self.repo) {
+            if (key.kind != KeyEventKind::Repeat || matches!(key.code, KeyCode::Up | KeyCode::Down))
+                && runs.key(key, repo.root())
+            {
+                self.runs = None;
+            }
+            return false;
+        }
         match key.code {
-            KeyCode::Char('q') => return true,
             KeyCode::Esc if self.detail => {
                 self.detail = false;
                 self.scroll = 0;
@@ -202,6 +219,11 @@ impl Measure {
                     self.scroll = 0;
                     self.notice = "Reading GitHub through gh… Esc cancels and goes back.".into();
                     self.read = Some(read::Read::start(repo.root(), self.since.clone()));
+                }
+            }
+            KeyCode::Char('p') if !self.detail && self.read.is_none() => {
+                if let Some(repo) = &self.repo {
+                    self.runs = Some(runs::Runs::start(repo.root()));
                 }
             }
             KeyCode::Enter if self.report.as_ref().is_some_and(|r| !r.prs.is_empty()) => {
@@ -233,6 +255,10 @@ impl Measure {
 
     /// Render memory only. Details never launch a browser or another GitHub read.
     pub(crate) fn render(&mut self, frame: &mut Frame, area: Rect, palette: Palette, help: bool) {
+        if let Some(runs) = &mut self.runs {
+            runs.render(frame, area, palette, help);
+            return;
+        }
         let footer = if help {
             "esc close help   q menu"
         } else if self.detail {
@@ -246,9 +272,9 @@ impl Measure {
         {
             "↑↓ move   enter details   r refresh   esc back"
         } else if self.report.is_some() {
-            "r refresh   esc back   ? help"
+            "r refresh   p runs   esc back   ? help"
         } else {
-            "r read GitHub   esc back   ? help"
+            "r read GitHub   p runs   esc back   ? help"
         };
         let content = Rect {
             height: area.height.saturating_sub(2),
@@ -267,7 +293,8 @@ impl Measure {
                 "Newest updated first; at most 100 PRs. More on GitHub means a partial read.\n",
                 "Closed means closed without merge. PgUp/PgDn scroll a long selected title.\n",
                 "Checks are GitHub's reported PR-head checks, not merge checks or acceptance.\n",
-                "No effort, usefulness or productivity is inferred. Nothing is saved.\n\n",
+                "No effort, usefulness or productivity is inferred. Nothing is saved.\n",
+                "p reads closed runs from this checkout's records: gates, corrections, Pi, held.\n\n",
                 "Esc closes help, then details, then returns to the menu.\n",
                 "q goes back to the menu. F10 or Ctrl-C quits Tinkery.\n",
                 "Leaving cancels the read; r retries failures. Reads stop after 30 seconds."

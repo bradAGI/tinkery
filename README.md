@@ -109,7 +109,9 @@ Copying a prompt authorizes none of them and starts no agent. Voice is local dic
   See [Taste](docs/design/taste.md).
 - **Measure:** `r` explicitly reads this repo's PRs updated in the last 30 days from
   GitHub through `gh`. Lists all states; Enter shows dates, author, URL and reported
-  PR-head checks. No metrics or acceptance claims. See [Measure](docs/design/menu.md#measure).
+  PR-head checks. No metrics or acceptance claims. `p` reads this checkout's closed runs
+  as postmortems: gates you decided, corrections, Pi responses and whether the merge held,
+  with `?` for unknown. See [Run postmortem](docs/design/menu.md#run-postmortem).
 - **Light or dark:** Ctrl-T or the `dark` label beside `?` switches every screen to warm
   charcoal until you quit; each launch starts light. See [principles](docs/design/principles.md#visual-meaning).
 
