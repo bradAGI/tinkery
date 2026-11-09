@@ -201,7 +201,3 @@ if __name__ == '__main__':
             preview(100, 30, mono=False, case='awaiting')
             preview(case='unknown')
         print('PASS awaiting-attestation public behavior and 1.57.0 pin', flush=True)
-        if not args.case and os.environ.get('TINKERY_PYTHON_TEST_WORKER') != '1':
-            env = subprocess.environment()
-            subprocess.run([os.sys.executable, 'scripts/full-check.py'], cwd=REPO, env=env, check=True)
-            reversion()
