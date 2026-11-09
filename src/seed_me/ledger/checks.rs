@@ -95,6 +95,26 @@ pub(crate) fn commandless_check(records: &Value) -> Option<&str> {
         .and_then(|r| r["statement"].string())
 }
 
+/// The human sign-off a seed's judged checks require, whatever their how-to-judge words say;
+/// none when no check is judged. Agent evidence never records it.
+pub(crate) fn human_signoff(records: &Value) -> Option<String> {
+    let judged = records
+        .items()
+        .iter()
+        .filter(|r| r["kind"].is("judge"))
+        .count();
+    let (checks, it) = if judged == 1 {
+        ("check", "it")
+    } else {
+        ("checks", "each")
+    };
+    (judged > 0).then(|| {
+        format!(
+            "{judged} judged {checks}: a person signs {it} off after seeing the built result; agent evidence can't."
+        )
+    })
+}
+
 /// The confirmed goal's explicit Done when lines, in order. Unstructured goals have none.
 pub(crate) fn goal_criteria(goal: &str) -> Vec<&str> {
     let mut in_done_when = false;
