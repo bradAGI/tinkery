@@ -213,7 +213,14 @@ On that screen, `r` reads status, `l` launches an inspected prepared step, `u` r
 an ended turn, `f` records a normally
 ended worker, `v` verifies, `s` stops it, and `c` records a cap stop. These are separate
 explicit actions. Verify before finishing: `f` refuses without current passing
-verification, so a failed check leaves the ended worker resumable. Resume discloses and rechecks the original model, session and cap;
+verification, so a failed check leaves the ended worker resumable after a successful reread.
+A refused request retains the last successful worker reading and tink-sdlc's own blocker,
+including unmet human checks and their instructions. That reading is explicitly historical:
+current worker and verification state are unknown, and only `r` and `s` can request anything
+until a read succeeds. Stop stays available because it is the conservative action; it still
+confirms the run first, so tink-sdlc status must answer for it to act. Hidden action keys obey the same admission rule as the footer. A failed reread
+keeps the others disabled; neither failure nor rereading automatically launches or resumes work.
+Resume discloses and rechecks the original model, session and cap;
 it cannot silently use changed settings or add allowance. Unknown admission never
 becomes a successful launch or an automatic retry. The preflight identity read is
 not an atomic lock against concurrent external record edits; SDLC rechecks its own
@@ -243,7 +250,14 @@ These prove mechanics, not operator acceptance or real-work benefit.
 
 [Worker terminal journeys](../../tests/worker_terminal.py) cover explicit admission,
 separate allowance, source changes, retained requests and truthful completion states
-with temporary TEST storage and fake providers. The [partial-start journeys](../../tests/worker_partial_start_terminal.py)
+with temporary TEST storage and fake providers.
+The failed-Verify journeys retain ended
+state and human-check instructions, press stale action keys after Verify and reread failures,
+and count launch/resume calls at 100×30 and 80×24 with NO_COLOR. Run
+`python3 tests/worker_verify_retention_terminal.py --revert` for assertion-specific red/green
+proofs with automatic source and binary restoration. The same centralized admission guard
+protects mutation and provider-capable resume, so both regressions revert that guard.
+The [partial-start journeys](../../tests/worker_partial_start_terminal.py)
 cover persisted creation followed by command, status and identity failures, read-only Watch
 recovery, blocked blind retries and the unchanged pre-creation F2 retry.
 The relay journeys run standalone with `python3 tests/worker_relay_authorization_terminal.py`

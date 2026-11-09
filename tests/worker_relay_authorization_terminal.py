@@ -177,11 +177,12 @@ def existing_journey(action, case, operator='agent', agent_start=False, record_b
                 assert 'Start only this reviewed builder.' in terminal.flat()
             refused = operator == 'agent' and (case != 'matching' or record_block)
             os.write(terminal.master, b'l' if action == 'launch' else b'u')
-            terminal.wait(lambda: 'Worker result unavailable' in terminal.flat()
-                          or 'Request refused or uncertain:' in terminal.flat()
-                          or (len(fixture.admissions()) > count and
-                              ('Worker: turn ended;' in terminal.flat() if action == 'launch'
-                               else 'Worker: running' in terminal.flat())))
+            terminal.wait(lambda: 'Request in progress' not in terminal.flat() and
+                          ('Current worker and verification state unknown.' in terminal.flat()
+                           or 'Request refused or uncertain:' in terminal.flat()
+                           or (len(fixture.admissions()) > count and
+                               ('Worker: turn ended;' in terminal.flat() if action == 'launch'
+                                else 'Worker: running' in terminal.flat()))))
             if refused:
                 assert len(fixture.admissions()) == count, 'unauthorized admission: agent existing action launched work'
                 assert len(fixture.mutations()) == mutations, 'unauthorized admission: agent existing action mutated SDLC'
